@@ -575,3 +575,64 @@ textarea.field { resize: none; min-height: 90px; }
 .cal-key .k1 { background: var(--accent); }
 .cal-key .k2 { border: 2px solid var(--accent); }
 @media (max-width: 360px) { .sring { width: 112px; height: 112px; } .sring .sc b { font-size: 28px; } .sstats { grid-template-columns: repeat(2, 1fr); } }
+
+/* Program builder */
+.qprog { height: 4px; background: var(--surface-2); }
+.qprog i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .25s; }
+.qh { font-family: var(--display); font-size: 28px; letter-spacing: .02em; line-height: 1.05; margin: 4px 2px 12px; text-wrap: balance; }
+.qopt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--surface); border: 2px solid transparent; border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+.qopt .qi { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); color: var(--accent-text); flex: none; }
+.qopt .qi svg { width: 22px; height: 22px; }
+.qopt .qt { flex: 1; min-width: 0; }
+.qopt .qt b { display: block; font-size: 16px; font-weight: 700; }
+.qopt .qt b em { font-style: normal; font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); padding: 3px 6px; border-radius: 6px; margin-left: 6px; vertical-align: 2px; }
+.qopt .qt span { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; line-height: 1.4; }
+.qopt .qc { width: 26px; height: 26px; border-radius: 50%; border: 2px solid var(--surface-3); display: grid; place-items: center; color: transparent; flex: none; }
+.qopt .qc svg { width: 16px; height: 16px; }
+.qopt.on { border-color: var(--accent); background: var(--accent-soft); }
+.qopt.on .qc { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.quiz .remind input[type="time"] { height: 46px; font-size: 18px; }
+.prog-head { background: var(--surface); border-radius: var(--radius); padding: 16px; }
+.prog-head .k { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent-text); }
+.prog-head .t { font-family: var(--display); font-size: 34px; line-height: 1; margin-top: 6px; text-wrap: balance; }
+.prog-head p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0 0; }
+.prog-head .wk { display: flex; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.wkbar { flex: 1; height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+.wkbar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.okmark { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; flex: none; }
+.okmark svg { width: 15px; height: 15px; }
+.exrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 12px 10px 10px; text-align: left; }
+.exrow + .exrow { border-top: 1px solid var(--line); }
+.exrow .fig { width: 56px; height: 45px; flex: none; background: var(--surface-2); border-radius: 10px; padding: 3px; }
+.exrow .en { flex: 1; min-width: 0; }
+.exrow .en b { display: block; font-weight: 700; font-size: 15px; }
+.exrow .en span { color: var(--muted); font-size: 13px; }
+.exrow .chev { width: 16px; height: 16px; color: var(--faint); flex: none; }
+.fig .body { stroke: var(--text); stroke-width: 5; stroke-linecap: round; fill: none; }
+.fig .body circle { fill: var(--text); stroke: none; }
+.fig .props .pr { stroke: var(--accent); stroke-width: 5; stroke-linecap: round; fill: var(--accent); }
+.fig .props .bn { stroke: var(--faint); stroke-width: 4; stroke-linecap: round; fill: var(--surface-3); }
+.fig .arr { stroke: var(--accent); stroke-width: 2.5; fill: none; stroke-dasharray: 4 3; stroke-linecap: round; }
+.guide-fig { background: var(--surface-2); border-radius: var(--radius); padding: 10px; display: grid; place-items: center; margin-bottom: 14px; }
+.guide-fig .fig { width: 100%; max-width: 260px; height: auto; }
+.cues { display: grid; gap: 8px; }
+.cue { display: flex; gap: 12px; align-items: flex-start; background: var(--surface-2); border-radius: 12px; padding: 12px; font-size: 15px; line-height: 1.4; }
+.cue b { width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-size: 13px; flex: none; }
+.tgt { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 0 16px 6px; font-size: 13px; color: var(--muted); }
+.tgt .tg { font-family: var(--display); font-size: 22px; color: var(--text); letter-spacing: .02em; }
+.sug { display: flex; gap: 8px; align-items: flex-start; margin: 0 12px 10px 16px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; line-height: 1.4; color: var(--muted); }
+.sug svg { width: 18px; height: 18px; flex: none; color: var(--accent-text); margin-top: 1px; }
+.sug.up { background: var(--accent-soft); color: var(--text); }
+.progchip { display: flex; gap: 10px; align-items: center; background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 14px; padding: 10px 12px; font-size: 13px; line-height: 1.4; margin-bottom: 12px; }
+.progchip svg { width: 20px; height: 20px; color: var(--accent-text); flex: none; }
+.prog-cta { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--accent-line); border-radius: var(--radius); padding: 14px; }
+.prog-cta .qi { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); flex: none; }
+.prog-cta .qi svg { width: 24px; height: 24px; }
+.prog-cta b { display: block; font-family: var(--display); font-weight: 400; font-size: 24px; letter-spacing: .03em; line-height: 1.05; }
+.prog-cta span span, .prog-cta > span > span { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; line-height: 1.4; }
+.prog-cta .chev { width: 18px; height: 18px; color: var(--faint); flex: none; }
+.prog-cta .go { height: 40px; padding: 0 14px; border-radius: 12px; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 14px; flex: none; }
+.ex-h button[data-a="guide"] svg { width: 20px; height: 20px; }
+.seg button { font-size: 13px; }
+
+.dayitem .okmark { flex: none; width: 26px; }

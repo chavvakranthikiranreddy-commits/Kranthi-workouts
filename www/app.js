@@ -837,9 +837,10 @@ function itemDoneToday(it) {
   const k = dkey(new Date());
   const todays = log.filter(x => x.date === k);
   if (it.type === 'gym') return todays.some(x => x.kind === 'gym');
+  if (it.type === 'prog') return todays.some(x => x.prog && x.prog.key === it.key);
   return todays.some(x => x.title === it.name);
 }
-const itemIcon = t => t === 'timer' ? 'timer' : t === 'gym' ? 'dumbbell' : 'run';
+const itemIcon = t => t === 'timer' ? 'timer' : t === 'gym' || t === 'prog' ? 'dumbbell' : 'run';
 
 function viewToday() {
   const st = computeStats();
@@ -866,7 +867,8 @@ function viewToday() {
     planHtml = day.items.map((it, i) => {
       const done = itemDoneToday(it);
       const t = it.type === 'timer' ? findTimer(it.ref) : null;
-      const sub = it.type === 'timer' ? (t ? `Timer · ${fmt(totalOf(t))}` : 'Timer not found') : it.type === 'gym' ? 'Gym session · sets & reps' : 'Activity';
+      const pi = it.type === 'prog' ? Program.sessionInfo(it.key) : null;
+      const sub = it.type === 'timer' ? (t ? `Timer · ${fmt(totalOf(t))}` : 'Timer not found') : it.type === 'gym' ? 'Gym session · sets & reps' : it.type === 'prog' ? (pi ? `Week ${pi.week}/${pi.weeks}${pi.deload ? ' · Deload' : ''} · ${pi.n} exercises · ~${pi.min} min` : 'Program ended') : 'Activity';
       return `<div class="pitem ${done ? 'done' : ''}"><span class="pi">${ic(itemIcon(it.type))}</span><span class="pt"><b>${esc(it.name)}</b><span>${done ? 'Done today ✓' : sub}</span></span>
         <button class="go" data-pi="${i}">${done ? 'Again' : it.type === 'note' ? 'Log' : 'Start'}</button></div>`;
     }).join('');
@@ -883,6 +885,7 @@ function viewToday() {
     <div style="margin-top:12px">${stepsCardHtml()}</div>
     ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
     ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
+    ${Program.programCardHtml() || Program.levelNudge() ? `<div style="margin-top:12px">${Program.programCardHtml()}${Program.levelNudge()}</div>` : ''}
     <div class="sect">Today's plan</div>
     <div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div>
     <div class="sect">Quick start</div>
@@ -910,6 +913,7 @@ function viewToday() {
       case 'weight': return openBodyEntry(null);
       case 'backup': return exportBackup();
       case 'steps-on': return enableSteps();
+      case 'prog-new': case 'prog-next': case 'prog-level': return Program.handleAction(b.dataset.a, b);
       case 'steps-go': return go('progress');
     }
   });
@@ -920,14 +924,16 @@ function startPlanItem(it) {
   if (!it) return;
   if (it.type === 'timer') { const t = findTimer(it.ref); if (!t) { toast('That timer was deleted. Edit your plan.'); return; } return startTimer(t); }
   if (it.type === 'gym') return openGym({ title: it.name });
+  if (it.type === 'prog') { if (!Program.sessionInfo(it.key)) { toast('This program has ended. Edit your plan.'); return; } return openGym({ progKey: it.key }); }
   openEntry(null, { title: it.name, cat: 'Other', date: dkey(new Date()) });
 }
 
 /* ---------- Timers ---------- */
 function viewTimers() {
+  if (timersSeg === 'prog') return viewProgramTab();
   const mine = timersSeg === 'mine';
   view.innerHTML = topbar('Timers') + `<div class="page">
-    <div class="seg"><button class="${mine ? 'on' : ''}" data-seg="mine">My Timers</button><button class="${mine ? '' : 'on'}" data-seg="tpl">Templates</button></div>
+    <div class="seg"><button class="${mine ? 'on' : ''}" data-seg="mine">My Timers</button><button data-seg="prog">Program</button><button class="${mine ? '' : 'on'}" data-seg="tpl">Templates</button></div>
     ${mine ? `
     <div class="sect">Quick rest</div>
     <div class="chips" id="quick">${[30, 45, 60, 90, 120, 180].map(s => `<button class="chip" data-s="${s}">${fmtShort(s)}</button>`).join('')}</div>
@@ -970,6 +976,16 @@ function viewTimers() {
         { icon: 'edit', label: 'Customize a copy', run: () => openEditor(copy(), { isNew: true }) },
       ]);
     }
+  });
+}
+
+function viewProgramTab() {
+  view.innerHTML = topbar('Timers') + `<div class="page"><div class="seg"><button data-seg="mine">My Timers</button><button class="on" data-seg="prog">Program</button><button data-seg="tpl">Templates</button></div><div id="progbox"></div></div>`;
+  Program.viewTab($('#progbox'));
+  view.querySelector('.page').addEventListener('click', e => {
+    const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
+    const g = e.target.closest('[data-guide]'); if (g) return Program.guide(g.dataset.guide);
+    const b = e.target.closest('[data-a]'); if (b) Program.handleAction(b.dataset.a, b);
   });
 }
 
@@ -1419,13 +1435,17 @@ function allExerciseNames() {
   return seen;
 }
 
-function openGym({ title, entry, date } = {}) {
+function openGym({ title, entry, date, progKey } = {}) {
   const editing = !!entry;
-  let d;
+  let d, resumed = false;
   if (editing) d = clone(entry);
   else {
     const draft = DB.get('gymdraft', null);
-    if (draft) { d = draft; if (title && !d.exercises.length) d.title = title; }
+    const pd = progKey ? Program.sessionDraft(progKey) : null;
+    if (draft && (!pd || (draft.prog && draft.prog.key === progKey) || draft.exercises.some(ex => ex.sets.some(st => st.r > 0)))) {
+      d = draft; resumed = true; if (title && !d.exercises.length) d.title = title;
+      if (pd && !(draft.prog && draft.prog.key === progKey)) toast('Finish or discard the workout in progress first');
+    } else if (pd) d = Object.assign({ id: uid(), date: dkey(new Date()), start: Date.now() }, pd);
     else d = { id: uid(), title: title || 'Gym workout', date: date || dkey(new Date()), start: Date.now(), exercises: [] };
   }
   if (!d.exercises) d.exercises = [];
@@ -1435,7 +1455,7 @@ function openGym({ title, entry, date } = {}) {
 
   const scr = el(`<section class="screen">
     <header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Close">${ic('close')}</button></div>
-      <h1>${editing ? 'Edit Workout' : 'Gym Workout'}</h1>
+      <h1>${editing ? 'Edit Workout' : d.prog ? 'Program Session' : 'Gym Workout'}</h1>
       <div class="tb-right"><button class="round-btn" data-a="menu" aria-label="More">${ic('more')}</button></div></header>
     <div class="scroll"><div class="page" id="gy" style="padding-bottom:30px"></div></div>
     <div class="gym-bar"><button class="btn" data-a="rest">${ic('pausebars')}Rest</button><button class="btn primary" data-a="finish">${editing ? 'Save changes' : 'Finish workout'}</button></div>
@@ -1452,16 +1472,18 @@ function openGym({ title, entry, date } = {}) {
     gy.innerHTML = `
       <div class="gym-head"><input class="field" id="gt" maxlength="40" value="${esc(d.title)}" placeholder="WORKOUT NAME">
         ${live ? `<div class="gym-clock"><b id="gclock">${fmt((Date.now() - d.start) / 1000)}</b><span>ELAPSED</span></div>` : `<button class="gym-clock" data-a="gdur"><b>${fmtMins(d.dur || 0)}</b><span>DURATION</span></button>`}</div>
+      ${d.prog ? `<div class="progchip">${ic('sliders')}<span>Week ${d.prog.week}${d.prog.deload ? ' · Deload week: lighter, fewer sets' : ''} · warm up 5 min, then 1–2 light sets of the first exercise</span></div>` : ''}
       ${editing || !live ? `<p class="sub" style="text-align:left;color:var(--muted);margin:-4px 2px 12px">${parseKey(d.date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</p>` : ''}
       ${d.exercises.map((ex, xi) => {
         const st = stats[ex.name];
         const lastSets = st.last ? st.last.sets : [];
         return `<div class="ex" data-xi="${xi}">
-          <div class="ex-h"><span class="n">${esc(ex.name)}</span><button data-a="exmenu" data-xi="${xi}" aria-label="Exercise options">${ic('more')}</button></div>
-          <div class="ex-last">${st.last ? `Last time: <b>${esc(summarizeSets(st.last.sets))}</b> · Best ${st.bestSet ? esc(setStr(st.bestSet)) : '—'}` : 'First time logging this. Nice!'}</div>
-          <div class="sets-head"><span style="text-align:center">SET</span><span>${wUnit().toUpperCase()}</span><span>REPS</span><span></span><span></span></div>
+          <div class="ex-h"><span class="n">${esc(ex.name)}</span><button data-a="guide" data-n="${esc(ex.name)}" aria-label="How to do it">${ic('info')}</button><button data-a="exmenu" data-xi="${xi}" aria-label="Exercise options">${ic('more')}</button></div>
+          ${ex.t ? Program.targetHtml(ex.t) : `<div class="ex-last">${st.last ? `Last time: <b>${esc(summarizeSets(st.last.sets))}</b> · Best ${st.bestSet ? esc(setStr(st.bestSet)) : '—'}` : 'First time logging this. Nice!'}</div>`}
+          <div class="sets-head"><span style="text-align:center">SET</span><span>${wUnit().toUpperCase()}</span><span>${ex.t && ex.t.timed ? 'SEC' : 'REPS'}</span><span></span><span></span></div>
           ${ex.sets.map((s, si) => {
-            const ph = lastSets[si] || lastSets[lastSets.length - 1] || null;
+            const ph0 = lastSets[si] || lastSets[lastSets.length - 1] || null;
+            const ph = ex.t ? { w: ex.t.sw != null ? ex.t.sw : (ph0 ? ph0.w : null), r: ph0 ? ph0.r : ex.t.lo } : ph0;
             return `<div class="setrow ${s.done ? 'done' : ''}">
               <span class="sn">${si + 1}</span>
               <input inputmode="decimal" data-xi="${xi}" data-si="${si}" data-f="w" value="${s.w != null ? esc(wOut(s.w)) : ''}" placeholder="${ph && ph.w ? esc(wOut(ph.w)) : ''}" aria-label="Weight">
@@ -1470,7 +1492,7 @@ function openGym({ title, entry, date } = {}) {
               ${ex.sets.length > 1 ? `<button class="rm" data-a="rmset" data-xi="${xi}" data-si="${si}" aria-label="Remove set">${ic('close')}</button>` : '<span></span>'}
             </div>`;
           }).join('')}
-          <div class="ex-add"><button data-a="addset" data-xi="${xi}">${ic('plus')}Add set</button></div>
+          <div class="ex-add"><button data-a="addset" data-xi="${xi}">${ic('plus')}Add set</button>${ex.t ? `<button data-a="exrest" data-s="${ex.t.rest}">${ic('pausebars')}Rest ${fmtShort(ex.t.rest)}</button>` : ''}</div>
         </div>`;
       }).join('')}
       <button class="addlink dashed" data-a="addex">${ic('plus')}<span>Add exercise</span></button>
@@ -1510,6 +1532,8 @@ function openGym({ title, entry, date } = {}) {
     switch (b.dataset.a) {
       case 'close': return close();
       case 'rest': return quickRestSheet();
+      case 'exrest': return startRest(+b.dataset.s);
+      case 'guide': return Program.guide(b.dataset.n);
       case 'gdur': return pickDuration('Duration', d.dur || 3600, v => { d.dur = v; paint(); }, { presets: [1800, 2700, 3600, 4500, 5400] });
       case 'menu': return menu(d.title || 'Workout', [
         ...(editing ? [{ icon: 'trash', label: 'Delete this workout', danger: true, run: async () => {
@@ -1548,7 +1572,7 @@ function openGym({ title, entry, date } = {}) {
   });
   paint();
   layer.appendChild(scr);
-  if (!editing && DB.get('gymdraft', null) && d.exercises.length) toast('Continuing your workout');
+  if (!editing && resumed && d.exercises.length) toast('Continuing your workout');
 }
 
 function pickExercise(cb) {
@@ -1602,7 +1626,7 @@ async function finishGym(d, { editing, live, close }) {
   });
   let dur = live ? Math.round((Date.now() - d.start) / 1000) : (d.dur || 3600);
   const existing = log.find(x => x.id === d.id);
-  const entry = { id: d.id, date: d.date, at: existing ? existing.at : (live ? d.start : parseKey(d.date).getTime() + 12 * 3600e3), title: (d.title || '').trim() || 'Gym workout', kind: 'gym', cat: 'Strength', dur, exercises, notes: existing ? existing.notes : (d.notes || ''), feel: existing ? existing.feel : 0, color: S.accent, auto: false, prs };
+  const entry = { id: d.id, date: d.date, at: existing ? existing.at : (live ? d.start : parseKey(d.date).getTime() + 12 * 3600e3), title: (d.title || '').trim() || 'Gym workout', kind: 'gym', cat: 'Strength', dur, exercises, notes: existing ? existing.notes : (d.notes || ''), feel: existing ? existing.feel : 0, color: S.accent, auto: false, prs, prog: d.prog || (existing && existing.prog) || undefined };
   const totalSets = exercises.reduce((a, x) => a + x.sets.length, 0);
   const volume = exercises.reduce((a, x) => a + x.sets.reduce((b, s) => b + (s.w || 0) * s.r, 0), 0);
   const s = sheet(`<h2>${editing ? 'Save workout' : 'Workout done 💪'}</h2>
@@ -1967,7 +1991,7 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'kranthi-workouts', version: 3, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, settings: S };
+  return { app: 'kranthi-workouts', version: 3, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
@@ -2007,11 +2031,13 @@ function importBackup() {
       const byId = (a, b) => { const m = new Map(); (a || []).forEach(x => m.set(x.id, x)); (b || []).forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; };
       if (v === 'replace') {
         timers = data.timers || []; log = data.log || []; body = data.body || []; plan = data.plan || null; customEx = data.customEx || [];
+        Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program');
         if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
       } else {
         timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
         customEx = [...new Set([...customEx, ...(data.customEx || [])])];
         if (!hasPlan() && data.plan) plan = data.plan;
+        if (!Program.current && data.program) { Program.current = data.program; DB.set('program', data.program); }
       }
       Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
@@ -2075,7 +2101,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a kranthi-backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 2.2 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 3.0 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2114,8 +2140,8 @@ function viewSettings() {
 
 /* ---------- boot ---------- */
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
-renderTabs();
-render();
+// program.js loads after this file, so draw the first screen once every script has run.
+window.addEventListener('DOMContentLoaded', () => { renderTabs(); render(); });
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });
 stepsInit();
 if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
