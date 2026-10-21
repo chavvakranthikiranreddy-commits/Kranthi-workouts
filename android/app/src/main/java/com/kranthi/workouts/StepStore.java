@@ -14,6 +14,7 @@ import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Handler;
+import android.os.SystemClock;
 
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -98,29 +99,50 @@ public final class StepStore {
     static synchronized void sample(Context ctx, float counter) {
         SharedPreferences p = prefs(ctx);
         String today = todayKey();
+        long now = System.currentTimeMillis();
         float last = p.getFloat("lastCounter", -1f);
+        long lastAt = p.getLong("lastSample", 0L);
+        // Some phones report 0 on the very first reading. Never use that as the starting point.
+        if (counter <= 0f && last < 0f) return;
         JSONObject d = days(ctx);
         int delta = 0;
-        if (last >= 0) {
+        if (last >= 0f && lastAt > 0L) {
             float diff = counter - last;
             // A smaller number means the phone restarted and the sensor began again from zero.
-            delta = Math.round(diff >= 0 ? diff : counter);
-            if (delta > 60000) delta = 0; // ignore impossible jumps
+            delta = Math.round(diff >= 0f ? diff : counter);
+            // Nobody walks more than about 4 steps a second. A bigger jump is a sensor glitch,
+            // so only move the starting point and do not add those steps.
+            long secs = Math.max(1L, (now - lastAt) / 1000L);
+            long maxPlausible = Math.max(300L, secs * 4L);
+            if (diff < 0f) maxPlausible = Math.min(maxPlausible, Math.max(300L, SystemClock.elapsedRealtime() / 1000L * 4L));
+            if (delta > maxPlausible || delta < 0) delta = 0;
         }
-        int total = d.optInt(today, 0) + Math.max(0, delta);
+        int total = d.optInt(today, 0) + delta;
         try {
             d.put(today, total);
             trim(d);
         } catch (Exception ignored) {
             // keep going with the old data
         }
-        p.edit().putFloat("lastCounter", counter).putString("days", d.toString()).putLong("lastSample", System.currentTimeMillis()).apply();
+        p.edit().putFloat("lastCounter", counter).putString("days", d.toString()).putLong("lastSample", now).apply();
 
         int goal = p.getInt("goal", 8000);
         if (goal > 0 && total >= goal && !today.equals(p.getString("notified", ""))) {
             p.edit().putString("notified", today).apply();
             notifyGoal(ctx, total, goal);
         }
+    }
+
+    /** Clears today's count and starts again from the next sensor reading. */
+    static synchronized void resetToday(Context ctx) {
+        SharedPreferences p = prefs(ctx);
+        JSONObject d = days(ctx);
+        try {
+            d.put(todayKey(), 0);
+        } catch (Exception ignored) {
+            // nothing to clear
+        }
+        p.edit().putString("days", d.toString()).putFloat("lastCounter", -1f).putLong("lastSample", 0L).remove("notified").apply();
     }
 
     private static void trim(JSONObject d) {

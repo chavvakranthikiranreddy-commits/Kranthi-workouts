@@ -77,6 +77,12 @@ public class StepsPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void resetToday(PluginCall call) {
+        StepStore.resetToday(getContext());
+        refreshInto(call);
+    }
+
+    @PluginMethod
     public void refresh(PluginCall call) {
         refreshInto(call);
     }

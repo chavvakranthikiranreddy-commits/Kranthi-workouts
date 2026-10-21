@@ -418,8 +418,14 @@ async function stepsInit() {
     const st = await P.Steps.status();
     STP.avail = !!st.available; STP.granted = !!st.granted; STP.enabled = !!st.enabled && !!st.granted;
     P.Steps.setGoal({ goal: S.stepGoal }).catch(() => {});
-    if (STP.enabled) await stepsRefresh();
-    else if (currentTab === 'today' && !Run.cur) rerenderKeepScroll();
+    if (STP.enabled) {
+      await stepsRefresh();
+      // One-time repair: an earlier version could count the phone's whole since-restart total as today's steps.
+      if (!DB.get('stepfix1', false)) {
+        DB.set('stepfix1', true);
+        if (STP.today > 25000 && new Date().getHours() < 12) { await resetTodaySteps(true); toast('Fixed a step-count glitch. Today\'s steps start again from now.'); }
+      }
+    } else if (currentTab === 'today' && !Run.cur) rerenderKeepScroll();
   } catch (e) { /* ignore */ }
 }
 async function stepsRefresh() {
@@ -430,8 +436,9 @@ function mergeSteps(r) {
   if (!r) return;
   const k = dkey(new Date());
   const before = STP.days[k] || 0;
-  Object.entries(r.days || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); });
-  STP.today = Math.max(r.today || 0, STP.days[k] || 0); STP.days[k] = STP.today;
+  // The phone's own record wins for every day it has; older days from a restored backup stay as they are.
+  Object.entries(r.days || {}).forEach(([d, v]) => { STP.days[d] = v || 0; });
+  STP.today = r.today || 0; STP.days[k] = STP.today;
   STP.updated = Date.now();
   DB.set('steps', STP.days);
   if (before < S.stepGoal && STP.today >= S.stepGoal && before > 0) toast(`🎉 Step goal reached: ${fmtN(STP.today)} steps`);
@@ -451,6 +458,11 @@ async function enableSteps() {
     toast('Step counting is on. It counts from now on.');
     rerenderKeepScroll();
   } catch (e) { toast('Could not start step counting'); }
+}
+async function resetTodaySteps(silent) {
+  if (!P.Steps) return;
+  try { const r = await P.Steps.resetToday(); STP.days[dkey(new Date())] = 0; DB.set('steps', STP.days); mergeSteps(r); } catch (e) { /* ignore */ }
+  if (!silent) { toast('Today\'s steps reset. Counting from now.'); rerenderKeepScroll(); }
 }
 async function disableSteps() {
   if (P.Steps) { try { await P.Steps.stop(); } catch (e) { /* ignore */ } }
@@ -2088,6 +2100,7 @@ function viewSettings() {
     <div class="block">
       <button class="set-row" data-a="steps"><span class="st"><div class="t">Step counting</div><div class="s">${isNative ? (STP.enabled ? 'On. Saves your steps about every 15 minutes, even when the app is closed.' : 'Off. Uses the phone\'s step sensor with almost no battery.') : 'Works in the installed app'}</div></span><span class="toggle ${STP.enabled ? 'on' : ''}"></span></button>
       <button class="set-row" data-a="goal"><span class="st"><div class="t">Daily step goal</div><div class="s">You get a notification when you reach it</div></span><span class="val">${fmtN(S.stepGoal)}</span>${ic('chevR', 'chev')}</button>
+      ${STP.enabled ? `<button class="set-row" data-a="stepreset"><span class="st"><div class="t">Reset today's steps</div><div class="s">Use this if today's number looks wrong. Counting restarts from now.</div></span>${ic('reset')}</button>` : ''}
       <button class="set-row" data-a="height"><span class="st"><div class="t">Height</div><div class="s">For distance and calories</div></span><span class="val">${S.height ? `${lOut(S.height)} ${lUnit().toUpperCase()}` : 'SET'}</span>${ic('chevR', 'chev')}</button>
     </div>
     <div class="sect">Units & calendar</div>
@@ -2101,7 +2114,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a kranthi-backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 3.0 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 3.0.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2128,6 +2141,7 @@ function viewSettings() {
       case 'restore': return importBackup();
       case 'steps': return STP.enabled ? (await confirmBox('Turn off step counting?', 'Steps already saved stay in your history.', [{ label: 'Turn off', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) && disableSteps() : enableSteps();
       case 'goal': return pickStepGoal();
+      case 'stepreset': if (await confirmBox('Reset today\'s steps?', `Today shows ${fmtN(STP.today)} steps. This sets today to 0 and counts from now.`, [{ label: 'Reset', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) await resetTodaySteps(); return;
       case 'height': await askHeight(); return rerenderKeepScroll();
       case 'exact':
         if (P.LocalNotifications) {
