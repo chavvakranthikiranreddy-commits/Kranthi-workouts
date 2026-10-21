@@ -539,6 +539,103 @@ function startRest(sec) {
   startTimer(mk({ id: 'quick', name: `Rest ${fmtShort(sec)}`, prepare: 0, color: PHASE.cyclerest, sets: [{ id: 's', intervals: [iv('Rest', 'rest', sec)], rounds: 1 }], cycles: 1, noLog: true }), { autostart: true });
 }
 
+/* ---------- illustrations & quotes ---------- */
+const QUOTES = {
+  train: [
+    'Strong is built one rep at a time.',
+    'Show up. Even on the days you don’t feel like it.',
+    'The only bad workout is the one you skipped.',
+    'Small steps every day add up to big changes.',
+    'Discipline is choosing what you want most over what you want now.',
+    'Be stronger than your excuses.',
+    'Today’s effort is tomorrow’s strength.',
+    'One more rep. One more round. One more day.',
+    'Consistency beats intensity.',
+    'Sweat now, shine later.',
+    'You don’t have to be extreme, just consistent.',
+    'Your only competition is who you were yesterday.',
+    'Make your body the strongest thing you own.',
+    'Start where you are. Use what you have. Do what you can.',
+  ],
+  rest: [
+    'Rest is part of the plan.',
+    'Muscles grow while you recover.',
+    'Recharge today, return stronger tomorrow.',
+    'Sleep, eat well, come back hungry.',
+    'Slow down today so you can speed up tomorrow.',
+  ],
+  progress: [
+    'Progress, not perfection.',
+    'Fall in love with the process.',
+    'The summit is reached one step at a time.',
+    'Look how far you’ve come.',
+    'Every session is a vote for the person you want to be.',
+  ],
+  done: [
+    'Done. That’s how strong people are made.',
+    'Another one in the bank.',
+    'You showed up. That’s the win.',
+    'Proud of that one. Recover well.',
+    'Future you says thank you.',
+  ],
+};
+const dayIndex = (n, salt = 0) => { const d = today0(); const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5); return (doy + salt) % n; };
+const pickQuote = (set, salt) => QUOTES[set][dayIndex(QUOTES[set].length, salt)];
+
+// Original vector scenes drawn in code. They use the accent colour, so they follow the theme picker.
+const ART = {
+  summit: g => `<defs><linearGradient id="s${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0A1622"/><stop offset="1" stop-color="#1B3446"/></linearGradient></defs>
+    <rect width="400" height="180" fill="url(#s${g})"/>
+    <circle cx="318" cy="64" r="30" fill="var(--accent)" opacity=".9"/><circle cx="318" cy="64" r="46" fill="var(--accent)" opacity=".12"/>
+    ${[[40, 30], [120, 18], [210, 40], [372, 22], [262, 14], [160, 52]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.4" fill="#fff" opacity=".7"/>`).join('')}
+    <path d="M150 180 L260 70 L300 108 L335 82 L400 140 L400 180 Z" fill="#15222E"/>
+    <path d="M248 82 L260 70 L272 82 L264 80 L258 86 Z" fill="#E9F1F6" opacity=".9"/>
+    <path d="M260 70 L260 44" stroke="#E9F1F6" stroke-width="2"/><path d="M260 44 L278 50 L260 56 Z" fill="var(--accent)"/>
+    <path d="M0 180 L0 120 L60 92 L118 128 L170 104 L240 150 L300 132 L400 170 L400 180 Z" fill="#0C141C"/>`,
+  runner: g => `<defs><linearGradient id="r${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#170E2A"/><stop offset=".75" stop-color="#3A1C3D"/><stop offset="1" stop-color="#4A2440"/></linearGradient></defs>
+    <rect width="400" height="180" fill="url(#r${g})"/>
+    <circle cx="300" cy="132" r="58" fill="var(--accent)" opacity=".9"/><circle cx="300" cy="132" r="80" fill="var(--accent)" opacity=".1"/>
+    <rect y="132" width="400" height="48" fill="#120A1C"/>
+    <path d="M230 180 L292 132 L308 132 L370 180 Z" fill="#1E1229"/><path d="M299 180 L300 136" stroke="var(--accent)" stroke-width="2" stroke-dasharray="6 7" opacity=".7"/>
+    <g stroke="#0B0612" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <circle cx="290" cy="76" r="8" fill="#0B0612" stroke="none"/>
+      <path d="M287 87 L281 108"/><path d="M286 92 L298 100 L306 94"/><path d="M286 92 L274 98 L268 108"/>
+      <path d="M281 108 L294 118 L292 132"/><path d="M281 108 L270 120 L258 118"/></g>`,
+  barbell: g => `<defs><radialGradient id="b${g}" cx=".75" cy=".3" r=".9"><stop offset="0" stop-color="var(--accent)" stop-opacity=".45"/><stop offset=".55" stop-color="#121821" stop-opacity="1"/><stop offset="1" stop-color="#0B0E13"/></radialGradient></defs>
+    <rect width="400" height="180" fill="url(#b${g})"/>
+    ${[0, 1, 2, 3, 4, 5].map(i => `<path d="M${200 + i * 40} 0 L${120 + i * 40} 180" stroke="#fff" stroke-opacity=".035" stroke-width="16"/>`).join('')}
+    <g transform="rotate(-8 290 100)">
+      <rect x="170" y="96" width="240" height="7" rx="3.5" fill="#C9D2DB"/>
+      <rect x="208" y="58" width="16" height="84" rx="4" fill="var(--accent)"/><rect x="226" y="68" width="12" height="64" rx="4" fill="#E9EEF2"/><rect x="198" y="90" width="10" height="20" rx="2" fill="#9AA6B2"/>
+      <rect x="352" y="58" width="16" height="84" rx="4" fill="var(--accent)"/><rect x="338" y="68" width="12" height="64" rx="4" fill="#E9EEF2"/><rect x="368" y="90" width="10" height="20" rx="2" fill="#9AA6B2"/>
+    </g>`,
+  rings: g => `<defs><linearGradient id="g${g}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B1118"/><stop offset="1" stop-color="#16202B"/></linearGradient></defs>
+    <rect width="400" height="180" fill="url(#g${g})"/>
+    ${[78, 60, 44, 30, 18].map((r, i) => `<circle cx="310" cy="90" r="${r}" fill="none" stroke="var(--accent)" stroke-width="${i === 0 ? 3 : 2}" opacity="${0.25 + i * 0.17}" ${i % 2 ? '' : `stroke-dasharray="${r * 4.2} ${r * 2}"`} transform="rotate(${i * 50 - 90} 310 90)"/>`).join('')}
+    <circle cx="310" cy="90" r="7" fill="var(--accent)"/>
+    ${[[214, 36], [380, 160], [236, 150], [390, 28], [180, 96]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2.2" fill="var(--accent)" opacity=".55"/>`).join('')}`,
+  stairs: g => `<defs><linearGradient id="t${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0D1A1F"/><stop offset="1" stop-color="#173039"/></linearGradient></defs>
+    <rect width="400" height="180" fill="url(#t${g})"/>
+    <circle cx="352" cy="52" r="40" fill="var(--accent)" opacity=".12"/>
+    ${[0, 1, 2, 3, 4].map(i => `<rect x="${196 + i * 38}" y="${150 - i * 20}" width="${210 - i * 38}" height="${40 + i * 20}" fill="#0A1418" opacity="${1 - i * .1}"/><rect x="${196 + i * 38}" y="${150 - i * 20}" width="38" height="3" fill="var(--accent)" opacity="${.35 + i * .15}"/>`).join('')}
+    <path d="M384 70 L384 34" stroke="#E9F1F6" stroke-width="2.5"/><path d="M384 34 L398 40 L384 46 Z" fill="var(--accent)"/>
+    <g stroke="#E9F1F6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="356" cy="40" r="5.5" fill="#E9F1F6" stroke="none"/><path d="M355 48 L352 60 L346 70"/><path d="M352 60 L360 70"/><path d="M354 52 L366 44"/><path d="M354 52 L344 56"/></g>`,
+  night: g => `<defs><linearGradient id="n${g}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060A16"/><stop offset="1" stop-color="#18213F"/></linearGradient></defs>
+    <rect width="400" height="180" fill="url(#n${g})"/>
+    ${[[30, 20], [90, 50], [150, 18], [200, 70], [250, 30], [370, 60], [330, 14], [120, 90], [60, 110], [390, 110]].map(([x, y], i) => `<circle cx="${x}" cy="${y}" r="${i % 3 ? 1.2 : 1.8}" fill="#fff" opacity="${i % 2 ? .5 : .85}"/>`).join('')}
+    <circle cx="306" cy="66" r="30" fill="#F4F1E6"/><circle cx="320" cy="56" r="27" fill="#0B1022"/>
+    <circle cx="306" cy="66" r="52" fill="var(--accent)" opacity=".08"/>
+    <path d="M0 180 L0 140 C70 116 120 150 200 132 C270 116 330 140 400 124 L400 180 Z" fill="#0A1020"/>
+    <path d="M0 180 L0 160 C90 146 170 170 260 156 C320 148 360 160 400 152 L400 180 Z" fill="#070B17"/>`,
+};
+let artSeq = 0;
+function artCard(scene, quote, { small = false, tag = '' } = {}) {
+  const g = 'a' + (++artSeq);
+  return `<figure class="art ${small ? 'small' : ''}"><svg viewBox="0 0 400 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${ART[scene](g)}</svg>
+    <figcaption>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}<q>${esc(quote)}</q></figcaption></figure>`;
+}
+const TRAIN_SCENES = ['summit', 'runner', 'barbell', 'rings', 'stairs'];
+
 /* ---------- tabs / views ---------- */
 let currentTab = 'today';
 let timersSeg = 'mine';
@@ -638,6 +735,7 @@ function viewToday() {
       const done = st.days.has(b.k);
       return `<div class="w ${done ? 'done' : ''} ${b.today ? 'today' : ''} ${planned && !done ? 'plan' : ''}">${WD[b.dt.getDay()].slice(0, 2)}<i>${done ? ic('check') : b.dt.getDate()}</i></div>`;
     }).join('')}</div>
+    ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
     ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
     <div class="sect">Today's plan</div>
     <div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div>
@@ -1121,6 +1219,7 @@ function showFinish(R, entry, ms) {
     <div class="big">${entry ? (entry.partial ? 'WORKOUT SAVED' : 'WORKOUT COMPLETE') : (R.timer.noLog ? 'REST OVER' : 'TIME’S UP')}</div>
     <div class="tt">${esc(R.timer.name)}</div>
     <div class="meta">${fmt(ms / 1000)}${entry ? ` · added to ${new Date().toLocaleDateString(undefined, { weekday: 'long' })} in your calendar` : ''}</div>
+    ${entry ? artCard('summit', QUOTES.done[Math.floor(Math.random() * QUOTES.done.length)], { small: true }) : `<p class="quote-line">${esc(R.timer.noLog ? 'Breathe. Reset. Go again.' : pickQuote('train'))}</p>`}
     ${entry ? `<div class="sect" style="justify-content:center">How did it feel?</div>
       <div class="feel">${FEEL.map((x, i) => `<button data-f="${i + 1}" aria-label="${x.t}">${x.e}</button>`).join('')}</div>
       <textarea class="field body" id="fnote" placeholder="Notes (optional): weights, PRs, how you felt…">${esc(entry.notes)}</textarea>` : ''}
@@ -1226,7 +1325,7 @@ function openGym({ title, entry, date } = {}) {
         </div>`;
       }).join('')}
       <button class="addlink dashed" data-a="addex">${ic('plus')}<span>Add exercise</span></button>
-      ${!d.exercises.length ? `<div class="empty" style="padding:10px 20px">Add your first exercise. The app remembers your last weights and reps and marks new personal records.</div>` : ''}
+      ${!d.exercises.length ? `${artCard('barbell', pickQuote('train', 5), { small: true })}<div class="empty" style="padding:10px 20px">Add your first exercise. The app remembers your last weights and reps and marks new personal records.</div>` : ''}
     `;
   };
 
@@ -1359,6 +1458,7 @@ async function finishGym(d, { editing, live, close }) {
   const volume = exercises.reduce((a, x) => a + x.sets.reduce((b, s) => b + (s.w || 0) * s.r, 0), 0);
   const s = sheet(`<h2>${editing ? 'Save workout' : 'Workout done 💪'}</h2>
     <p class="sub">${exercises.length} exercises · ${totalSets} sets${volume ? ` · ${Math.round(S.unit === 'lb' ? volume * KG_LB : volume).toLocaleString()} ${wUnit()} lifted` : ''}</p>
+    <p class="quote-line" style="margin-top:-8px">${esc(QUOTES.done[Math.floor(Math.random() * QUOTES.done.length)])}</p>
     ${prs.length ? `<div class="prs">🏆 <b>New personal record${prs.length > 1 ? 's' : ''}</b><br>${prs.map(esc).join('<br>')}</div>` : ''}
     <div class="block"><button class="row tap" data-a="dur"><span class="ri" style="color:var(--accent-text)">${ic('stopwatch')}</span><span class="rt"><div class="t">Duration</div></span><span class="rv" id="fdur" style="font-size:34px">${fmtMins(dur)}</span>${ic('chevR', 'chev')}</button></div>
     <div class="sect" style="justify-content:center;margin-top:8px">How did it feel?</div>
@@ -1422,7 +1522,7 @@ function viewCalendar() {
       <div class="cal-grid">${[0, 1, 2, 3, 4, 5, 6].map(i => `<div class="wd">${WD[(i + S.weekStart) % 7]}</div>`).join('')}${cells.join('')}</div>
     </div>
     <div class="sect"><span>${esc(selLabel)}</span><span style="text-transform:none;letter-spacing:0">${dayEntries.length ? `${dayEntries.length} · ${fmtMins(dayEntries.reduce((s, x) => s + x.dur, 0))}` : ''}</span></div>
-    <div id="entries">${dayEntries.map(entryCard).join('') || `<div class="empty" style="padding:16px 20px 20px">No workouts on this day.</div>`}</div>
+    <div id="entries">${dayEntries.map(entryCard).join('') || (calSel === todayK ? `<div style="margin-bottom:12px">${artCard('runner', pickQuote('train', 7), { small: true })}</div>` : `<div class="empty" style="padding:16px 20px 20px">No workouts on this day.</div>`)}</div>
     <button class="addday" data-a="add">${ic('plus')}Add workout for ${calSel === todayK ? 'today' : esc(selDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))}</button>
   </div>`;
   view.querySelector('.page').addEventListener('click', e => {
@@ -1542,7 +1642,6 @@ function viewProgress() {
     const ref = bw.filter(x => x.at <= lb.at - 25 * 864e5).pop() || bw[0];
     if (ref && ref !== lb) { const dlt = lb.kg - ref.kg; const dd = Math.round((lb.at - ref.at) / 864e5); chg = `<b class="${dlt > 0 ? 'up' : 'down'}">${dlt > 0 ? '▲' : dlt < 0 ? '▼' : ''} ${wOut(Math.abs(dlt))} ${wUnit()}</b> in ${dd} days`; }
   }
-  const lastMeas = body.slice().sort((a, b) => a.at - b.at).filter(x => x.waist || x.chest).pop();
   const bwPts = bw.filter(x => x.at >= Date.now() - 180 * 864e5).map(x => ({ t: x.at, v: S.unit === 'lb' ? x.kg * KG_LB : x.kg }));
 
   // Records
@@ -1550,7 +1649,8 @@ function viewProgress() {
   const recs = names.map(n => ({ n, st: exerciseStats(n) })).filter(r => r.st.sessions.length);
 
   view.innerHTML = topbar('Progress') + `<div class="page">
-    <div class="sect" style="margin-top:4px">${today.getFullYear()} so far</div>
+    ${artCard('stairs', pickQuote('progress'), { small: true })}
+    <div class="sect">${today.getFullYear()} so far</div>
     <div class="yr">
       <div class="stat"><div class="k">Workouts</div><div class="v">${yr.length}</div></div>
       <div class="stat"><div class="k">Active days</div><div class="v">${yrDays}</div></div>
@@ -1562,11 +1662,18 @@ function viewProgress() {
     <div class="sect"><span>Body weight</span><button class="btn sm" data-a="bw" style="background:var(--accent);color:var(--accent-ink)">${ic('plus')}Log</button></div>
     <div class="chart-card">
       ${lb ? `<div class="top"><div><div class="k">Latest · ${esc(shortDate(lb.at))}</div><div class="big">${wOut(lb.kg)}<small>${wUnit()}</small></div>${chg ? `<div class="chg">${chg}</div>` : ''}</div>
-        ${lastMeas ? `<div style="text-align:right">${lastMeas.waist ? `<div class="k">Waist</div><div style="font-family:var(--display);font-size:24px">${lOut(lastMeas.waist)} ${lUnit()}</div>` : ''}${lastMeas.chest ? `<div class="k" style="margin-top:4px">Chest</div><div style="font-family:var(--display);font-size:24px">${lOut(lastMeas.chest)} ${lUnit()}</div>` : ''}</div>` : ''}</div>
+</div>
         ${bwPts.length > 1 ? lineChart(bwPts) : '<div class="s" style="color:var(--muted);font-size:13px;margin-top:10px">Log your weight again on another day to see the trend line.</div>'}
-        <button class="btn ghost" data-a="bwhist" style="height:40px;margin-top:6px">History (${bw.length})</button>`
+        <button class="btn ghost" data-a="bwhist" style="height:40px;margin-top:6px">Full body log (${body.length})</button>`
         : `<div class="empty" style="padding:10px 6px"><b>No weigh-ins yet</b>Log your weight once a week, same time of day, for a clean trend.</div>`}
     </div>
+    <div class="sect"><span>Measurements</span><span style="text-transform:none;letter-spacing:0">${lUnit()} · tap for chart</span></div>
+    <div class="meas-grid">${MEAS.map(([k, n]) => {
+      const rows = body.filter(x => x[k]).sort((a, b) => a.at - b.at);
+      const last = rows[rows.length - 1], first = rows[0];
+      const dl = last && first && last !== first ? last[k] - first[k] : null;
+      return `<button class="meas" data-meas="${k}" data-n="${n}"><span class="k">${n}</span><b>${last ? lOut(last[k]) : '—'}</b><span class="dl">${dl == null ? (last ? esc(shortDate(last.at)) : 'Not measured yet') : `${dl > 0 ? '▲' : dl < 0 ? '▼' : ''} ${lOut(Math.abs(dl))} since ${esc(shortDate(first.at))}`}</span></button>`;
+    }).join('')}</div>
     <div class="sect">Personal records</div>
     <div class="block" style="padding:0">${recs.length ? recs.map(r => `<button class="pr-row" data-ex="${esc(r.n)}"><span class="pn"><b>${esc(r.n)}</b><span>${r.st.sessions.length} session${r.st.sessions.length > 1 ? 's' : ''} · last ${esc(shortDate(r.st.last.at))}</span></span>
       <span class="pv"><b>${r.st.maxW ? `${wOut(r.st.maxW)}` : r.st.maxR}</b><span>${r.st.maxW ? `${wUnit()} × ${r.st.bestSet.r}` : 'reps'}</span></span></button>`).join('')
@@ -1575,6 +1682,7 @@ function viewProgress() {
   const hs = $('#heatsc'); if (hs) hs.scrollLeft = hs.scrollWidth;
   view.querySelector('.page').addEventListener('click', e => {
     const ex = e.target.closest('[data-ex]'); if (ex) return showExercise(ex.dataset.ex);
+    const ms = e.target.closest('[data-meas]'); if (ms) { const has = body.some(x => x[ms.dataset.meas]); return has ? showMeasure(ms.dataset.meas, ms.dataset.n) : openBodyEntry(null); }
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'bw') return openBodyEntry(null);
     if (b.dataset.a === 'bwhist') return bodyHistory();
@@ -1592,23 +1700,28 @@ function showExercise(name) {
     <div class="mini-list">${st.sessions.slice().reverse().slice(0, 15).map(s => `<div class="mrow"><span>${esc(parseKey(s.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }))}</span><b>${esc(summarizeSets(s.sets))}</b></div>`).join('')}</div>`);
 }
 
+const MEAS = [['chest', 'Chest'], ['arms', 'Arms'], ['waist', 'Waist'], ['thigh', 'Thigh']];
+const latestMeas = k => body.slice().sort((a, b) => a.at - b.at).filter(x => x[k]).pop();
+
 function openBodyEntry(x) {
   const isNew = !x;
-  const d = x ? clone(x) : { id: uid(), date: dkey(new Date()), at: Date.now(), kg: latestBody() ? latestBody().kg : null, waist: null, chest: null };
+  const d = x ? clone(x) : { id: uid(), date: dkey(new Date()), at: Date.now(), kg: latestBody() ? latestBody().kg : null };
   const s = sheet(`<h2>${isNew ? 'Log weight' : 'Edit weigh-in'}</h2>
     <p class="sub">${esc(parseKey(d.date).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' }))}</p>
     <div class="unit-in" style="margin-bottom:10px"><input class="field" id="bkg" inputmode="decimal" placeholder="WEIGHT" value="${d.kg != null ? esc(wOut(d.kg)) : ''}" style="font-size:40px;text-align:center"><span>${wUnit()}</span></div>
-    <div class="sect" style="margin-top:6px">Measurements (optional)</div>
-    <div class="unit-in" style="margin-bottom:8px"><input class="field body" id="bwa" inputmode="decimal" placeholder="Waist" value="${d.waist ? esc(lOut(d.waist)) : ''}"><span>${lUnit()}</span></div>
-    <div class="unit-in"><input class="field body" id="bch" inputmode="decimal" placeholder="Chest" value="${d.chest ? esc(lOut(d.chest)) : ''}"><span>${lUnit()}</span></div>
+    <div class="sect" style="margin-top:6px"><span>Measurements (optional)</span><span style="text-transform:none;letter-spacing:0">${lUnit()}</span></div>
+    <div class="meas-in">${MEAS.map(([k, n]) => { const last = latestMeas(k); return `<label><span>${n}</span><input class="field body" data-m="${k}" inputmode="decimal" placeholder="${last && isNew ? esc(lOut(last[k])) : '—'}" value="${d[k] ? esc(lOut(d[k])) : ''}"></label>`; }).join('')}</div>
+    <p class="hint">Grey numbers are your last measurements. Measure arms and thigh at the widest point, waist at the belly button.</p>
     <div class="btns ${isNew ? '' : 'two'}">${isNew ? '' : '<button class="btn danger" data-a="del">Delete</button>'}<button class="btn primary" data-a="save">Save</button></div>`);
   setTimeout(() => { const i = $('#bkg', s.el); i && i.select(); }, 250);
   s.el.addEventListener('click', async e => {
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'del') { body = body.filter(y => y.id !== d.id); saveBody(); s.close(); rerenderKeepScroll(); return; }
-    d.kg = wIn($('#bkg', s.el).value); d.waist = lIn($('#bwa', s.el).value); d.chest = lIn($('#bch', s.el).value);
-    if (d.kg == null && !d.waist && !d.chest) { toast('Enter your weight'); return; }
+    d.kg = wIn($('#bkg', s.el).value);
+    MEAS.forEach(([k]) => { d[k] = lIn($(`[data-m="${k}"]`, s.el).value); });
+    if (d.kg == null && !MEAS.some(([k]) => d[k])) { toast('Enter your weight or a measurement'); return; }
     if (d.kg != null && (d.kg < 20 || d.kg > 400)) { toast(`That weight looks off. Check the unit (${wUnit()}).`); return; }
+    if (MEAS.some(([k]) => d[k] != null && (d[k] < 10 || d[k] > 250))) { toast(`A measurement looks off. Check the unit (${lUnit()}).`); return; }
     if (isNew) { d.at = Date.now(); body.push(d); } else { const i = body.findIndex(y => y.id === d.id); if (i >= 0) body[i] = d; }
     saveBody(); s.close(); rerenderKeepScroll(); toast('Saved');
   });
@@ -1616,8 +1729,20 @@ function openBodyEntry(x) {
 
 function bodyHistory() {
   const rows = body.slice().sort((a, b) => b.at - a.at);
-  const s = sheet(`<h2>Weigh-ins</h2><div class="mini-list">${rows.map(x => `<button class="mrow" data-id="${x.id}"><span>${esc(parseKey(x.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }))}${x.waist ? ` · waist ${lOut(x.waist)} ${lUnit()}` : ''}</span><b>${x.kg != null ? `${wOut(x.kg)} ${wUnit()}` : '—'}</b></button>`).join('')}</div>`);
+  const s = sheet(`<h2>Body log</h2><div class="mini-list">${rows.map(x => {
+    const m = MEAS.filter(([k]) => x[k]).map(([k, n]) => `${n.toLowerCase()} ${lOut(x[k])}`).join(' · ');
+    return `<button class="mrow" data-id="${x.id}"><span>${esc(parseKey(x.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }))}${m ? `<br><small style="color:var(--muted)">${esc(m)} ${lUnit()}</small>` : ''}</span><b>${x.kg != null ? `${wOut(x.kg)} ${wUnit()}` : '—'}</b></button>`;
+  }).join('')}</div>`);
   s.el.addEventListener('click', e => { const r = e.target.closest('[data-id]'); if (!r) return; s.close(); openBodyEntry(body.find(x => x.id === r.dataset.id)); });
+}
+
+function showMeasure(k, name) {
+  const rows = body.filter(x => x[k]).sort((a, b) => a.at - b.at);
+  const pts = rows.map(x => ({ t: x.at, v: S.unit === 'lb' ? x[k] / 2.54 : x[k] }));
+  sheet(`<h2>${esc(name)}</h2><p class="sub">${rows.length} measurement${rows.length === 1 ? '' : 's'} · ${lUnit()}</p>
+    <div class="chart-card" style="padding:12px 10px 8px;background:var(--surface-2)">${pts.length > 1 ? lineChart(pts, { h: 140 }) : '<div style="color:var(--muted);font-size:13px;padding:10px 6px">Measure again on another day to see the trend.</div>'}</div>
+    <div class="sect">History</div>
+    <div class="mini-list">${rows.slice().reverse().map(x => `<div class="mrow"><span>${esc(parseKey(x.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }))}</span><b>${lOut(x[k])} ${lUnit()}</b></div>`).join('')}</div>`);
 }
 
 /* ---------- weekly plan editor ---------- */
@@ -1631,7 +1756,7 @@ function openPlanEditor() {
   const pl = $('#pl', scr);
   const order = [0, 1, 2, 3, 4, 5, 6].map(i => (i + S.weekStart) % 7);
   const paint = () => {
-    pl.innerHTML = `<p style="color:var(--muted);font-size:14px;line-height:1.5;margin:0 4px 14px">Add what you train each day. Turn on the bell to get a reminder at that time. ${isNative ? '' : '<br><b style="color:var(--text)">Reminders work in the installed app.</b>'}</p>` + order.map(dw => {
+    pl.innerHTML = artCard('rings', 'Plan the week. Then just follow the plan.', { small: true }) + `<p style="color:var(--muted);font-size:14px;line-height:1.5;margin:0 4px 14px">Add what you train each day. Turn on the bell to get a reminder at that time. ${isNative ? '' : '<br><b style="color:var(--text)">Reminders work in the installed app.</b>'}</p>` + order.map(dw => {
       const day = p[dw];
       return `<div class="dayblock">
         <div class="dayhead"><span class="d">${WDL[dw].toUpperCase()}</span><button class="restlbl" data-a="rest" data-d="${dw}">Rest day <span class="toggle sm ${day.rest ? 'on' : ''}"></span></button></div>
@@ -1778,7 +1903,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a kranthi-backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 2.0 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 2.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
