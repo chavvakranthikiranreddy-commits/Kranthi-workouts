@@ -1,0 +1,18 @@
+{
+  "appId": "com.kranthi.workouts",
+  "appName": "Kranthi Workouts",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#0D0F12"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_kw",
+      "iconColor": "#00E5FF"
+    }
+  }
+}
