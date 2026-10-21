@@ -42,6 +42,7 @@ const I = {
   timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M10 2.5h4M18.5 6.5l1.5-1.5"/>',
   run: '<circle cx="14.5" cy="4.5" r="2"/><path d="M8 21l3-6 3 2.5V22M6.5 11.5l2.5-3 4-1 3 3.5 3 1M11 15l1.8-5"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.4" fill="currentColor" stroke="none"/>',
+  feet: '<path d="M8.5 3.5c1.8 0 2.8 1.9 2.8 4.3S10 12 8.4 12 5.7 10.5 5.7 8.1 6.7 3.5 8.5 3.5zM6 14.5h5v1.7a2.5 2.5 0 0 1-5 0z"/><path d="M15.5 7.5c1.8 0 2.8 1.9 2.8 4.3S17 16 15.4 16s-2.7-1.5-2.7-3.9 1-4.6 2.8-4.6zM13 18.5h5v.5a2.5 2.5 0 0 1-5 0z"/>',
   chart: '<path d="M4 20h16"/><path d="M6 16l4-5 3.5 3L19 7"/><circle cx="19" cy="7" r="1.4" fill="currentColor" stroke="none"/>',
   gear: '<circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.5-2-3.5-2.4 1a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.5A7.5 7.5 0 0 0 7 6.5l-2.4-1-2 3.5 2 1.5a7.6 7.6 0 0 0 0 3l-2 1.5 2 3.5 2.4-1a7.5 7.5 0 0 0 2.6 1.5l.4 2.5h4l.4-2.5a7.5 7.5 0 0 0 2.6-1.5l2.4 1 2-3.5z"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
@@ -91,7 +92,7 @@ const Cap = window.Capacitor;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const P = {};
 if (isNative) {
-  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck']) {
+  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps']) {
     try { if (Cap.isPluginAvailable(n)) P[n] = Cap.registerPlugin(n); } catch (e) { /* plugin missing */ }
   }
 }
@@ -104,7 +105,7 @@ const DB = {
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, weekStart: 1, notifAsked: false, sound: 'classic', duck: true, theme: 'dark', accent: '#00E5FF', unit: 'kg', lastBackup: 0,
+  background: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'dark', accent: '#00E5FF', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
@@ -392,6 +393,7 @@ function onForeground() {
   BG.refreshExact();
   if (Run.cur) { Run.cur.resync = true; Run.tick(); if (Run.cur && Run.cur.running) Awake.on(); }
   if (Gym.cur) Gym.tickClock();
+  stepsRefresh();
   if (!Run.cur && !$('#layer > .screen') && currentTab === 'today') render();
 }
 document.addEventListener('visibilitychange', () => (document.hidden ? onBackground() : onForeground()));
@@ -399,6 +401,149 @@ if (P.App) {
   P.App.addListener('appStateChange', s => (s.isActive ? onForeground() : onBackground()));
   P.App.addListener('backButton', () => handleBack());
 }
+
+
+/* ---------- step counter ---------- */
+const STP = { avail: false, granted: false, enabled: false, today: 0, days: DB.get('steps', {}), updated: 0 };
+const fmtN = n => Math.round(n || 0).toLocaleString('en-IN');
+const strideM = () => (S.height ? S.height * 0.415 / 100 : 0.75);
+const stepsKm = n => (n || 0) * strideM() / 1000;
+const stepsKcal = n => { const lb = latestBody(); return stepsKm(n) * (lb ? lb.kg : 70) * 0.78; };
+const distStr = n => S.unit === 'lb' ? `${trim1(stepsKm(n) / 1.609)} mi` : `${trim1(stepsKm(n))} km`;
+const stepsOn = (k) => STP.days[k] || 0;
+
+async function stepsInit() {
+  if (!P.Steps) return;
+  try {
+    const st = await P.Steps.status();
+    STP.avail = !!st.available; STP.granted = !!st.granted; STP.enabled = !!st.enabled && !!st.granted;
+    P.Steps.setGoal({ goal: S.stepGoal }).catch(() => {});
+    if (STP.enabled) await stepsRefresh();
+    else if (currentTab === 'today' && !Run.cur) rerenderKeepScroll();
+  } catch (e) { /* ignore */ }
+}
+async function stepsRefresh() {
+  if (!P.Steps || !STP.enabled) return;
+  try { mergeSteps(await P.Steps.refresh()); } catch (e) { /* ignore */ }
+}
+function mergeSteps(r) {
+  if (!r) return;
+  const k = dkey(new Date());
+  const before = STP.days[k] || 0;
+  Object.entries(r.days || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); });
+  STP.today = Math.max(r.today || 0, STP.days[k] || 0); STP.days[k] = STP.today;
+  STP.updated = Date.now();
+  DB.set('steps', STP.days);
+  if (before < S.stepGoal && STP.today >= S.stepGoal && before > 0) toast(`🎉 Step goal reached: ${fmtN(STP.today)} steps`);
+  paintStepsCard();
+}
+async function enableSteps() {
+  if (!P.Steps) { toast('Step counting works in the installed app'); return; }
+  if (!STP.avail) { toast('This phone has no step sensor, so steps can\'t be counted'); return; }
+  try {
+    const p = await P.Steps.requestPermission();
+    if (!p.granted) { toast('Allow "Physical activity" for Kranthi Workouts in phone settings to count steps'); return; }
+    await BG.ensurePermission(true);
+    if (!S.height) await askHeight();
+    STP.granted = true; STP.enabled = true;
+    P.Steps.setGoal({ goal: S.stepGoal }).catch(() => {});
+    mergeSteps(await P.Steps.start());
+    toast('Step counting is on. It counts from now on.');
+    rerenderKeepScroll();
+  } catch (e) { toast('Could not start step counting'); }
+}
+async function disableSteps() {
+  if (P.Steps) { try { await P.Steps.stop(); } catch (e) { /* ignore */ } }
+  STP.enabled = false; rerenderKeepScroll();
+}
+function askHeight() {
+  return new Promise(res => {
+    let done = false;
+    const s = sheet(`<h2>Your height</h2><p class="sub">Used to work out distance from your steps.</p>
+      <div class="unit-in"><input class="field" id="hgt" inputmode="decimal" placeholder="${S.unit === 'lb' ? '68' : '172'}" value="${S.height ? esc(lOut(S.height)) : ''}" style="font-size:40px;text-align:center"><span>${lUnit()}</span></div>
+      <div class="btns two"><button class="btn" data-a="skip">Skip</button><button class="btn primary" data-a="ok">Save</button></div>`, { onClose: () => { if (!done) res(); } });
+    setTimeout(() => { const i = $('#hgt', s.el); i && i.focus(); }, 250);
+    s.el.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'ok') {
+        const v = lIn($('#hgt', s.el).value);
+        if (!v || v < 100 || v > 230) { toast(`Enter your height in ${lUnit()}`); return; }
+        S.height = v; saveSettings();
+      }
+      done = true; s.close(); res();
+    });
+  });
+}
+function pickStepGoal() {
+  const s = sheet(`<h2>Daily step goal</h2>
+    <div class="picker"><button class="pbtn" style="width:64px;height:64px" data-a="-">${ic('chevD')}</button><input class="pnum" id="sg" inputmode="numeric" style="width:170px;font-size:52px" value="${S.stepGoal}"><button class="pbtn" style="width:64px;height:64px" data-a="+">${ic('chevU')}</button></div>
+    <div class="presets">${[5000, 6000, 7500, 8000, 10000, 12000, 15000].map(g => `<button class="chip small" data-g="${g}">${fmtN(g)}</button>`).join('')}</div>
+    <div class="btns two"><button class="btn" data-a="c">Cancel</button><button class="btn primary" data-a="ok">Set</button></div>`);
+  const inp = $('#sg', s.el);
+  s.el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.g) { inp.value = b.dataset.g; return; }
+    const v = clamp(parseInt(inp.value, 10) || 8000, 1000, 50000);
+    if (b.dataset.a === '+' || b.dataset.a === '-') { inp.value = clamp(v + (b.dataset.a === '+' ? 500 : -500), 1000, 50000); return; }
+    if (b.dataset.a === 'c') return s.close();
+    if (b.dataset.a === 'ok') { S.stepGoal = v; saveSettings(); if (P.Steps) P.Steps.setGoal({ goal: v }).catch(() => {}); s.close(); rerenderKeepScroll(); toast(`Goal set to ${fmtN(v)} steps`); }
+  });
+}
+const SRING = 2 * Math.PI * 44;
+function stepsCardHtml() {
+  if (!STP.enabled) {
+    return `<div class="steps-card off"><span class="qi">${ic('feet')}</span><div style="flex:1;min-width:0"><b>Count your steps</b><span>${isNative ? (STP.avail || !P.Steps ? 'Counts in the background all day with almost no battery use.' : 'This phone has no step sensor.') : 'Step counting works in the installed app.'}</span></div><button class="go" data-a="steps-on">Turn on</button></div>`;
+  }
+  return `<button class="steps-card" data-a="steps-go" id="stepsCard">
+    <div class="sring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle class="bar" id="stRing" cx="50" cy="50" r="44" stroke-dasharray="${SRING}" stroke-dashoffset="${SRING}"/></svg>
+      <div class="sc">${ic('feet')}<b id="stN">0</b><span>of ${fmtN(S.stepGoal)}</span></div></div>
+    <div class="sinfo"><div><b id="stKm">0</b><span>${S.unit === 'lb' ? 'miles' : 'km'}</span></div><div><b id="stKc">0</b><span>kcal</span></div><div><b id="stPc">0%</b><span>of goal</span></div><small id="stUp"></small></div>
+  </button>`;
+}
+function paintStepsCard() {
+  const c = $('#stepsCard'); if (!c) return;
+  const n = STP.today || stepsOn(dkey(new Date()));
+  const pct = S.stepGoal ? n / S.stepGoal : 0;
+  $('#stN', c).textContent = fmtN(n);
+  $('#stRing', c).style.strokeDashoffset = (SRING * (1 - Math.min(1, pct))).toFixed(1);
+  $('#stKm', c).textContent = trim1(S.unit === 'lb' ? stepsKm(n) / 1.609 : stepsKm(n));
+  $('#stKc', c).textContent = fmtN(stepsKcal(n));
+  $('#stPc', c).textContent = Math.round(pct * 100) + '%';
+  c.classList.toggle('done', pct >= 1);
+  const ago = STP.updated ? Math.round((Date.now() - STP.updated) / 60000) : null;
+  $('#stUp', c).textContent = pct >= 1 ? 'Goal reached 🎉' : ago === null ? '' : ago < 1 ? 'Updated just now' : `Updated ${ago} min ago`;
+}
+setInterval(() => { if (appVisible && STP.enabled && currentTab === 'today' && !Run.cur) stepsRefresh(); }, 15000);
+
+function stepStats(nDays) {
+  const t = today0(); const arr = [];
+  for (let i = nDays - 1; i >= 0; i--) { const d = addDays(t, -i); arr.push({ d, k: dkey(d), v: stepsOn(dkey(d)) }); }
+  const withData = arr.filter(x => x.v > 0);
+  const total = arr.reduce((a, x) => a + x.v, 0);
+  const best = arr.reduce((a, x) => (x.v > a.v ? x : a), { v: 0 });
+  let streak = 0; let d = new Date(t); if (stepsOn(dkey(d)) < S.stepGoal) d = addDays(d, -1);
+  while (stepsOn(dkey(d)) >= S.stepGoal) { streak++; d = addDays(d, -1); }
+  return { arr, total, avg: withData.length ? total / withData.length : 0, best, goalDays: arr.filter(x => x.v >= S.stepGoal).length, streak };
+}
+function stepBars(arr) {
+  const W = 320, H = 150, L = 6, R = 6, T = 16, B = 18;
+  const max = Math.max(S.stepGoal * 1.15, ...arr.map(x => x.v));
+  const bw = (W - L - R) / arr.length;
+  const Y = v => T + (1 - v / max) * (H - T - B);
+  const gy = Y(S.stepGoal);
+  const week = arr.length <= 7;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Steps per day">
+    <line x1="${L}" x2="${W - R}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="4 4" opacity=".8"/>
+    ${arr.map((x, i) => {
+      const h = Math.max(2, (H - T - B) - (Y(x.v) - T)); const x0 = L + i * bw + bw * 0.18; const w = bw * 0.64;
+      const lbl = week ? WD[x.d.getDay()][0] : ((arr.length - 1 - i) % 5 === 0 ? `${x.d.getDate()}${x.d.getDate() <= 5 || i === 0 ? ' ' + MONTHS[x.d.getMonth()].slice(0, 3) : ''}` : '');
+      return `<rect x="${x0.toFixed(1)}" y="${(H - B - h).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}" rx="${Math.min(4, w / 2).toFixed(1)}" fill="var(--accent)" opacity="${x.v >= S.stepGoal ? 1 : x.v ? .45 : .15}"/>
+        ${lbl !== '' ? `<text class="lbl" x="${(x0 + w / 2).toFixed(1)}" y="${H - 4}" text-anchor="middle">${lbl}</text>` : ''}
+        ${week && x.v ? `<text class="lbl" x="${(x0 + w / 2).toFixed(1)}" y="${(H - B - h - 4).toFixed(1)}" text-anchor="middle">${x.v >= 1000 ? trim1(x.v / 1000) + 'k' : x.v}</text>` : ''}`;
+    }).join('')}
+  </svg>`;
+}
+let stepsRange = 'week';
 
 /* ---------- UI primitives ---------- */
 const layer = $('#layer');
@@ -735,6 +880,7 @@ function viewToday() {
       const done = st.days.has(b.k);
       return `<div class="w ${done ? 'done' : ''} ${b.today ? 'today' : ''} ${planned && !done ? 'plan' : ''}">${WD[b.dt.getDay()].slice(0, 2)}<i>${done ? ic('check') : b.dt.getDate()}</i></div>`;
     }).join('')}</div>
+    <div style="margin-top:12px">${stepsCardHtml()}</div>
     ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
     ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
     <div class="sect">Today's plan</div>
@@ -763,8 +909,11 @@ function viewToday() {
       case 'rest': return quickRestSheet();
       case 'weight': return openBodyEntry(null);
       case 'backup': return exportBackup();
+      case 'steps-on': return enableSteps();
+      case 'steps-go': return go('progress');
     }
   });
+  paintStepsCard();
 }
 
 function startPlanItem(it) {
@@ -1501,7 +1650,7 @@ function viewCalendar() {
   for (let i = 0; i < 42; i++) {
     const dt = addDays(start, i); const k = dkey(dt); const n = (byDay[k] || []).length;
     if (i >= 35 && dt.getMonth() !== m) break;
-    cells.push(`<button class="d ${dt.getMonth() !== m ? 'out' : ''} ${k === todayK ? 'today' : ''} ${n ? 'has' : ''} ${k === calSel ? 'sel' : ''}" data-k="${k}">${dt.getDate()}<span class="dots">${'<i></i>'.repeat(Math.min(n, 3))}</span></button>`);
+    cells.push(`<button class="d ${dt.getMonth() !== m ? 'out' : ''} ${k === todayK ? 'today' : ''} ${n ? 'has' : ''} ${k === calSel ? 'sel' : ''} ${stepsOn(k) >= S.stepGoal ? 'goal' : ''}" data-k="${k}">${dt.getDate()}<span class="dots">${'<i></i>'.repeat(Math.min(n, 3))}</span></button>`);
   }
   const dayEntries = (byDay[calSel] || []).slice().sort((a, b) => a.at - b.at);
   const selDate = parseKey(calSel);
@@ -1520,8 +1669,10 @@ function viewCalendar() {
     <div class="cal">
       <div class="cal-head"><button data-a="pm" aria-label="Previous month">${ic('chevL')}</button><span class="m">${MONTHS[m]} ${y}</span><button data-a="nm" aria-label="Next month">${ic('chevR')}</button></div>
       <div class="cal-grid">${[0, 1, 2, 3, 4, 5, 6].map(i => `<div class="wd">${WD[(i + S.weekStart) % 7]}</div>`).join('')}${cells.join('')}</div>
+      ${Object.keys(STP.days).length ? `<div class="cal-key"><span><i class="k1"></i>Workout</span><span><i class="k2"></i>Step goal reached</span></div>` : ''}
     </div>
     <div class="sect"><span>${esc(selLabel)}</span><span style="text-transform:none;letter-spacing:0">${dayEntries.length ? `${dayEntries.length} · ${fmtMins(dayEntries.reduce((s, x) => s + x.dur, 0))}` : ''}</span></div>
+    ${stepsOn(calSel) ? `<div class="daysteps">${ic('feet')}<b>${fmtN(stepsOn(calSel))} steps</b><span>${distStr(stepsOn(calSel))} · ${fmtN(stepsKcal(stepsOn(calSel)))} kcal${stepsOn(calSel) >= S.stepGoal ? ' · goal reached ✓' : ` · ${Math.round(stepsOn(calSel) / S.stepGoal * 100)}% of goal`}</span></div>` : ''}
     <div id="entries">${dayEntries.map(entryCard).join('') || (calSel === todayK ? `<div style="margin-bottom:12px">${artCard('runner', pickQuote('train', 7), { small: true })}</div>` : `<div class="empty" style="padding:16px 20px 20px">No workouts on this day.</div>`)}</div>
     <button class="addday" data-a="add">${ic('plus')}Add workout for ${calSel === todayK ? 'today' : esc(selDate.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }))}</button>
   </div>`;
@@ -1650,6 +1801,18 @@ function viewProgress() {
 
   view.innerHTML = topbar('Progress') + `<div class="page">
     ${artCard('stairs', pickQuote('progress'), { small: true })}
+    <div class="sect"><span>Steps</span>${STP.enabled ? `<span style="text-transform:none;letter-spacing:0">Goal ${fmtN(S.stepGoal)}</span>` : ''}</div>
+    ${(() => {
+      if (!STP.enabled && !Object.keys(STP.days).length) return stepsCardHtml();
+      const st = stepStats(stepsRange === 'week' ? 7 : 30);
+      return `<div class="chart-card">
+        <div class="seg" style="background:var(--surface-2);margin:0 0 6px"><button class="${stepsRange === 'week' ? 'on' : ''}" data-srange="week">7 days</button><button class="${stepsRange === 'month' ? 'on' : ''}" data-srange="month">30 days</button></div>
+        ${stepBars(st.arr)}
+        <div class="sstats"><div><b>${fmtN(st.avg)}</b><span>Daily average</span></div><div><b>${fmtN(st.best.v)}</b><span>Best${st.best.d ? ' · ' + esc(shortDate(st.best.d)) : ''}</span></div><div><b>${st.goalDays}/${st.arr.length}</b><span>Goal days</span></div><div><b>${st.streak}</b><span>Goal streak</span></div></div>
+        <div class="s" style="color:var(--muted);font-size:13px;margin-top:10px">${fmtN(st.total)} steps · ${distStr(st.total)} · ${fmtN(stepsKcal(st.total))} kcal in ${st.arr.length} days</div>
+        ${STP.enabled ? '' : `<div style="margin-top:10px">${stepsCardHtml()}</div>`}
+      </div>`;
+    })()}
     <div class="sect">${today.getFullYear()} so far</div>
     <div class="yr">
       <div class="stat"><div class="k">Workouts</div><div class="v">${yr.length}</div></div>
@@ -1682,6 +1845,8 @@ function viewProgress() {
   const hs = $('#heatsc'); if (hs) hs.scrollLeft = hs.scrollWidth;
   view.querySelector('.page').addEventListener('click', e => {
     const ex = e.target.closest('[data-ex]'); if (ex) return showExercise(ex.dataset.ex);
+    const sr = e.target.closest('[data-srange]'); if (sr) { stepsRange = sr.dataset.srange; return rerenderKeepScroll(); }
+    const so = e.target.closest('[data-a="steps-on"]'); if (so) return enableSteps();
     const ms = e.target.closest('[data-meas]'); if (ms) { const has = body.some(x => x[ms.dataset.meas]); return has ? showMeasure(ms.dataset.meas, ms.dataset.n) : openBodyEntry(null); }
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'bw') return openBodyEntry(null);
@@ -1802,7 +1967,7 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'kranthi-workouts', version: 2, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, settings: S };
+  return { app: 'kranthi-workouts', version: 3, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
@@ -1848,6 +2013,7 @@ function importBackup() {
         customEx = [...new Set([...customEx, ...(data.customEx || [])])];
         if (!hasPlan() && data.plan) plan = data.plan;
       }
+      Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
       applyTheme(); scheduleReminders(true); render();
       toast(v === 'replace' ? 'Backup restored' : 'Backup merged');
@@ -1892,6 +2058,12 @@ function viewSettings() {
       ${isNative ? `<button class="set-row" data-a="exact"><span class="st"><div class="t">On-time alerts</div><div class="s">Allow "Alarms & reminders" so background alerts fire to the second</div></span><span class="val" id="exv">${BG.exact === true ? 'ON' : BG.exact === false ? 'ALLOW' : '—'}</span></button>` : ''}
       <button class="set-row" data-a="plan"><span class="st"><div class="t">Weekly plan</div><div class="s">${hasPlan() ? 'Edit your days and reminder times' : 'Plan your week and get reminders'}</div></span>${ic('chevR', 'chev')}</button>
     </div>
+    <div class="sect">Steps</div>
+    <div class="block">
+      <button class="set-row" data-a="steps"><span class="st"><div class="t">Step counting</div><div class="s">${isNative ? (STP.enabled ? 'On. Saves your steps about every 15 minutes, even when the app is closed.' : 'Off. Uses the phone\'s step sensor with almost no battery.') : 'Works in the installed app'}</div></span><span class="toggle ${STP.enabled ? 'on' : ''}"></span></button>
+      <button class="set-row" data-a="goal"><span class="st"><div class="t">Daily step goal</div><div class="s">You get a notification when you reach it</div></span><span class="val">${fmtN(S.stepGoal)}</span>${ic('chevR', 'chev')}</button>
+      <button class="set-row" data-a="height"><span class="st"><div class="t">Height</div><div class="s">For distance and calories</div></span><span class="val">${S.height ? `${lOut(S.height)} ${lUnit().toUpperCase()}` : 'SET'}</span>${ic('chevR', 'chev')}</button>
+    </div>
     <div class="sect">Units & calendar</div>
     <div class="block">
       <div class="set-row"><span class="st"><div class="t">Units</div><div class="s">Weight and measurements</div></span>
@@ -1903,7 +2075,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a kranthi-backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 2.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 2.2 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -1928,6 +2100,9 @@ function viewSettings() {
       case 'plan': return openPlanEditor();
       case 'backup': return exportBackup();
       case 'restore': return importBackup();
+      case 'steps': return STP.enabled ? (await confirmBox('Turn off step counting?', 'Steps already saved stay in your history.', [{ label: 'Turn off', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) && disableSteps() : enableSteps();
+      case 'goal': return pickStepGoal();
+      case 'height': await askHeight(); return rerenderKeepScroll();
       case 'exact':
         if (P.LocalNotifications) {
           try { const r = await P.LocalNotifications.changeExactNotificationSetting(); BG.exact = r.exact_alarm === 'granted'; } catch (err) { /* ignore */ }
@@ -1942,6 +2117,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && Aw
 renderTabs();
 render();
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });
+stepsInit();
 if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

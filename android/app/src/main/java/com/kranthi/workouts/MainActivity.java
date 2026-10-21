@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AudioDuckPlugin.class);
+        registerPlugin(StepsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
