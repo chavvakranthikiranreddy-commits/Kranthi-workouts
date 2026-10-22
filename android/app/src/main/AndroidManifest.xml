@@ -35,7 +35,27 @@
                 <data android:mimeType="image/*" />
             </intent-filter>
 
+            <!-- PhonePe statement PDF -> Share -> Muscle & Money -->
+            <intent-filter android:label="Import statement">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
         </activity>
+
+        <!-- Home-screen widget -->
+        <receiver
+            android:name=".MMWidget"
+            android:exported="false"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/mm_widget_info" />
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

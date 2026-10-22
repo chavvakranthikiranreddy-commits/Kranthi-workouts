@@ -37,6 +37,7 @@ public class OcrPlugin extends Plugin {
 
     private static final int MAX_SIDE = 2400;
     private static final int THUMB_WIDTH = 720;
+    private static final int MAX_PDF = 15 * 1024 * 1024;
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final List<JSObject> pending = new ArrayList<>();
@@ -53,7 +54,28 @@ public class OcrPlugin extends Plugin {
         if (intent == null) return;
         String type = intent.getType();
         String action = intent.getAction();
-        if (type == null || !type.startsWith("image/")) return;
+        if (type == null) return;
+        if (type.equals("application/pdf") && Intent.ACTION_SEND.equals(action)) {
+            final Uri pdf = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+            if (pdf == null) return;
+            intent.setAction(null);
+            io.execute(() -> {
+                JSObject r = new JSObject();
+                try {
+                    byte[] bytes = readBytes(pdf, MAX_PDF);
+                    if (bytes == null) r.put("error", "Could not open this PDF");
+                    else r.put("pdf", Base64.encodeToString(bytes, Base64.NO_WRAP));
+                } catch (Exception e) {
+                    r.put("error", "Could not open this PDF");
+                }
+                synchronized (pending) { pending.add(r); }
+                JSObject ev = new JSObject();
+                ev.put("count", 1);
+                notifyListeners("shared", ev, true);
+            });
+            return;
+        }
+        if (!type.startsWith("image/")) return;
         final List<Uri> uris = new ArrayList<>();
         if (Intent.ACTION_SEND.equals(action)) {
             Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
@@ -151,13 +173,21 @@ public class OcrPlugin extends Plugin {
     }
 
     private Bitmap decodeUri(Uri uri) throws Exception {
+        byte[] bytes = readBytes(uri, Integer.MAX_VALUE);
+        return bytes == null ? null : decodeBytes(bytes);
+    }
+
+    private byte[] readBytes(Uri uri, int max) throws Exception {
         try (InputStream in = getContext().getContentResolver().openInputStream(uri)) {
             if (in == null) return null;
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             byte[] buf = new byte[16384];
             int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
-            return decodeBytes(out.toByteArray());
+            while ((n = in.read(buf)) > 0) {
+                out.write(buf, 0, n);
+                if (out.size() > max) return null;
+            }
+            return out.toByteArray();
         }
     }
 

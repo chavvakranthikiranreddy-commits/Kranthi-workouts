@@ -98,7 +98,7 @@ const Cap = window.Capacitor;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const P = {};
 if (isNative) {
-  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps']) {
+  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget']) {
     try { if (Cap.isPluginAvailable(n)) P[n] = Cap.registerPlugin(n); } catch (e) { /* plugin missing */ }
   }
 }
@@ -106,7 +106,7 @@ if (isNative) {
 /* ---------- storage ---------- */
 const DB = {
   get(k, d) { try { const v = localStorage.getItem('kw_' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('kw_' + k, JSON.stringify(v)); } catch (e) { toast('Could not save. Phone storage may be full.'); } },
+  set(k, v) { try { localStorage.setItem('kw_' + k, JSON.stringify(v)); } catch (e) { toast('Could not save. Phone storage may be full.'); } if (k !== 'gymdraft') pushWidget(); },
   del(k) { try { localStorage.removeItem('kw_' + k); } catch (e) { /* ignore */ } },
 };
 const DEFAULTS = {
@@ -386,11 +386,28 @@ async function scheduleReminders(silent) {
   try { await P.LocalNotifications.schedule({ notifications: list }); } catch (e) { console.warn('reminders failed', e); }
 }
 
+/* ---------- home-screen widget ---------- */
+var widgetTimer = 0;
+function pushWidget(now) {
+  if (!P.Widget) return;
+  clearTimeout(widgetTimer);
+  widgetTimer = setTimeout(async () => {
+    try {
+      const m = Money.widgetData(); const st = computeStats();
+      const k = dkey(new Date()); const day = plan && plan[new Date().getDay()];
+      const todays = log.filter(x => x.date === k);
+      const workout = todays.length ? todays[todays.length - 1].title || 'Workout done' : !hasPlan() ? 'No weekly plan yet' : !day || day.rest ? 'Rest day' : day.items.map(i => i.name).join(' + ') || 'Nothing planned';
+      await P.Widget.update({ steps: STP.today || 0, stepGoal: S.stepGoal, stepsOn: !!STP.enabled, money: !!m.money, locked: !!m.locked, left: m.left || 0, safe: m.safe || 0, workout, done: todays.length > 0, streak: st.cur, accent: S.accent });
+    } catch (e) { /* widget not added or plugin missing */ }
+  }, now ? 50 : 1500);
+}
+
 let appVisible = true;
 function onBackground() {
   if (!appVisible) return;
   appVisible = false;
   Money.onHide();
+  pushWidget(true);
   if (Run.cur && Run.cur.running) BG.schedule();
 }
 function onForeground() {
@@ -928,11 +945,14 @@ function viewToday() {
     }).join('')}</div>
     ${Money.todayChip() ? `<div style="margin-top:12px">${Money.todayChip()}</div>` : ''}
     <div style="margin-top:12px">${stepsCardHtml()}</div>
+    ${(() => { const h = Health.sleepCardHtml(); return h ? `<div style="margin-top:12px">${h}</div>` : ''; })()}
+    <div style="margin-top:12px">${Health.fuelHtml()}</div>
     ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
     ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
     ${Program.programCardHtml() || Program.levelNudge() ? `<div style="margin-top:12px">${Program.programCardHtml()}${Program.levelNudge()}</div>` : ''}
     <div class="sect">Today's plan</div>
     <div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div>
+    <div style="margin-top:14px">${Health.checkinHtml()}</div>
     <div class="sect">Quick start</div>
     <div class="quick">
       <button class="qa" data-a="gym"><span class="qi">${ic('dumbbell')}</span><b>Gym workout</b><span>Log sets, reps &amp; weight</span></button>
@@ -946,6 +966,7 @@ function viewToday() {
     ${needBackup ? `<button class="nudge" data-a="backup">${ic('upload')}<span><b>Back up your data.</b> ${daysSinceBackup === null ? 'You haven\'t made a backup yet.' : `Last backup was ${daysSinceBackup} days ago.`} Takes 5 seconds.</span></button>` : ''}
   </div>`;
   view.querySelector('.page').addEventListener('click', e => {
+    const hh = e.target.closest('[data-h]'); if (hh) return Health.handle(hh);
     const pi = e.target.closest('[data-pi]');
     if (pi) return startPlanItem(day.items[+pi.dataset.pi]);
     const eid = e.target.closest('[data-eid]');
@@ -1901,6 +1922,11 @@ function viewProgress() {
         ${STP.enabled ? '' : `<div style="margin-top:10px">${stepsCardHtml()}</div>`}
       </div>`;
     })()}
+    <div class="sect"><span>Muscles trained</span><span style="text-transform:none;letter-spacing:0">Last 7 days</span></div>
+    ${Health.muscleMapHtml()}
+    <button class="nudge" data-h="score" style="margin-top:12px">${ic('chart')}<span><b>Weekly scorecard.</b> Workouts, steps, protein, water, sleep and money, day by day.</span></button>
+    <div class="sect"><span>Progress photos</span></div>
+    ${Health.photosHtml()}
     <div class="sect">${today.getFullYear()} so far</div>
     <div class="yr">
       <div class="stat"><div class="k">Workouts</div><div class="v">${yr.length}</div></div>
@@ -1931,7 +1957,9 @@ function viewProgress() {
       : `<div class="empty" style="padding:22px 20px"><b>No records yet</b>Log a gym workout and your best lifts show up here.</div>`}</div>
   </div>`;
   const hs = $('#heatsc'); if (hs) hs.scrollLeft = hs.scrollWidth;
+  Health.hydrate(view);
   view.querySelector('.page').addEventListener('click', e => {
+    const hh = e.target.closest('[data-h]'); if (hh) return Health.handle(hh);
     const ex = e.target.closest('[data-ex]'); if (ex) return showExercise(ex.dataset.ex);
     const sr = e.target.closest('[data-srange]'); if (sr) { stepsRange = sr.dataset.srange; return rerenderKeepScroll(); }
     const so = e.target.closest('[data-a="steps-on"]'); if (so) return enableSteps();
@@ -2055,7 +2083,7 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, settings: S };
+  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
@@ -2097,13 +2125,15 @@ function importBackup() {
         timers = data.timers || []; log = data.log || []; body = data.body || []; plan = data.plan || null; customEx = data.customEx || [];
         Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program');
         if (data.money) Money.data = data.money;
+        if (data.health) Health.data = data.health;
         if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
       } else {
         timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
         customEx = [...new Set([...customEx, ...(data.customEx || [])])];
         if (!hasPlan() && data.plan) plan = data.plan;
         if (!Program.current && data.program) { Program.current = data.program; DB.set('program', data.program); }
-        if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats) }); }
+        if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats), accounts: byId(cur.accounts, inc.accounts), goals: byId(cur.goals, inc.goals), people: byId(cur.people, inc.people), transfers: byId(cur.transfers, inc.transfers), settles: byId(cur.settles, inc.settles), limits: Object.assign({}, inc.limits, cur.limits) }); }
+        if (data.health) Health.merge(data.health);
       }
       Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
@@ -2168,7 +2198,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.0 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.3 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2215,6 +2245,8 @@ window.addEventListener('DOMContentLoaded', () => {
   renderTabs(); paintModebar(); render();
   if (wantMoney) Money.openMoney();
   Money.boot();
+  Health.scheduleScorecard();
+  pushWidget();
 });
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });
 stepsInit();

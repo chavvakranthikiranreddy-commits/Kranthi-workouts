@@ -131,6 +131,7 @@ public final class StepStore {
             p.edit().putString("notified", today).apply();
             notifyGoal(ctx, total, goal);
         }
+        MMWidget.maybeRefresh(ctx);
     }
 
     /** Clears today's count and starts again from the next sensor reading. */

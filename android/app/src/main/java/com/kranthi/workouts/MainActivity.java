@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StepsPlugin.class);
         registerPlugin(OcrPlugin.class);
         registerPlugin(AppLockPlugin.class);
+        registerPlugin(WidgetPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

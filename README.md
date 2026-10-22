@@ -16,6 +16,12 @@ Personal Android app for workouts and money. Workouts: interval timers, stopwatc
 - Allow **notifications** when asked, so beeps keep coming while you use other apps or the phone is locked.
 - In **Settings → On-time alerts**, tap **ALLOW** and turn on "Alarms & reminders" so background alerts fire on the exact second.
 
+### PhonePe statement PDF
+In PhonePe, download your statement as a PDF, then **Share → Muscle & Money** (or Money → Settings → Import PhonePe statement). Payments already in the app are skipped, known shops are sorted automatically, and you pick a category once per unknown payee. See it by day, month or year in **Insights**.
+
+### Home-screen widget
+Long-press an empty spot on your home screen → **Widgets** → **Muscle & Money**, and drag it out. It shows today's steps, money left and safe to spend today (hidden when Money lock is on), today's workout and your streak. Tap it to open the app.
+
 ## Updating the app later
 Change any file in the repo (or ask Claude to change it), and a new APK appears under Releases. Installing it updates the app and **keeps your timers and calendar**, because every build is signed with the same key (`android/app/kranthi-signing.p12`). Don't delete that file, and keep the repo private.
 
