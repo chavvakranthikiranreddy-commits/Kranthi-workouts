@@ -1,4 +1,4 @@
-/* Kranthi Workouts v2 — interval timer, gym log, weekly plan, calendar & progress */
+/* Muscle & Money: workouts (timers, gym log, programs, yoga, steps) and money tracking */
 'use strict';
 
 /* ---------- helpers ---------- */
@@ -83,6 +83,12 @@ const I = {
   note: '<path d="M6 3.5h9l4 4v13H6z"/><path d="M15 3.5v4h4M9 12h7M9 16h5"/>',
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/>',
   moon: '<path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/>',
+  lotus: '<path d="M12 19c-3.5 0-6.5-2.2-7.5-5.5 2.6-.3 5 .6 7.5 3 2.5-2.4 4.9-3.3 7.5-3-1 3.3-4 5.5-7.5 5.5z"/><path d="M12 16.5c-1.8-1.8-2.6-4.2-2-7 .7-1.8 1.4-3 2-4 .6 1 1.3 2.2 2 4 .6 2.8-.2 5.2-2 7z"/>',
+  wallet: '<rect x="3.5" y="6" width="17" height="13.5" rx="3"/><path d="M3.5 9.5h17M16 14.5h1.5"/><path d="M6 6l9-2.5 1 2.5"/>',
+  list2: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
+  pie: '<path d="M12 3.5v8.5h8.5A8.5 8.5 0 1 1 12 3.5z"/><path d="M15 3.8a8.5 8.5 0 0 1 5.2 5.2H15z"/>',
+  target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
+  scan: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8 12h8"/>',
   flame: '<path d="M12 21.5c-4 0-6.5-2.7-6.5-6.2 0-3.6 2.8-5.6 3.8-9.3 2 1.3 3 3 3 4.8 1-.6 1.7-1.7 1.9-3 2.4 1.9 4.3 4.7 4.3 7.6 0 3.5-2.5 6.1-6.5 6.1z"/>',
 };
 const ic = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${I[n] || ''}</svg>`;
@@ -112,7 +118,7 @@ const saveSettings = () => DB.set('settings', S);
 
 const COLORS = ['#00E5FF', '#22D46A', '#FFD43B', '#FF9F1C', '#FF4057', '#B26BFF', '#FF5FC8', '#4D8DFF'];
 const ACCENTS = [['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
-const PHASE = { prepare: '#FFD43B', work: '#22D46A', rest: '#FF4057', cyclerest: '#FF9F1C', cooldown: '#4D8DFF', stopwatch: '#00E5FF', done: '#00E5FF' };
+const PHASE = { prepare: '#FFD43B', work: '#22D46A', rest: '#FF4057', cyclerest: '#FF9F1C', cooldown: '#4D8DFF', stopwatch: '#00E5FF', done: '#00E5FF', flow: '#9D8CFF', ease: '#C9D2DC' };
 
 const iv = (name, kind, dur) => ({ id: uid(), name, kind, dur });
 const mk = (o) => Object.assign({ id: uid(), name: 'New timer', desc: '', color: COLORS[0], prepare: 10, sets: [{ id: uid(), intervals: [iv('Work', 'work', 30), iv('Rest', 'rest', 30)], rounds: 8 }], cycles: 1, cycleRest: 60, cooldown: 0, noLog: false }, o);
@@ -214,12 +220,12 @@ function buildSteps(t) {
       const R = Math.max(1, s.rounds | 0 || 1);
       for (let r = 1; r <= R; r++) {
         s.intervals.forEach(v => {
-          if (v.dur > 0) cyc.push({ kind: v.kind, label: v.name || (v.kind === 'work' ? 'Work' : 'Rest'), dur: v.dur, set: si + 1, sets: totalSets, round: r, rounds: R, cycle: c, cycles: C });
+          if (v.dur > 0) cyc.push({ kind: v.kind, label: v.name || (v.kind === 'work' ? 'Work' : 'Rest'), dur: v.dur, set: si + 1, sets: totalSets, round: r, rounds: R, cycle: c, cycles: C, pose: v.pose });
         });
       }
     });
     // No point resting at the very end of a cycle: the cycle rest or the finish follows.
-    while (cyc.length > 1 && cyc[cyc.length - 1].kind === 'rest') cyc.pop();
+    while (cyc.length > 1 && (cyc[cyc.length - 1].kind === 'rest' || cyc[cyc.length - 1].kind === 'ease')) cyc.pop();
     steps.push(...cyc);
     if (c < C && t.cycleRest > 0) steps.push({ kind: 'cyclerest', label: 'Recover', sub: 'Rest between cycles', dur: t.cycleRest, cycle: c, cycles: C });
   }
@@ -384,6 +390,7 @@ let appVisible = true;
 function onBackground() {
   if (!appVisible) return;
   appVisible = false;
+  Money.onHide();
   if (Run.cur && Run.cur.running) BG.schedule();
 }
 function onForeground() {
@@ -394,6 +401,7 @@ function onForeground() {
   if (Run.cur) { Run.cur.resync = true; Run.tick(); if (Run.cur && Run.cur.running) Awake.on(); }
   if (Gym.cur) Gym.tickClock();
   stepsRefresh();
+  Money.onShow();
   if (!Run.cur && !$('#layer > .screen') && currentTab === 'today') render();
 }
 document.addEventListener('visibilitychange', () => (document.hidden ? onBackground() : onForeground()));
@@ -449,7 +457,7 @@ async function enableSteps() {
   if (!STP.avail) { toast('This phone has no step sensor, so steps can\'t be counted'); return; }
   try {
     const p = await P.Steps.requestPermission();
-    if (!p.granted) { toast('Allow "Physical activity" for Kranthi Workouts in phone settings to count steps'); return; }
+    if (!p.granted) { toast('Allow "Physical activity" for Muscle & Money in phone settings to count steps'); return; }
     await BG.ensurePermission(true);
     if (!S.height) await askHeight();
     STP.granted = true; STP.enabled = true;
@@ -564,7 +572,8 @@ const backStack = []; // functions that close the top-most overlay
 function pushBack(fn) { backStack.push(fn); return () => { const i = backStack.lastIndexOf(fn); if (i >= 0) backStack.splice(i, 1); }; }
 function handleBack() {
   if (backStack.length) { backStack[backStack.length - 1](); return; }
-  if (currentTab !== 'today') { go('today'); return; }
+  if (currentTab.startsWith('m-') && currentTab !== 'm-home') { go('m-home'); return; }
+  if (currentTab !== 'today' && !currentTab.startsWith('m-')) { go('today'); return; }
   if (P.App) P.App.minimizeApp ? P.App.minimizeApp().catch(() => P.App.exitApp()) : P.App.exitApp();
 }
 
@@ -804,12 +813,35 @@ const TABS = [
   { id: 'progress', label: 'Progress', icon: 'chart' },
   { id: 'settings', label: 'Settings', icon: 'gear' },
 ];
+const MTABS = [
+  { id: 'm-home', label: 'Overview', icon: 'wallet' },
+  { id: 'm-txns', label: 'Entries', icon: 'list2' },
+  { id: 'm-budget', label: 'Budget', icon: 'target' },
+  { id: 'm-insights', label: 'Insights', icon: 'pie' },
+  { id: 'm-settings', label: 'Settings', icon: 'gear' },
+];
+const moneyMode = () => S.mode === 'money';
 function renderTabs() {
-  $('#tabs').innerHTML = TABS.map(t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`).join('');
+  $('#tabs').innerHTML = (moneyMode() ? MTABS : TABS).map(t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`).join('');
 }
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
 function go(tab) { currentTab = tab; renderTabs(); render(); view.scrollTop = 0; }
-function render() { ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab](); }
+function render() {
+  if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
+  ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab]();
+}
+// The Muscle | Money switch at the top of every main screen.
+const modebar = el(`<div id="modebar" role="tablist" aria-label="App section"><div class="modeseg"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button></div></div>`);
+$('#app').insertBefore(modebar, $('#view'));
+function paintModebar() { $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
+async function setMode(mode, quiet) {
+  if (mode === 'money') return Money.openMoney();
+  S.mode = 'muscle'; saveSettings();
+  currentTab = 'today'; renderTabs(); paintModebar();
+  if (!quiet) { render(); view.scrollTop = 0; }
+}
+modebar.addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== (S.mode || 'muscle')) setMode(b.dataset.mode); });
+view.addEventListener('click', e => { if (currentTab.startsWith('m-')) Money.handleClick(e); });
 function rerenderKeepScroll() { const t = view.scrollTop; render(); view.scrollTop = t; }
 const topbar = (title, right = '') => `<header class="topbar"><h1>${esc(title)}</h1>${right ? `<div class="tb-right">${right}</div>` : ''}</header>`;
 
@@ -881,12 +913,12 @@ function viewToday() {
       const t = it.type === 'timer' ? findTimer(it.ref) : null;
       const pi = it.type === 'prog' ? Program.sessionInfo(it.key) : null;
       const sub = it.type === 'timer' ? (t ? `Timer · ${fmt(totalOf(t))}` : 'Timer not found') : it.type === 'gym' ? 'Gym session · sets & reps' : it.type === 'prog' ? (pi ? `Week ${pi.week}/${pi.weeks}${pi.deload ? ' · Deload' : ''} · ${pi.n} exercises · ~${pi.min} min` : 'Program ended') : 'Activity';
-      return `<div class="pitem ${done ? 'done' : ''}"><span class="pi">${ic(itemIcon(it.type))}</span><span class="pt"><b>${esc(it.name)}</b><span>${done ? 'Done today ✓' : sub}</span></span>
+      return `<div class="pitem ${done ? 'done' : ''}"><span class="pi">${ic(it.type === 'timer' && Yoga.timers.some(t => t.id === it.ref) ? 'lotus' : itemIcon(it.type))}</span><span class="pt"><b>${esc(it.name)}</b><span>${done ? 'Done today ✓' : sub}</span></span>
         <button class="go" data-pi="${i}">${done ? 'Again' : it.type === 'note' ? 'Log' : 'Start'}</button></div>`;
     }).join('');
   }
 
-  view.innerHTML = `<div class="page" style="padding-top:calc(var(--sat) + 18px)">
+  view.innerHTML = `<div class="page" style="padding-top:14px">
     <div class="hello"><div><div class="hi">${hi.toUpperCase()}</div><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
       <div class="streak"><b>${st.cur}</b><span>DAY STREAK</span></div></div>
     <div class="week">${st.bars.map(b => {
@@ -894,6 +926,7 @@ function viewToday() {
       const done = st.days.has(b.k);
       return `<div class="w ${done ? 'done' : ''} ${b.today ? 'today' : ''} ${planned && !done ? 'plan' : ''}">${WD[b.dt.getDay()].slice(0, 2)}<i>${done ? ic('check') : b.dt.getDate()}</i></div>`;
     }).join('')}</div>
+    ${Money.todayChip() ? `<div style="margin-top:12px">${Money.todayChip()}</div>` : ''}
     <div style="margin-top:12px">${stepsCardHtml()}</div>
     ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
     ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
@@ -906,6 +939,8 @@ function viewToday() {
       <button class="qa" data-a="sw"><span class="qi">${ic('stopwatch')}</span><b>Stopwatch</b><span>Count up with laps</span></button>
       <button class="qa" data-a="rest"><span class="qi">${ic('pausebars')}</span><b>Rest timer</b><span>:30 to 4:00</span></button>
       <button class="qa" data-a="weight"><span class="qi">${ic('scale')}</span><b>Log weight</b><span>${body.length ? `Last: ${wOut(latestBody().kg)} ${wUnit()}` : 'Track your body weight'}</span></button>
+      <button class="qa" data-a="yoga"><span class="qi">${ic('lotus')}</span><b>Yoga &amp; mobility</b><span>Follow-along routines</span></button>
+      <button class="qa" data-a="myprog"><span class="qi">${ic('sliders')}</span><b>My program</b><span>${Program.current ? 'See your weekly plan' : 'Build one in 6 questions'}</span></button>
     </div>
     ${last ? `<div class="sect">Last workout</div>${entryCard(last)}` : ''}
     ${needBackup ? `<button class="nudge" data-a="backup">${ic('upload')}<span><b>Back up your data.</b> ${daysSinceBackup === null ? 'You haven\'t made a backup yet.' : `Last backup was ${daysSinceBackup} days ago.`} Takes 5 seconds.</span></button>` : ''}
@@ -923,6 +958,9 @@ function viewToday() {
       case 'sw': return startStopwatch();
       case 'rest': return quickRestSheet();
       case 'weight': return openBodyEntry(null);
+      case 'yoga': return Yoga.openPicker();
+      case 'myprog': timersSeg = 'prog'; return go('timers');
+      case 'money': return Money.openMoney('home');
       case 'backup': return exportBackup();
       case 'steps-on': return enableSteps();
       case 'prog-new': case 'prog-next': case 'prog-level': return Program.handleAction(b.dataset.a, b);
@@ -997,6 +1035,7 @@ function viewProgramTab() {
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
     const g = e.target.closest('[data-guide]'); if (g) return Program.guide(g.dataset.guide);
+    const yr = e.target.closest('[data-yr]'); if (yr) return Yoga.showRoutine(yr.dataset.yr);
     const b = e.target.closest('[data-a]'); if (b) Program.handleAction(b.dataset.a, b);
   });
 }
@@ -1120,7 +1159,7 @@ const Run = {
     const sec = Math.ceil(rem / 1000);
     if (sec !== R.lastSec) {
       if (R.lastSec !== null && R.running && !quiet) {
-        if (S.countdown && sec <= 3 && sec >= 1 && st.dur >= 5) {
+        if (S.countdown && sec <= 3 && sec >= 1 && st.dur >= 5 && st.kind !== 'ease') {
           if (S.voiceCount && S.voice) say(String(sec)); else Snd.tick();
         }
         if (S.halfway && st.kind === 'work' && st.dur >= 20 && !R.halfDone && sec === Math.ceil(st.dur / 2) && Date.now() - lastSpeak > 1500) { R.halfDone = true; say('Halfway'); }
@@ -1167,8 +1206,9 @@ function openRun(R) {
         <button data-a="sound"><span>${S.beeps || S.voice ? 'SOUND' : 'MUTED'}</span>${ic(S.beeps || S.voice ? 'sound' : 'mute')}</button>
       </div>
       <div class="run-center">
-        <div class="ring-wrap">
+        <div class="ring-wrap ${R.timer.yoga ? 'has-fig' : ''}">
           <svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="47"/><circle class="bar" id="rring" cx="50" cy="50" r="47" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}"/></svg>
+          ${R.timer.yoga ? '<div class="run-fig" id="rfig"></div>' : ''}
           <div class="run-label" id="rlabel"></div>
           <div class="run-digits" id="rdig">00:00</div>
           <div class="run-sub" id="rsub"></div>
@@ -1182,9 +1222,9 @@ function openRun(R) {
     </div>
     <div class="run-next" id="rnext"><span class="k" id="rnk">UP NEXT</span><span class="v" id="rnv"></span></div>
     <div class="run-bottom">
-      <div class="run-stat"><div class="k" id="rlk">${sw ? 'LAPS' : 'ROUNDS LEFT'}</div><div class="v" id="rl" style="color:${S.accent}">0</div></div>
+      <div class="run-stat"><div class="k" id="rlk">${sw ? 'LAPS' : R.timer.yoga ? 'POSES LEFT' : 'ROUNDS LEFT'}</div><div class="v" id="rl" style="color:${S.accent}">0</div></div>
       <button class="run-play" data-a="play" id="rplay" aria-label="Play">${ic('play')}</button>
-      <div class="run-stat"><div class="k" id="rck">${sw ? 'LAP' : 'CYCLES LEFT'}</div><div class="v" id="rc" style="color:${PHASE.cyclerest}">0</div></div>
+      <div class="run-stat"><div class="k" id="rck">${sw ? 'LAP' : R.timer.yoga ? 'MIN LEFT' : 'CYCLES LEFT'}</div><div class="v" id="rc" style="color:${PHASE.cyclerest}">0</div></div>
     </div>
   </section>`);
   if (sw) { $('#rnk', runEl).textContent = 'TAP'; $('#rnv', runEl).textContent = 'LAP'; $('#rnext', runEl).dataset.a = 'lap'; }
@@ -1309,6 +1349,8 @@ function onPhase(idx, cue) {
   if (lastWork && R.steps.filter(x => x.kind === 'work').length > 2) words += '. Last one!';
   else if (st.kind === 'cyclerest') words = `Recover. ${st.cycles - st.cycle} ${st.cycles - st.cycle === 1 ? 'cycle' : 'cycles'} to go`;
   else if (st.kind === 'prepare') words = 'Get ready';
+  else if (st.kind === 'flow') { words = st.label.replace(' · Left', ', left side').replace(' · Right', ', right side'); if (st.dur >= 20 && st.pose && !/right side/.test(words)) words += '. ' + Yoga.cueFor(st.pose); }
+  else if (st.kind === 'ease') words = st.label.replace('Next: ', 'Next, ');
   say(words);
 }
 
@@ -1331,11 +1373,18 @@ function paintRun(e, idx, rem) {
   const next = $('#rnext', runEl);
   if (nx) { next.style.background = PHASE[nx.kind]; $('#rnv', runEl).textContent = nx.label.toUpperCase(); }
   else { next.style.background = PHASE.done; $('#rnv', runEl).textContent = 'FINISH'; }
-  const ref = st.rounds ? st : (nx && nx.rounds ? nx : null);
-  $('#rl', runEl).textContent = ref ? ref.rounds - ref.round + 1 : 0;
-  let cyclesLeft = 0; const cref = st.cycles ? st : nx;
-  if (cref) cyclesLeft = st.kind === 'cyclerest' ? st.cycles - st.cycle : cref.cycles - cref.cycle + 1;
-  $('#rc', runEl).textContent = cyclesLeft;
+  if (R.timer.yoga) {
+    const fig = $('#rfig', runEl);
+    if (fig && fig.dataset.p !== (st.pose || '')) { fig.dataset.p = st.pose || ''; fig.innerHTML = st.pose ? Yoga.figure(st.pose) : ''; }
+    $('#rl', runEl).textContent = R.steps.slice(idx).filter(x => x.kind === 'flow').length;
+    $('#rc', runEl).textContent = Math.ceil((R.total - e) / 60000);
+  } else {
+    const ref = st.rounds ? st : (nx && nx.rounds ? nx : null);
+    $('#rl', runEl).textContent = ref ? ref.rounds - ref.round + 1 : 0;
+    let cyclesLeft = 0; const cref = st.cycles ? st : nx;
+    if (cref) cyclesLeft = st.kind === 'cyclerest' ? st.cycles - st.cycle : cref.cycles - cref.cycle + 1;
+    $('#rc', runEl).textContent = cyclesLeft;
+  }
   setPlayIcon(R.running);
 }
 
@@ -1380,7 +1429,7 @@ function finishRun() {
 
 function logRun(R, ms, complete) {
   const now = new Date();
-  const entry = { id: uid(), date: dkey(now), at: now.getTime(), title: R.timer.name, kind: R.mode === 'sw' ? 'stopwatch' : 'timer', dur: Math.round(ms / 1000), planned: R.mode === 'timer' ? Math.round(R.total / 1000) : null, partial: R.mode === 'timer' && !(complete && ms >= R.total), notes: '', feel: 0, color: R.timer.color, auto: true };
+  const entry = { id: uid(), date: dkey(now), at: now.getTime(), title: R.timer.name, kind: R.mode === 'sw' ? 'stopwatch' : 'timer', dur: Math.round(ms / 1000), planned: R.mode === 'timer' ? Math.round(R.total / 1000) : null, partial: R.mode === 'timer' && !(complete && ms >= R.total), notes: '', feel: 0, color: R.timer.color, auto: true, cat: R.timer.cat || undefined };
   if (R.mode === 'sw' && R.laps.length) entry.notes = `${R.laps.length} laps`;
   log.push(entry); saveLog();
   return entry;
@@ -1508,6 +1557,7 @@ function openGym({ title, entry, date, progKey } = {}) {
         </div>`;
       }).join('')}
       <button class="addlink dashed" data-a="addex">${ic('plus')}<span>Add exercise</span></button>
+      ${d.prog ? `<button class="nudge" data-a="cool">${ic('lotus')}<span><b>Finish with a 5-minute cooldown.</b> Gentle stretches for hips, hamstrings and chest. Tap to start after your last set.</span></button>` : ''}
       ${!d.exercises.length ? `${artCard('barbell', pickQuote('train', 5), { small: true })}<div class="empty" style="padding:10px 20px">Add your first exercise. The app remembers your last weights and reps and marks new personal records.</div>` : ''}
     `;
   };
@@ -1545,6 +1595,7 @@ function openGym({ title, entry, date, progKey } = {}) {
       case 'close': return close();
       case 'rest': return quickRestSheet();
       case 'exrest': return startRest(+b.dataset.s);
+      case 'cool': { const t = Yoga.timers.find(x => x.id === 'y-cool'); return startTimer(t); }
       case 'guide': return Program.guide(b.dataset.n);
       case 'gdur': return pickDuration('Duration', d.dur || 3600, v => { d.dur = v; paint(); }, { presets: [1800, 2700, 3600, 4500, 5400] });
       case 'menu': return menu(d.title || 'Workout', [
@@ -1649,7 +1700,7 @@ async function finishGym(d, { editing, live, close }) {
     <div class="sect" style="justify-content:center;margin-top:8px">How did it feel?</div>
     <div class="feel">${FEEL.map((f, i) => `<button data-f="${i + 1}" class="${entry.feel === i + 1 ? 'on' : ''}" aria-label="${f.t}">${f.e}</button>`).join('')}</div>
     <textarea class="field body" id="fn" placeholder="Notes (optional)">${esc(entry.notes)}</textarea>
-    <div class="btns two"><button class="btn" data-a="back">Back</button><button class="btn primary" data-a="save">Save workout</button></div>`);
+    <div class="btns ${d.prog ? '' : 'two'}">${d.prog ? '<button class="btn primary" data-a="save" data-cool="1">' + ic('lotus') + 'Save &amp; start 5-min cooldown</button>' : ''}<button class="btn ${d.prog ? '' : 'primary'}" data-a="save">Save workout</button>${d.prog ? '' : '<button class="btn" data-a="back">Back</button>'}</div>`);
   s.el.addEventListener('click', e => {
     const f = e.target.closest('[data-f]');
     if (f) { entry.feel = entry.feel === +f.dataset.f ? 0 : +f.dataset.f; $$('[data-f]', s.el).forEach(x => x.classList.toggle('on', +x.dataset.f === entry.feel)); return; }
@@ -1663,6 +1714,7 @@ async function finishGym(d, { editing, live, close }) {
       saveLog(); if (!editing) DB.del('gymdraft');
       s.close(); close(true);
       toast(prs.length ? `Saved · ${prs.length} new PR${prs.length > 1 ? 's' : ''} 🏆` : 'Workout saved');
+      if (b.dataset.cool) setTimeout(() => startTimer(Yoga.timers.find(x => x.id === 'y-cool')), 400);
     }
   });
 }
@@ -1726,7 +1778,7 @@ function viewCalendar() {
 }
 
 function entryCard(x) {
-  const icon = x.kind === 'stopwatch' ? 'stopwatch' : x.kind === 'timer' ? 'bolt' : 'dumbbell';
+  const icon = x.cat === 'Yoga' || x.cat === 'Mobility' ? 'lotus' : x.kind === 'stopwatch' ? 'stopwatch' : x.kind === 'timer' ? 'bolt' : 'dumbbell';
   const time = new Date(x.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const label = x.kind === 'gym' ? 'Gym' : x.cat || (x.kind === 'stopwatch' ? 'Stopwatch' : 'Timer');
   const meta = [x.kind === 'timer' || x.kind === 'stopwatch' ? fmt(x.dur) : fmtMins(x.dur), label, x.partial ? 'Stopped early' : '', x.auto || x.kind === 'gym' ? time : ''].filter(Boolean).join(' · ');
@@ -2003,15 +2055,15 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'kranthi-workouts', version: 3, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, settings: S };
+  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
-  const fname = `kranthi-backup-${dkey(new Date())}.json`;
+  const fname = `muscle-money-backup-${dkey(new Date())}.json`;
   try {
     if (P.Filesystem && P.Share) {
       const r = await P.Filesystem.writeFile({ path: fname, data: json, directory: 'CACHE', encoding: 'utf8' });
-      await P.Share.share({ title: 'Kranthi Workouts backup', text: `Kranthi Workouts backup · ${log.length} workouts`, files: [r.uri], dialogTitle: 'Save backup to Drive, WhatsApp, Files…' });
+      await P.Share.share({ title: 'Muscle & Money backup', text: `Muscle & Money backup · ${log.length} workouts · ${Money.data.txns.length} money entries`, files: [r.uri], dialogTitle: 'Save backup to Drive, WhatsApp, Files…' });
     } else {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
@@ -2034,8 +2086,8 @@ function importBackup() {
     const rd = new FileReader();
     rd.onload = async () => {
       let data;
-      try { data = JSON.parse(rd.result); } catch (e) { toast('That file is not a Kranthi Workouts backup'); return; }
-      if (!data || data.app !== 'kranthi-workouts') { toast('That file is not a Kranthi Workouts backup'); return; }
+      try { data = JSON.parse(rd.result); } catch (e) { toast('That file is not a Muscle & Money backup'); return; }
+      if (!data || !['kranthi-workouts', 'muscle-money'].includes(data.app)) { toast('That file is not a Muscle & Money backup'); return; }
       const when = data.exportedAt ? new Date(data.exportedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'unknown date';
       const v = await confirmBox('Restore backup?', `From ${when}: ${(data.timers || []).length} timers, ${(data.log || []).length} workouts, ${(data.body || []).length} weigh-ins.`, [
         { label: 'Merge with what\'s on this phone', cls: 'primary', value: 'merge' }, { label: 'Replace everything', cls: 'danger', value: 'replace' }, { label: 'Cancel', cls: 'ghost', value: null }]);
@@ -2044,12 +2096,14 @@ function importBackup() {
       if (v === 'replace') {
         timers = data.timers || []; log = data.log || []; body = data.body || []; plan = data.plan || null; customEx = data.customEx || [];
         Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program');
+        if (data.money) Money.data = data.money;
         if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
       } else {
         timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
         customEx = [...new Set([...customEx, ...(data.customEx || [])])];
         if (!hasPlan() && data.plan) plan = data.plan;
         if (!Program.current && data.program) { Program.current = data.program; DB.set('program', data.program); }
+        if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats) }); }
       }
       Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
@@ -2112,9 +2166,9 @@ function viewSettings() {
     <div class="sect">Your data</div>
     <div class="block">
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
-      <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a kranthi-backup file. You can merge or replace.</div></span>${ic('download')}</button>
+      <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>KRANTHI WORKOUTS</b><br>Version 3.0.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.0 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2155,7 +2209,13 @@ function viewSettings() {
 /* ---------- boot ---------- */
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
 // program.js loads after this file, so draw the first screen once every script has run.
-window.addEventListener('DOMContentLoaded', () => { renderTabs(); render(); });
+window.addEventListener('DOMContentLoaded', () => {
+  const wantMoney = S.mode === 'money';
+  S.mode = 'muscle'; currentTab = 'today';
+  renderTabs(); paintModebar(); render();
+  if (wantMoney) Money.openMoney();
+  Money.boot();
+});
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });
 stepsInit();
 if (!isNative && 'serviceWorker' in navigator && location.protocol === 'https:') {

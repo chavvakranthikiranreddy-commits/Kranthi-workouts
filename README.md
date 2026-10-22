@@ -1,6 +1,6 @@
-# Kranthi Workouts
+# Muscle & Money
 
-Personal Android app: interval timer (sets, rounds, cycles, cooldown), stopwatch with laps, quick rest timers, ready-made templates, and a workout calendar with streaks, weekly stats and notes.
+Personal Android app for workouts and money. Workouts: interval timers, stopwatch, gym log, personalised programs, yoga & mobility routines, step counting and a workout calendar. Money: salary-day budgets, needs / wants / savings, bills with reminders and reading PhonePe / Google Pay screenshots.
 
 ## Get the APK (free, no coding, ~10 minutes the first time)
 

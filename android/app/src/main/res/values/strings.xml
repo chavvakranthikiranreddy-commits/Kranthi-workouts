@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Kranthi Workouts</string>
-    <string name="title_activity_main">Kranthi Workouts</string>
+    <string name="app_name">Muscle &amp; Money</string>
+    <string name="title_activity_main">Muscle &amp; Money</string>
     <string name="package_name">com.kranthi.workouts</string>
     <string name="custom_url_scheme">com.kranthi.workouts</string>
 </resources>

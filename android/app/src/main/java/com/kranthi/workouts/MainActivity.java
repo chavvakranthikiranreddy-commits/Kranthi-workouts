@@ -9,6 +9,8 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AudioDuckPlugin.class);
         registerPlugin(StepsPlugin.class);
+        registerPlugin(OcrPlugin.class);
+        registerPlugin(AppLockPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

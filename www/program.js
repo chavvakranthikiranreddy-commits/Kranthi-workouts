@@ -171,6 +171,7 @@ const Program = (() => {
     ppl6: { name: 'Push / Pull / Legs ×2', days: 6, seq: ['PU', 'PL', 'LG', 'PU*', 'PL*', 'LG*'], why: 'Each muscle twice a week with high volume. Best for intermediate and advanced lifters who recover well.' },
     ath2: { name: 'Athletic Full Body ×2', days: 2, seq: ['AF', 'AF*'], why: 'Jumps and throws first while you are fresh, then strength work, twice a week.' },
     ath3: { name: 'Athletic Upper / Lower / Full', days: 3, seq: ['AU', 'AL', 'AF'], why: 'Power first, then heavy strength. Plyometrics 2–3× a week improve jump, sprint and agility.' },
+    yoga: { name: 'Yoga & Mobility Plan', days: 0, seq: [], why: 'Follow-along routines rotate through hips, back, shoulders and full-body flows. Short, regular practice loosens you up more than one long session a week.' },
     ath4: { name: 'Athletic Upper / Lower', days: 4, seq: ['AU', 'AL', 'AU*', 'AL*'], why: 'Power plus strength four days a week. Conditioning stays on separate days to protect explosiveness.' },
   };
   const GOALS = {
@@ -179,6 +180,7 @@ const Program = (() => {
     fatloss: { name: 'Lose fat & tone', icon: 'flame', d: 'Keep muscle, burn fat, more steps' },
     athletic: { name: 'Athletic performance', icon: 'bolt', d: 'Power, speed, jumps & conditioning' },
     general: { name: 'General fitness', icon: 'heart', d: 'Feel better, move well, build a habit' },
+    mobility: { name: 'Mobility & yoga', icon: 'lotus', d: 'Flexibility, posture, less stiffness' },
   };
   const LEVELS = [
     { name: 'Beginner', d: 'New to lifting, or less than 6 months of regular training' },
@@ -190,6 +192,7 @@ const Program = (() => {
     muscle: { power: [3, 3, 5, null, null, 120], main: [3, 6, 10, 1, 2, 150], sec: [3, 8, 12, 1, 2, 120], acc: [3, 10, 15, 0, 1, 75], core: [3, 10, 15, 1, 2, 60] },
     strength: { power: [3, 3, 5, null, null, 150], main: [4, 4, 6, 2, 3, 210], sec: [3, 6, 8, 2, 2, 150], acc: [2, 8, 12, 1, 2, 90], core: [3, 8, 12, 2, 2, 60] },
     fatloss: { power: [3, 5, 8, null, null, 60], main: [3, 8, 12, 1, 2, 90], sec: [3, 10, 12, 1, 2, 75], acc: [2, 12, 15, 0, 1, 60], core: [2, 12, 20, 1, 2, 45] },
+    mobility: { power: [2, 5, 8, null, null, 90], main: [2, 10, 12, 3, 3, 90], sec: [2, 10, 12, 3, 3, 75], acc: [2, 12, 15, 2, 2, 60], core: [2, 10, 15, 2, 2, 45] },
     athletic: { power: [4, 3, 5, null, null, 120], main: [4, 4, 6, 2, 3, 180], sec: [3, 6, 8, 2, 2, 120], acc: [2, 8, 12, 1, 2, 75], core: [3, 8, 12, 2, 2, 60] },
     general: { power: [2, 5, 8, null, null, 90], main: [3, 8, 12, 2, 3, 90], sec: [2, 10, 12, 2, 3, 75], acc: [2, 12, 15, 1, 2, 60], core: [2, 10, 15, 2, 2, 45] },
   };
@@ -264,6 +267,7 @@ const Program = (() => {
 
   function recommend(a) {
     const days = a.days.length;
+    if (a.goal === 'mobility') return { rec: 'yoga', alts: [], lift: 0 };
     const cap = a.goal === 'athletic' ? 4 : a.goal === 'general' ? (a.level === 0 ? 3 : 4) : a.level === 0 ? 4 : 6;
     const lift = Math.min(days, cap);
     let rec;
@@ -281,6 +285,10 @@ const Program = (() => {
   }
 
   function cardioItem(a, n) {
+    // Spare days alternate easy cardio or speed work with a yoga & mobility routine.
+    if (a.goal !== 'fatloss' && n % 2 === 1) return Yoga.mobilityDay(a, Math.floor(n / 2));
+    if (a.goal === 'fatloss' && n % 3 === 2) return Yoga.mobilityDay(a, Math.floor(n / 3));
+    if (a.goal === 'general') return { type: 'note', name: 'Brisk walk · 30 min' };
     if (a.goal === 'fatloss') return n % 2 === 1 && a.level >= 1 ? { type: 'timer', ref: 't-hiitb', name: 'HIIT Beginner' } : { type: 'note', name: 'Cardio · 30–40 min brisk walk or cycling' };
     if (a.goal === 'athletic') return n % 2 === 0 ? { type: 'note', name: 'Speed · 6–8 × 20 m sprints, full rest' } : { type: 'timer', ref: 't-interval', name: 'Interval' };
     if (a.goal === 'general') return { type: 'note', name: n % 2 ? 'Mobility & stretching · 15–20 min' : 'Brisk walk · 30 min' };
@@ -288,6 +296,12 @@ const Program = (() => {
   }
 
   function generate(a, splitKey) {
+    if (a.goal === 'mobility') {
+      const rot = Yoga.planRoutines(a);
+      const schedule = {};
+      [1, 2, 3, 4, 5, 6, 0].filter(d => a.days.includes(d)).forEach((d, i) => { const t = rot[i % rot.length]; schedule[d] = { type: 'timer', ref: t.id, name: t.name }; });
+      return { id: uid(), created: Date.now(), start: dkey(startOfWeek(new Date())), weeks: a.weeks, a: clone(a), split: 'yoga', sessions: {}, schedule };
+    }
     const { rec, lift } = recommend(a);
     const sk = splitKey || rec;
     const split = SPLITS[sk];
@@ -449,9 +463,9 @@ const Program = (() => {
         if (!a.split || !(a.split === r.rec || r.alts.includes(a.split))) a.split = r.rec;
         h = `<p class="qh">Your recommended split</p>
           ${[r.rec, ...r.alts].map(k => `<button class="qopt split ${a.split === k ? 'on' : ''}" data-k="split" data-v="${k}" data-m="0"><span class="qt"><b>${esc(SPLITS[k].name)}${k === r.rec ? ' <em>Recommended</em>' : ''}</b><span>${esc(SPLITS[k].why)}</span></span><span class="qc">${ic('check')}</span></button>`).join('')}
-          ${a.days.length > r.lift ? `<p class="hint">${a.days.length - r.lift} of your ${a.days.length} days become ${a.goal === 'athletic' ? 'speed & conditioning' : a.goal === 'general' ? 'walking & mobility' : 'cardio'} days, so you recover well${a.level === 0 ? ' while you are new to lifting' : ''}.</p>` : ''}
+          ${a.goal !== 'mobility' && a.days.length > r.lift ? `<p class="hint">${a.days.length - r.lift} of your ${a.days.length} days become ${a.goal === 'athletic' ? 'speed & conditioning' : a.goal === 'general' ? 'walking & mobility' : 'cardio'} days, so you recover well${a.level === 0 ? ' while you are new to lifting' : ''}.</p>` : ''}
           <p class="qh" style="margin-top:18px">Program length</p><div class="presets" style="justify-content:flex-start">${chip('weeks', 8, '8 weeks')}${chip('weeks', 12, '12 weeks')}</div>
-          <p class="hint">${a.level >= 1 ? 'Every 4th week is a lighter deload week so you recover and keep progressing.' : 'You add weight or reps steadily each week. Beginners progress fastest.'}</p>`;
+          <p class="hint">${a.goal === 'mobility' ? 'Routines rotate through your training days. Rebuild the plan when it ends to keep it fresh.' : a.level >= 1 ? 'Every 4th week is a lighter deload week so you recover and keep progressing.' : 'You add weight or reps steadily each week. Beginners progress fastest.'}</p>`;
       }
       qz.innerHTML = h;
       $('.scroll', scr).scrollTop = 0;
@@ -463,10 +477,10 @@ const Program = (() => {
       const b = e.target.closest('[data-k],[data-a]'); if (!b) return;
       if (b.dataset.a === 'close') return close();
       if (b.dataset.a === 'rem') { a.remindOn = !a.remindOn; return paint(); }
-      if (b.dataset.a === 'back') { step = Math.max(0, step - 1); return paint(); }
+      if (b.dataset.a === 'back') { step = Math.max(0, step - 1); if (step === 3 && a.goal === 'mobility') step = 2; return paint(); }
       if (b.dataset.a === 'next') {
         if (step === 2 && (a.days.length < 2 || a.days.length > 6)) { toast('Pick between 2 and 6 days'); return; }
-        if (step < STEPS - 1) { step++; return paint(); }
+        if (step < STEPS - 1) { step++; if (step === 3 && a.goal === 'mobility') step = 4; return paint(); }
         close(); return preview(generate(a, a.split));
       }
       const k = b.dataset.k; let v = b.dataset.v;
@@ -491,7 +505,7 @@ const Program = (() => {
     const doneKeys = new Set(log.filter(x => x.prog && x.prog.id === p.id).map(x => `${x.prog.week}:${x.prog.key}`));
     return `
       <div class="prog-head">
-        <div class="k">${esc(GOALS[a.goal].name)} · ${esc(LEVELS[a.level].name)} · ${a.where === 'gym' ? 'Gym' : 'Home'}</div>
+        <div class="k">${esc(GOALS[a.goal].name)} · ${esc(LEVELS[a.level].name)}${a.goal === 'mobility' ? '' : ` · ${a.where === 'gym' ? 'Gym' : 'Home'}`}</div>
         <div class="t">${esc(SPLITS[p.split].name)}</div>
         <p>${esc(SPLITS[p.split].why)}</p>
         ${isPrev ? '' : `<div class="wk"><div class="wkbar"><i style="width:${Math.min(100, w / p.weeks * 100)}%"></i></div><span>Week ${w} of ${p.weeks}${isDeload(w) ? ' · Deload' : ''}</span></div>`}
@@ -500,12 +514,13 @@ const Program = (() => {
       <div class="block" style="padding:0">${sch.map(d => {
         const it = p.schedule[d];
         const done = it && it.type === 'prog' && doneKeys.has(`${w}:${it.key}`);
-        return `<div class="dayitem" style="padding:12px 16px"><span style="flex:none;width:44px;font-weight:800;color:${it ? 'var(--accent-text)' : 'var(--faint)'}">${WD[d]}</span><span style="color:${it ? 'var(--text)' : 'var(--muted)'}">${it ? esc(it.name) : 'Rest'}${it && it.type === 'prog' ? ` <small style="color:var(--muted);font-weight:500">· ~${estMin(p.sessions[it.key])} min</small>` : ''}</span>${done ? `<span class="okmark">${ic('check')}</span>` : ''}</div>`;
+        return `<div class="dayitem" style="padding:12px 16px"><span style="flex:none;width:44px;font-weight:800;color:${it ? 'var(--accent-text)' : 'var(--faint)'}">${WD[d]}</span><span style="color:${it ? 'var(--text)' : 'var(--muted)'}">${it ? esc(it.name) : 'Rest'}${it && it.type === 'prog' ? ` <small style="color:var(--muted);font-weight:500">· ~${estMin(p.sessions[it.key])} min</small>` : it && it.type === 'timer' && findTimer(it.ref) ? ` <small style="color:var(--muted);font-weight:500">· ${Math.round(totalOf(findTimer(it.ref)) / 60)} min</small>` : ''}</span>${done ? `<span class="okmark">${ic('check')}</span>` : ''}</div>`;
       }).join('')}</div>
+      ${(() => { const ids = [...new Set(Object.values(p.schedule).filter(x => x && x.type === 'timer' && Yoga.timers.some(t => t.id === x.ref)).map(x => x.ref))]; return ids.length ? `<div class="sect">Yoga &amp; mobility routines</div><div class="block" style="padding:0">${ids.map(id => { const t = findTimer(id); return `<button class="exrow" data-yr="${id}">${Yoga.figure((t.sets[t.sets.length - 1].intervals[0] || {}).pose)}<span class="en"><b>${esc(t.name)}</b><span>${Math.round(totalOf(t) / 60)} min · ${esc(t.desc)}</span></span>${ic('chevR', 'chev')}</button>`; }).join('')}</div>` : ''; })()}
       ${Object.values(p.sessions).map(s => `
         <div class="sect"><span>${esc(s.name)}</span><span style="text-transform:none;letter-spacing:0">${s.items.length} exercises · ~${estMin(s)} min</span></div>
         <div class="block" style="padding:0">${s.items.map(it => { const x = isPrev ? it : itemForWeek(it, w); return `<button class="exrow" data-guide="${esc(it.name)}">${figure(it.pattern, it.name)}<span class="en"><b>${esc(it.name)}</b><span>${x.sets} × ${repText(x)} · rest ${fmtShort(x.rest)}${x.rir ? '' : ' · power'}</span></span>${ic('chevR', 'chev')}</button>`; }).join('')}</div>`).join('')}
-      <p class="hint" style="margin-top:14px">Warm up 5 minutes before each session, then do 1–2 lighter sets of the first exercise. Tap any exercise for form tips.</p>`;
+      <p class="hint" style="margin-top:14px">${a.goal === 'mobility' ? 'Move slowly and breathe. Ease off any pose that pinches or hurts. Tap a routine to see every pose.' : 'Warm up 5 minutes before each session, then do 1–2 lighter sets of the first exercise. Tap any exercise for form tips.'}</p>`;
   }
 
   function preview(p) {
@@ -518,6 +533,7 @@ const Program = (() => {
     const unback = pushBack(close);
     scr.addEventListener('click', async e => {
       const g = e.target.closest('[data-guide]'); if (g) return guide(g.dataset.guide);
+      const yr = e.target.closest('[data-yr]'); if (yr) return Yoga.showRoutine(yr.dataset.yr);
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'close') return close();
       if (b.dataset.a === 'edit') { close(); openQuiz(p.a); return; }
