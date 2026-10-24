@@ -16,6 +16,12 @@ Personal Android app for workouts and money. Workouts: interval timers, stopwatc
 - Allow **notifications** when asked, so beeps keep coming while you use other apps or the phone is locked.
 - In **Settings → On-time alerts**, tap **ALLOW** and turn on "Alarms & reminders" so background alerts fire on the exact second.
 
+### Getting around
+The big **Start** button in the middle of the bottom bar starts today's workout or a quick one (in Money it adds an expense). **Settings** is the gear at the top left, **Search** the magnifier at the top right. On Today, tap **Customise this screen** to hide or reorder cards.
+
+### Guided workouts
+**Train → Workouts**: open a ready-made full-body template (dumbbells, barbell, mixed or bodyweight) or tap **Create workout** and type exercise names. Every exercise has an animated how-to. Press **Start**: a countdown, then the voice counts each rep, runs your rests and logs the workout to your calendar. Share a workout with a friend from the **⋯** menu; they paste it into **Import**.
+
 ### PhonePe statement PDF
 In PhonePe, download your statement as a PDF, then **Share → Muscle & Money** (or Money → Settings → Import PhonePe statement). Payments already in the app are skipped, known shops are sorted automatically, and you pick a category once per unknown payee. See it by day, month or year in **Insights**.
 

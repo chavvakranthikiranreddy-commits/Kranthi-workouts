@@ -38,6 +38,7 @@ const Health = (() => {
     try { if (P.Haptics) P.Haptics.impact({ style: 'LIGHT' }); } catch (e) { /* ignore */ }
     if (before < t && now >= t) toast(kind === 'p' ? `💪 Protein goal hit: ${Math.round(now)} g` : `💧 Water goal hit: ${(now / 1000).toFixed(1)} L`);
     paintFuel();
+    if (typeof paintRings === 'function') paintRings();
   }
   const L = ml => String(Math.round(ml / 10) / 100).replace(/\.0+$/, '');
   const bar = (v, t, color) => `<span class="fbar"><i style="width:${Math.min(100, t ? v / t * 100 : 0).toFixed(1)}%;background:${color}"></i></span>`;
@@ -157,7 +158,7 @@ const Health = (() => {
     [/fly|pec deck|crossover/i, 'chest'], [/bench|push-up|pushup|push up|chest press|dip/i, 'hpush'], [/overhead|shoulder press|military|arnold|pike/i, 'vpush'],
     [/lateral|side raise|upright/i, 'sdelt'], [/face pull|rear delt|reverse fly/i, 'rdelt'], [/pull-up|pullup|pull up|chin|pulldown|lat /i, 'vpull'],
     [/row|shrug|inverted/i, 'hpull'], [/curl/i, 'bi'], [/tricep|pushdown|skull|extension|close-grip|kickback/i, 'tri'],
-    [/plank|crunch|leg raise|twist|ab |rollout|sit-up|situp|dead bug|hollow|core|pallof|woodchop/i, 'core'], [/carry|farmer/i, 'carry'], [/jump|box|plyo|broad/i, 'power_l'],
+    [/plank|crunch|leg raise|twist|ab |rollout|sit-up|situp|dead bug|hollow|core|pallof|woodchop/i, 'core'], [/carry|farmer/i, 'carry'], [/thruster|squat to press/i, 'squat'], [/renegade/i, 'hpull'], [/snatch|swing/i, 'hinge'], [/burpee|mountain climber/i, 'core'], [/jump|box|plyo|broad/i, 'power_l'],
   ];
   function patternOf(ex) {
     if (ex.t && ex.t.pattern) return ex.t.pattern;
@@ -406,6 +407,7 @@ const Health = (() => {
     get data() { const d = clone(H); return d; },
     set data(v) { const photos = H.photos; H = Object.assign(fresh(), v || {}); H.photos = photos; save(); },
     merge(v) { if (!v) return; ['nut', 'sleep', 'check'].forEach(k => { H[k] = Object.assign({}, v[k] || {}, H[k]); }); H.targets = Object.keys(H.targets).length ? H.targets : (v.targets || {}); save(); },
+    today() { const k = todayK(); const n = nutOn(k); const t = targets(); const e = H.sleep[k]; return { p: n.p, w: n.w, tp: t.p, tw: t.w, sleepH: e ? sleepHours(e) : 0, slept: !!e, ready: readiness(k) }; },
     fuelHtml, sleepCardHtml, checkinHtml, muscleMapHtml, photosHtml, hydrate, handle, scheduleScorecard, readiness, habits, muscleSets, widgetPart, scorecard,
     _addP: addP, _addW: addW,
   };

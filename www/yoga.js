@@ -142,6 +142,7 @@ const Yoga = (() => {
     legswing: [[56, 14], [[56, 21, 56, 52], [56, 52, 56, 87], [56, 52, 82, 70], [56, 26, 40, 38], [40, 38, 34, 30]], FLOOR + '<path class="arr" d="M86 58a30 30 0 0 1 4 28"/><line class="bn" x1="30" y1="10" x2="30" y2="89"/>'],
   };
   function figure(poseId) {
+    if (typeof Moves !== 'undefined') return Moves.svgFor('Y:' + (P[poseId] ? poseId : 'mountain'), { cls: 'fig yfig' });
     const p = P[poseId]; const f = F[p ? p[1] : 'mountain'] || F.mountain;
     return `<svg class="fig yfig" viewBox="0 0 120 96" aria-hidden="true"><g class="props">${f[2] || ''}</g><g class="body">${L(f[1])}<circle cx="${f[0][0]}" cy="${f[0][1]}" r="6.5"/></g></svg>`;
   }
@@ -158,6 +159,7 @@ const Yoga = (() => {
   function openPicker() {
     const s = sheet(`<h2>Yoga &amp; Mobility</h2><p class="sub">Follow along: the app names each pose, shows it and times the hold.</p>
       <div class="ylist">${TIMERS.map(routineCard).join('')}</div>`);
+    if (typeof Moves !== 'undefined') Moves.mount(s.el);
     s.el.addEventListener('click', e => { const b = e.target.closest('[data-y]'); if (!b) return; s.close(); showRoutine(b.dataset.y); });
   }
   function showRoutine(id) {
@@ -168,6 +170,7 @@ const Yoga = (() => {
       <div class="block" style="padding:0">${list.map(([pid, secs, tag], i) => `${r.flow && i === r.flow.steps.length ? '</div><div class="sect">Then</div><div class="block" style="padding:0">' : ''}
         <div class="exrow">${figure(pid)}<span class="en"><b>${esc(P[pid][0])}</b><span>${fmtShort(secs)}${P[pid][2] ? ' each side' : ''} · ${esc(P[pid][3])}</span></span></div>`).join('')}</div>
       <div class="btns"><button class="btn primary" data-a="go">${ic('play')}Start routine</button></div>`);
+    if (typeof Moves !== 'undefined') Moves.mount(s.el);
     s.el.addEventListener('click', e => { if (e.target.closest('[data-a="go"]')) { s.close(); startTimer(t); } });
   }
 
@@ -188,5 +191,5 @@ const Yoga = (() => {
     return { type: 'timer', ref: t.id, name: t.name };
   }
 
-  return { figure, cueFor, openPicker, showRoutine, planRoutines, mobilityDay, timers: TIMERS, isYoga: t => !!(t && t.yoga) };
+  return { poses: P, figure, cueFor, openPicker, showRoutine, planRoutines, mobilityDay, timers: TIMERS, isYoga: t => !!(t && t.yoga) };
 })();

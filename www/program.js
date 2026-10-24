@@ -397,6 +397,7 @@ const Program = (() => {
   };
   const POSE_FOR = { squat: 'squat', hinge: 'hinge', lunge: 'lunge', hpush: 'hpush', chest: 'hpush', vpush: 'vpush', hpull: 'hpull', rdelt: 'hpull', vpull: 'vpull', bi: 'curl', tri: 'tri', sdelt: 'raise', core: 'core', glute: 'bridge', power_l: 'jump', power_u: 'hpush', carry: 'carry', calf: 'calf', quad: 'legiso', ham: 'legiso' };
   function figure(pattern, name) {
+    if (typeof Moves !== 'undefined' && name) return Moves.svgFor(name, { cls: 'fig' });
     let key = POSE_FOR[pattern] || 'squat';
     if (name && /Hip Thrust|Glute Bridge/.test(name)) key = 'bridge';
     if (name && /Push-up/.test(name)) key = 'core';
@@ -410,6 +411,7 @@ const Program = (() => {
     if (isNative) window.location.href = url; else window.open(url, '_blank', 'noopener');
   }
   function guide(name) {
+    if (typeof Moves !== 'undefined') return Moves.howTo(name);
     const e = byName(name);
     const s = sheet(`<h2>${esc(name)}</h2><p class="sub">${e ? esc(MUSCLES[e.pattern] || '') : 'Custom exercise'}</p>
       ${e ? `<div class="guide-fig">${figure(e.pattern, e.name)}</div>

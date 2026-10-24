@@ -37,6 +37,11 @@ const shortDate = t => new Date(t).toLocaleDateString(undefined, { day: 'numeric
 
 /* ---------- icons ---------- */
 const I = {
+  search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/>',
+  share: '<circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="M8.7 10.8l6.6-4M8.7 13.2l6.6 4"/>',
+  swap: '<path d="M4 8h13l-3.5-3.5M20 16H7l3.5 3.5"/>',
+  repeat: '<path d="M4 11V9a3 3 0 0 1 3-3h12l-3-3M20 13v2a3 3 0 0 1-3 3H5l3 3"/>',
   home: '<path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/>',
   heart: '<path d="M12 20.5s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.4a4.3 4.3 0 0 1 7.5 2.9c0 5.6-7.5 10.2-7.5 10.2z" fill="currentColor" stroke="none"/>',
   timer: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V9.5M10 2.5h4M18.5 6.5l1.5-1.5"/>',
@@ -403,6 +408,7 @@ function pushWidget(now) {
 }
 
 let appVisible = true;
+let yogaClock = 0;
 function onBackground() {
   if (!appVisible) return;
   appVisible = false;
@@ -821,11 +827,11 @@ const TRAIN_SCENES = ['summit', 'runner', 'barbell', 'rings', 'stairs'];
 
 /* ---------- tabs / views ---------- */
 let currentTab = 'today';
-let timersSeg = 'mine';
+let timersSeg = 'wk';
 const view = $('#view');
 const TABS = [
   { id: 'today', label: 'Today', icon: 'home' },
-  { id: 'timers', label: 'Timers', icon: 'timer' },
+  { id: 'timers', label: 'Train', icon: 'dumbbell' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'progress', label: 'Progress', icon: 'chart' },
   { id: 'settings', label: 'Settings', icon: 'gear' },
@@ -838,17 +844,27 @@ const MTABS = [
   { id: 'm-settings', label: 'Settings', icon: 'gear' },
 ];
 const moneyMode = () => S.mode === 'money';
+// Bottom bar: two tabs, the big Start (or Add in Money) button, two tabs. Settings and search live at the top.
 function renderTabs() {
-  $('#tabs').innerHTML = (moneyMode() ? MTABS : TABS).map(t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`).join('');
+  const list = (moneyMode() ? MTABS : TABS).filter(t => t.id !== 'settings' && t.id !== 'm-settings');
+  const btn = t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`;
+  const mid = `<button class="tab tstart" data-start aria-label="${moneyMode() ? 'Add expense' : 'Start a workout'}"><span class="sbtn">${ic(moneyMode() ? 'plus' : 'play')}</span>${moneyMode() ? 'Add' : 'Start'}</button>`;
+  $('#tabs').innerHTML = list.slice(0, 2).map(btn).join('') + mid + list.slice(2).map(btn).join('');
+  try { $$('[data-mb="settings"]', modebar).forEach(b => b.classList.toggle('on', currentTab === 'settings' || currentTab === 'm-settings')); } catch (e) { /* modebar not built yet */ }
 }
-$('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
-function go(tab) { currentTab = tab; renderTabs(); render(); view.scrollTop = 0; }
+$('#tabs').addEventListener('click', e => {
+  if (e.target.closest('[data-start]')) { tap(); return moneyMode() ? Money.quickAdd() : openStartSheet(); }
+  const b = e.target.closest('[data-tab]'); if (b) { tap(); go(b.dataset.tab); }
+});
+document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.btn.primary, .nu-go, .cplay, .qopt, .tring, .sgrid button')) tap(); }, true);
+function tap(style = 'LIGHT') { if (!S.vibrate) return; try { if (P.Haptics) P.Haptics.impact({ style }); } catch (e) { /* ignore */ } }
+function go(tab) { currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
 function render() {
   if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
   ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab]();
 }
 // The Muscle | Money switch at the top of every main screen.
-const modebar = el(`<div id="modebar" role="tablist" aria-label="App section"><div class="modeseg"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button></div></div>`);
+const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
 $('#app').insertBefore(modebar, $('#view'));
 function paintModebar() { $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
 async function setMode(mode, quiet) {
@@ -857,7 +873,155 @@ async function setMode(mode, quiet) {
   currentTab = 'today'; renderTabs(); paintModebar();
   if (!quiet) { render(); view.scrollTop = 0; }
 }
-modebar.addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== (S.mode || 'muscle')) setMode(b.dataset.mode); });
+modebar.addEventListener('click', e => {
+  const mb = e.target.closest('[data-mb]');
+  if (mb) { tap(); if (mb.dataset.mb === 'search') return openSearch(); return go(moneyMode() ? 'm-settings' : 'settings'); }
+  const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== (S.mode || 'muscle')) { tap(); setMode(b.dataset.mode); }
+});
+
+/* ---------- Start sheet (centre button) ---------- */
+function openStartSheet() {
+  const st = computeStats(); const day = plan && plan[new Date().getDay()]; const draft = DB.get('gymdraft', null);
+  const nu = nextUp(st, day, draft);
+  const recent = []; log.slice().sort((a, b) => b.at - a.at).forEach(x => { if (x.wk && !recent.includes(x.wk) && Coach.byId(x.wk)) recent.push(x.wk); });
+  const s = sheet(`<h2>Start</h2>
+    ${nu.act === 'pi' || nu.act === 'resume' ? `<button class="nextup sm" data-s="nu"><div class="nu-t"><span class="nu-tag">${esc(nu.tag)}</span><b>${esc(nu.title)}</b><span>${esc(nu.sub)}</span></div><span class="nu-go">${ic(nu.icon)}<span>${esc(nu.btn)}</span></span></button>` : ''}
+    ${recent.length ? `<div class="sect">Do again</div><div class="block" style="padding:0">${recent.slice(0, 3).map(id => { const w = Coach.byId(id); return `<button class="wksrow" data-s="wk" data-id="${id}"><span class="wkth">${Moves.svgFor(w.blocks[0].items[0].name, { cls: 'th' })}</span><span class="wkt"><b>${esc(w.name)}</b><span>${w.blocks.reduce((a, b) => a + b.items.length, 0)} moves</span></span>${ic('play')}</button>`; }).join('')}</div>` : ''}
+    <div class="sect">Quick start</div>
+    <div class="sgrid">
+      <button data-s="workouts">${ic('play')}<b>Guided workout</b></button><button data-s="gym">${ic('dumbbell')}<b>Gym log</b></button><button data-s="yoga">${ic('lotus')}<b>Yoga</b></button>
+      <button data-s="rest">${ic('pausebars')}<b>Rest timer</b></button><button data-s="sw">${ic('stopwatch')}<b>Stopwatch</b></button><button data-s="timers">${ic('timer')}<b>My timers</b></button>
+    </div>`);
+  s.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-s]'); if (!b) return; s.close(); tap();
+    setTimeout(() => {
+      switch (b.dataset.s) {
+        case 'nu': if (nu.act === 'resume') return openGym({}); return startPlanItem(day.items[nu.idx]);
+        case 'wk': return Coach.openDetail(Coach.byId(b.dataset.id));
+        case 'workouts': timersSeg = 'wk'; if (moneyMode()) setMode('muscle', true); return go('timers');
+        case 'timers': timersSeg = 'mine'; return go('timers');
+        case 'gym': return openGym({});
+        case 'yoga': return Yoga.openPicker();
+        case 'rest': return quickRestSheet();
+        case 'sw': return startStopwatch();
+      }
+    }, 120);
+  });
+}
+
+/* ---------- search everything ---------- */
+const SETTINGS_INDEX = [
+  ['Step goal', 'settings', 'goal'], ['Height', 'settings', 'height'], ['Units (kg / lb)', 'settings'], ['Theme & accent colour', 'settings'], ['Sounds & voice', 'settings'],
+  ['Back up data', 'backup'], ['Restore backup', 'settings'], ['Customise Today screen', 'customise'], ['Weekly plan & reminders', 'plan'], ['My program', 'prog'],
+  ['Salary day', 'm-settings'], ['Monthly budget', 'm-settings'], ['Money lock', 'm-settings'], ['Accounts', 'm-settings'], ['Savings goals', 'm-settings'], ['Friends & splits', 'm-settings'], ['Import PhonePe statement', 'm-settings'], ['Export spreadsheet', 'm-settings'],
+];
+function openSearch() {
+  const scr = el(`<section class="screen srchscr"><header class="topbar srch"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button><input class="field body" id="sq" placeholder="Search exercises, workouts, payments…" autocomplete="off" enterkeyhint="search"></header><div class="scroll"><div class="page" id="sres"></div></div></section>`);
+  layer.appendChild(scr);
+  const close = () => { unback(); scr.remove(); };
+  const unback = pushBack(close);
+  const inp = $('#sq', scr); setTimeout(() => inp.focus(), 80);
+  const row = (key, title, sub, right, icon) => `<button class="srow" data-k="${esc(key)}">${icon}<span class="wkt"><b>${esc(title)}</b><span>${esc(sub || '')}</span></span>${right ? `<span class="sr">${esc(right)}</span>` : ''}</button>`;
+  const paint = () => {
+    const q = inp.value.trim(); const k = q.toLowerCase(); const box = $('#sres', scr);
+    if (!q) { box.innerHTML = `<div class="empty" style="padding-top:40px"><b>Search everything</b>Exercises and how-tos, workouts, timers, yoga routines, payments and settings.</div>`; return; }
+    const ex = Moves.search(q, 6);
+    const wks = [...Coach.mine, ...Coach.templates()].filter(w => w.name.toLowerCase().includes(k) || w.blocks.some(b => b.items.some(i => i.name.toLowerCase().includes(k)))).slice(0, 6);
+    const tms = [...timers, ...allTemplates()].filter(t => t.name.toLowerCase().includes(k)).slice(0, 6);
+    const tx = Money.searchTx(q);
+    const sets = SETTINGS_INDEX.filter(x => x[0].toLowerCase().includes(k));
+    const sec = (title, html) => html ? `<div class="sect">${title}</div><div class="block" style="padding:0">${html}</div>` : '';
+    box.innerHTML = sec('Exercises', ex.map(n => row('ex:' + n, n, (Moves.get(n).muscles.map(m => Moves.MNAME[m]).filter(Boolean).slice(0, 3).join(', ')), '', `<span class="wkth">${Moves.svgFor(n, { cls: 'th' })}</span>`)).join(''))
+      + sec('Workouts', wks.map(w => row('wk:' + w.id, w.name, w.tpl ? 'Template' : 'My workout', '', `<span class="sico">${ic('play')}</span>`)).join(''))
+      + sec('Timers & yoga', tms.map(t => row('tm:' + t.id, t.name, t.yoga ? 'Yoga & mobility' : fmt(totalOf(t)), '', `<span class="sico">${ic(t.yoga ? 'lotus' : 'timer')}</span>`)).join(''))
+      + (tx === null ? sec('Payments', `<div class="empty" style="padding:14px">Unlock Money to search payments.</div>`) : sec('Payments', (tx || []).map(t => row('tx:' + t.id, t.title, t.sub, t.amt, `<span class="sico rs">₹</span>`)).join('')))
+      + sec('Settings', sets.map(x => row('st:' + x[1] + ':' + (x[2] || ''), x[0], x[1].startsWith('m-') ? 'Money settings' : 'Settings', '', `<span class="sico">${ic('gear')}</span>`)).join(''))
+      || `<div class="empty" style="padding-top:40px">Nothing found for "${esc(q)}".</div>`;
+    Moves.mount(box);
+  };
+  paint(); inp.addEventListener('input', paint);
+  scr.addEventListener('click', e => {
+    if (e.target.closest('[data-a="close"]')) return close();
+    const r = e.target.closest('[data-k]'); if (!r) return;
+    const [type, ...rest] = r.dataset.k.split(':'); const v = rest.join(':');
+    if (type === 'ex') return Moves.howTo(v);
+    if (type === 'wk') { close(); return Coach.openDetail(Coach.byId(v)); }
+    if (type === 'tm') { close(); const t = findTimer(v); if (t && t.yoga) return Yoga.showRoutine(t.id); return t && startTimer(t); }
+    if (type === 'tx') return Money.editTx(v);
+    if (type === 'st') {
+      close();
+      const [where] = v.split(':');
+      if (where === 'backup') return exportBackup();
+      if (where === 'customise') { if (moneyMode()) setMode('muscle', true); go('today'); return customiseToday(); }
+      if (where === 'plan') return openPlanEditor();
+      if (where === 'prog') { timersSeg = 'prog'; if (moneyMode()) setMode('muscle', true); return go('timers'); }
+      if (where === 'm-settings') return Money.openMoney('settings');
+      if (moneyMode()) setMode('muscle', true);
+      return go('settings');
+    }
+  });
+}
+
+/* ---------- welcome / first run ---------- */
+function maybeOnboard() {
+  if (S.onboarded) return;
+  if (log.length || body.length || Money.data.setup || Coach.mine.length || timers.length > 3) { S.onboarded = true; saveSettings(); return; }
+  openOnboarding();
+}
+function openOnboarding() {
+  const a = { name: S.name || '', kg: '', cm: S.height || '', unit: S.unit || 'kg', goal: 'fit', stepGoal: S.stepGoal || 8000, money: true, cycleDay: 1, budget: '' };
+  let step = 0; const N = 4;
+  const scr = el(`<section class="screen onb"><div class="onb-top"><div class="qprog"><i id="obar"></i></div><button class="linkbtn" data-a="skip">Skip</button></div><div class="scroll"><div class="page" id="ob"></div></div>
+    <div class="gym-bar"><button class="btn" data-a="back">Back</button><button class="btn primary" data-a="next" id="onext">Next</button></div></section>`);
+  layer.appendChild(scr);
+  const close = () => { unback(); scr.remove(); S.onboarded = true; saveSettings(); render(); };
+  const unback = pushBack(() => {});
+  const chip = (k, v, label, sub) => `<button class="qopt ${a[k] === v ? 'on' : ''}" data-k="${k}" data-v="${v}"><span class="qt"><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</span><span class="qc">${ic('check')}</span></button>`;
+  const paint = () => {
+    $('#obar', scr).style.width = ((step + 1) / N * 100) + '%';
+    $('[data-a="back"]', scr).style.visibility = step ? 'visible' : 'hidden';
+    $('#onext', scr).textContent = step === N - 1 ? 'Start using the app' : 'Next';
+    const ob = $('#ob', scr);
+    if (step === 0) ob.innerHTML = `<div class="onb-hero">${Moves.svgFor('Jumping Jacks', { cls: 'big' })}</div><h1 class="onb-h">Welcome to Muscle &amp; Money</h1><p class="sub" style="text-align:left">Workouts, steps, sleep and food on one side. Your spending on the other. Everything stays on this phone.</p>
+      <div class="sect">What should we call you?</div><input class="field body" id="on" placeholder="Your first name" maxlength="20" value="${esc(a.name)}">`;
+    if (step === 1) ob.innerHTML = `<h1 class="onb-h">About you</h1><p class="sub" style="text-align:left">Used for protein and water targets, step distance and calories.</p>
+      <div class="seg" style="background:var(--surface-2)"><button class="${a.unit === 'kg' ? 'on' : ''}" data-u="kg">kg · cm</button><button class="${a.unit === 'lb' ? 'on' : ''}" data-u="lb">lb · in</button></div>
+      <div class="sect">Weight</div><div class="unit-in"><input class="field body" id="okg" inputmode="decimal" placeholder="${a.unit === 'lb' ? '160' : '72'}" value="${esc(String(a.kg))}"><span>${a.unit}</span></div>
+      <div class="sect">Height</div><div class="unit-in"><input class="field body" id="ocm" inputmode="decimal" placeholder="${a.unit === 'lb' ? '68' : '172'}" value="${a.cm ? esc(String(a.unit === 'lb' ? Math.round(a.cm / 2.54) : a.cm)) : ''}"><span>${a.unit === 'lb' ? 'in' : 'cm'}</span></div>`;
+    if (step === 2) ob.innerHTML = `<h1 class="onb-h">Your main goal</h1>
+      ${chip('goal', 'muscle', 'Build muscle', 'Strength workouts and progress tracking')}${chip('goal', 'fat', 'Lose fat', 'Conditioning, steps and protein')}${chip('goal', 'fit', 'Get fit & healthy', 'A bit of everything')}${chip('goal', 'mobility', 'Move better', 'Yoga and mobility first')}
+      <div class="sect">Daily step goal</div><div class="presets" style="justify-content:flex-start">${[5000, 8000, 10000, 12000].map(v => `<button class="chip small ${a.stepGoal === v ? 'on' : ''}" data-sg="${v}">${v.toLocaleString('en-IN')}</button>`).join('')}</div>`;
+    if (step === 3) ob.innerHTML = `<h1 class="onb-h">Money (optional)</h1><p class="sub" style="text-align:left">Track spending from your salary day to the next. You can set this up later too.</p>
+      ${chip('money', true, 'Set it up now', 'Salary day and monthly budget')}${chip('money', false, 'Maybe later', 'Only the fitness side for now')}
+      <div id="omoney" ${a.money ? '' : 'hidden'}><div class="sect">Salary day</div><div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${a.cycleDay === i + 1 ? 'on' : ''}" data-cd="${i + 1}">${i + 1}</button>`).join('')}</div>
+      <div class="sect">Monthly budget</div><div class="amt"><span>₹</span><input id="obud" inputmode="numeric" placeholder="40000" value="${esc(String(a.budget))}"></div></div>`;
+    Moves.mount(ob);
+  };
+  const read = () => {
+    if (step === 0) a.name = ($('#on', scr) || {}).value ? $('#on', scr).value.trim() : a.name;
+    if (step === 1) { const kg = parseFloat($('#okg', scr).value), cm = parseFloat($('#ocm', scr).value); a.kg = isNaN(kg) ? '' : kg; a.cm = isNaN(cm) ? '' : (a.unit === 'lb' ? cm * 2.54 : cm); }
+    if (step === 3 && a.money) { const b = parseFloat($('#obud', scr).value); a.budget = isNaN(b) ? '' : b; }
+  };
+  const finish = () => {
+    S.name = a.name; S.unit = a.unit; S.goal = a.goal; S.stepGoal = a.stepGoal;
+    if (a.cm) S.height = Math.round(a.cm);
+    if (a.kg) { const kg = a.unit === 'lb' ? a.kg / KG_LB : a.kg; body.push({ id: uid(), at: Date.now(), date: dkey(new Date()), kg: Math.round(kg * 10) / 10 }); saveBody(); }
+    if (a.money && a.budget >= 100) { const m = Money.data; m.setup = true; m.cycleDay = a.cycleDay; m.budget = Math.round(a.budget); Money.data = m; }
+    saveSettings(); close();
+    toast(a.name ? `All set, ${a.name}! 💪` : 'All set! 💪');
+  };
+  paint();
+  scr.addEventListener('click', e => {
+    const o = e.target.closest('[data-k]'); if (o) { a[o.dataset.k] = o.dataset.v === 'true' ? true : o.dataset.v === 'false' ? false : o.dataset.v; return paint(); }
+    const u = e.target.closest('[data-u]'); if (u) { read(); a.unit = u.dataset.u; return paint(); }
+    const sg = e.target.closest('[data-sg]'); if (sg) { a.stepGoal = +sg.dataset.sg; return paint(); }
+    const cd = e.target.closest('[data-cd]'); if (cd) { read(); a.cycleDay = +cd.dataset.cd; return paint(); }
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'skip') return close();
+    if (b.dataset.a === 'back') { read(); step = Math.max(0, step - 1); return paint(); }
+    if (b.dataset.a === 'next') { read(); tap(); if (step === N - 1) return finish(); step++; paint(); }
+  });
+}
 view.addEventListener('click', e => { if (currentTab.startsWith('m-')) Money.handleClick(e); });
 function rerenderKeepScroll() { const t = view.scrollTop; render(); view.scrollTop = t; }
 const topbar = (title, right = '') => `<header class="topbar"><h1>${esc(title)}</h1>${right ? `<div class="tb-right">${right}</div>` : ''}</header>`;
@@ -903,18 +1067,59 @@ function itemDoneToday(it) {
 }
 const itemIcon = t => t === 'timer' ? 'timer' : t === 'gym' || t === 'prog' ? 'dumbbell' : 'run';
 
+/* Today: greeting, Next up, rings, then cards in your own order. */
+const TODAY_CARDS = [
+  ['money', 'Money left & safe to spend'], ['ready', 'Sleep & readiness'], ['plan', "Today's plan"], ['checkin', 'Daily check-in'],
+  ['fuel', 'Protein & water buttons'], ['program', 'My program'], ['steps', 'Steps details'], ['quick', 'Quick start'], ['quote', 'Quote of the day'], ['last', 'Last workout'],
+];
+function todayOrder() {
+  const saved = Array.isArray(S.todayOrder) ? S.todayOrder.filter(id => TODAY_CARDS.some(c => c[0] === id)) : [];
+  return [...saved, ...TODAY_CARDS.map(c => c[0]).filter(id => !saved.includes(id))];
+}
+const RING_R = 24, RING_L = 2 * Math.PI * RING_R;
+function miniRing(id, label, val, sub, pct, color, off) {
+  return `<button class="tring ${off ? 'off' : ''}" data-ring="${id}" aria-label="${esc(label)}: ${esc(val)}"><span class="trw"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="${RING_R}" class="trk"/><circle cx="30" cy="30" r="${RING_R}" class="bar" style="stroke:${color};stroke-dasharray:${RING_L.toFixed(1)};stroke-dashoffset:${(RING_L * (1 - Math.min(1, pct))).toFixed(1)}"/></svg>
+    <b>${esc(val)}</b></span><span class="trl">${esc(label)}</span><small>${esc(sub)}</small></button>`;
+}
+function paintRings() { const r = $('.trings', view); if (r) r.outerHTML = ringsHtml(); }
+function ringsHtml() {
+  const h = Health.today();
+  const steps = STP.today || stepsOn(dkey(new Date()));
+  const k = n => n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(Math.round(n));
+  return `<div class="trings">
+    ${miniRing('steps', 'Steps', STP.enabled || steps ? k(steps) : 'Off', STP.enabled || steps ? `of ${k(S.stepGoal)}` : 'Tap to turn on', S.stepGoal ? steps / S.stepGoal : 0, 'var(--accent)', !STP.enabled && !steps)}
+    ${miniRing('protein', 'Protein', Math.round(h.p) + 'g', `of ${h.tp} g`, h.tp ? h.p / h.tp : 0, '#FF9F1C')}
+    ${miniRing('water', 'Water', String(Math.round(h.w / 100) / 10).replace(/\.0$/, '') + 'L', `of ${String(h.tw / 1000).replace(/\.0+$/, '')} L`, h.tw ? h.w / h.tw : 0, '#4D8DFF')}
+    ${miniRing('sleep', 'Sleep', h.slept ? `${Math.floor(h.sleepH)}h${pad(Math.round((h.sleepH % 1) * 60))}` : 'Log', h.ready ? `ready ${h.ready.score}` : 'last night', h.sleepH / 8, '#9D8CFF', !h.slept)}
+  </div>`;
+}
+function nextUp(st, day, draft) {
+  const dow = new Date().getDay();
+  if (draft) return { tag: 'In progress', title: draft.title || 'Gym workout', sub: `${draft.exercises.length} exercises logged so far`, btn: 'Resume', act: 'resume', icon: 'dumbbell' };
+  if (hasPlan() && day && !day.rest && day.items.length) {
+    const i = day.items.findIndex(it => !itemDoneToday(it));
+    if (i >= 0) {
+      const it = day.items[i]; const t = it.type === 'timer' ? findTimer(it.ref) : null; const pi = it.type === 'prog' ? Program.sessionInfo(it.key) : null;
+      const sub = it.type === 'timer' ? (t ? `${Yoga.timers.some(y => y.id === it.ref) ? 'Yoga' : 'Timer'} · ${Math.round(totalOf(t) / 60)} min` : '') : it.type === 'prog' && pi ? `Week ${pi.week} of ${pi.weeks} · ${pi.n} exercises · ~${pi.min} min` : it.type === 'gym' ? 'Gym session' : 'From your weekly plan';
+      return { tag: `Today · ${WDL[dow]}`, title: it.name, sub, btn: 'Start', act: 'pi', idx: i, icon: it.type === 'timer' ? 'timer' : 'play', more: day.items.length > 1 ? `${day.items.length - i - 1} more after this` : '' };
+    }
+    return { tag: 'All done', title: 'Today’s plan is complete', sub: `${st.cur}-day streak. Rest well or add a short stretch.`, btn: 'Stretch', act: 'yoga', icon: 'lotus', done: true };
+  }
+  if (hasPlan() && (!day || day.rest)) return { tag: 'Rest day', title: 'Recover and recharge', sub: 'A gentle yoga flow helps you bounce back faster.', btn: 'Yoga', act: 'yoga', icon: 'lotus', calm: true };
+  return { tag: 'Ready when you are', title: 'Pick a guided workout', sub: 'Dumbbells, barbell or no equipment. The voice counts every rep.', btn: 'Browse', act: 'workouts', icon: 'play', alt: 'Plan my week', altAct: 'plan' };
+}
 function viewToday() {
   const st = computeStats();
   const now = new Date();
   const h = now.getHours();
-  const hi = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+  const hi = h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   const dow = now.getDay();
   const day = plan && plan[dow];
   const draft = DB.get('gymdraft', null);
   const last = log.slice().sort((a, b) => b.at - a.at)[0];
   const daysSinceBackup = S.lastBackup ? Math.floor((Date.now() - S.lastBackup) / 864e5) : null;
   const needBackup = log.length >= 5 && (daysSinceBackup === null || daysSinceBackup >= 14);
-
+  const nu = nextUp(st, day, draft);
   let planHtml;
   if (!hasPlan()) {
     planHtml = `<div class="rest-day"><b>No weekly plan yet.</b> Pick what you train on each day and get a reminder at your chosen time.</div>
@@ -934,45 +1139,65 @@ function viewToday() {
         <button class="go" data-pi="${i}">${done ? 'Again' : it.type === 'note' ? 'Log' : 'Start'}</button></div>`;
     }).join('');
   }
-
-  view.innerHTML = `<div class="page" style="padding-top:14px">
-    <div class="hello"><div><div class="hi">${hi.toUpperCase()}</div><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
-      <div class="streak"><b>${st.cur}</b><span>DAY STREAK</span></div></div>
+  const rest = hasPlan() && (!day || day.rest);
+  const CARD = {
+    money: () => Money.todayChip(),
+    ready: () => Health.sleepCardHtml(),
+    plan: () => `<div><div class="sect">Today's plan</div><div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div></div>`,
+    checkin: () => Health.checkinHtml(),
+    fuel: () => Health.fuelHtml(),
+    program: () => (Program.programCardHtml() || Program.levelNudge() ? `<div>${Program.programCardHtml()}${Program.levelNudge()}</div>` : ''),
+    steps: () => stepsCardHtml(),
+    quick: () => `<div><div class="sect">Quick start</div><div class="quick">
+      <button class="qa" data-a="workouts"><span class="qi">${ic('play')}</span><b>Guided workouts</b><span>Templates or build your own</span></button>
+      <button class="qa" data-a="gym"><span class="qi">${ic('dumbbell')}</span><b>Gym log</b><span>Sets, reps &amp; weight</span></button>
+      <button class="qa" data-a="yoga"><span class="qi">${ic('lotus')}</span><b>Yoga &amp; mobility</b><span>Follow-along flows</span></button>
+      <button class="qa" data-a="rest"><span class="qi">${ic('pausebars')}</span><b>Rest timer</b><span>:30 to 4:00</span></button>
+      <button class="qa" data-a="sw"><span class="qi">${ic('stopwatch')}</span><b>Stopwatch</b><span>Count up with laps</span></button>
+      <button class="qa" data-a="weight"><span class="qi">${ic('scale')}</span><b>Log weight</b><span>${body.length ? `Last: ${wOut(latestBody().kg)} ${wUnit()}` : 'Track your body weight'}</span></button>
+    </div></div>`,
+    quote: () => artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push', small: true }),
+    last: () => (last ? `<div><div class="sect">Last workout</div>${entryCard(last)}</div>` : ''),
+  };
+  const hidden = new Set(S.todayHidden || []);
+  const cards = todayOrder().filter(id => !hidden.has(id)).map(id => CARD[id]()).filter(Boolean).map(x => `<div class="tcardw">${x}</div>`).join('');
+  view.innerHTML = `<div class="page today" style="padding-top:12px">
+    <div class="hello2"><div><div class="hi">${hi}${S.name ? ', ' + esc(S.name) : ''}</div><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
+      <button class="streak2" data-a="cal" aria-label="${st.cur} day streak"><span>🔥</span><b>${st.cur}</b></button></div>
     <div class="week">${st.bars.map(b => {
       const planned = plan && plan[b.dt.getDay()] && !plan[b.dt.getDay()].rest && plan[b.dt.getDay()].items.length;
       const done = st.days.has(b.k);
       return `<div class="w ${done ? 'done' : ''} ${b.today ? 'today' : ''} ${planned && !done ? 'plan' : ''}">${WD[b.dt.getDay()].slice(0, 2)}<i>${done ? ic('check') : b.dt.getDate()}</i></div>`;
     }).join('')}</div>
-    ${Money.todayChip() ? `<div style="margin-top:12px">${Money.todayChip()}</div>` : ''}
-    <div style="margin-top:12px">${stepsCardHtml()}</div>
-    ${(() => { const h = Health.sleepCardHtml(); return h ? `<div style="margin-top:12px">${h}</div>` : ''; })()}
-    <div style="margin-top:12px">${Health.fuelHtml()}</div>
-    ${(() => { const rest = hasPlan() && (!day || day.rest); return `<div style="margin-top:12px">${artCard(rest ? 'night' : TRAIN_SCENES[dayIndex(TRAIN_SCENES.length, 3)], rest ? pickQuote('rest') : pickQuote('train'), { tag: rest ? 'Rest day' : 'Today’s push' })}</div>`; })()}
-    ${draft ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
-    ${Program.programCardHtml() || Program.levelNudge() ? `<div style="margin-top:12px">${Program.programCardHtml()}${Program.levelNudge()}</div>` : ''}
-    <div class="sect">Today's plan</div>
-    <div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div>
-    <div style="margin-top:14px">${Health.checkinHtml()}</div>
-    <div class="sect">Quick start</div>
-    <div class="quick">
-      <button class="qa" data-a="gym"><span class="qi">${ic('dumbbell')}</span><b>Gym workout</b><span>Log sets, reps &amp; weight</span></button>
-      <button class="qa" data-a="sw"><span class="qi">${ic('stopwatch')}</span><b>Stopwatch</b><span>Count up with laps</span></button>
-      <button class="qa" data-a="rest"><span class="qi">${ic('pausebars')}</span><b>Rest timer</b><span>:30 to 4:00</span></button>
-      <button class="qa" data-a="weight"><span class="qi">${ic('scale')}</span><b>Log weight</b><span>${body.length ? `Last: ${wOut(latestBody().kg)} ${wUnit()}` : 'Track your body weight'}</span></button>
-      <button class="qa" data-a="yoga"><span class="qi">${ic('lotus')}</span><b>Yoga &amp; mobility</b><span>Follow-along routines</span></button>
-      <button class="qa" data-a="myprog"><span class="qi">${ic('sliders')}</span><b>My program</b><span>${Program.current ? 'See your weekly plan' : 'Build one in 6 questions'}</span></button>
+    <div class="nextup ${nu.done ? 'done' : ''} ${nu.calm ? 'calm' : ''}">
+      <div class="nu-t"><span class="nu-tag">${esc(nu.tag)}</span><b>${esc(nu.title)}</b><span>${esc(nu.sub)}${nu.more ? ' · ' + esc(nu.more) : ''}</span>
+        ${nu.alt ? `<button class="nu-alt" data-a="${nu.altAct}">${esc(nu.alt)} →</button>` : ''}</div>
+      <button class="nu-go" data-a="nu">${ic(nu.icon)}<span>${esc(nu.btn)}</span></button>
     </div>
-    ${last ? `<div class="sect">Last workout</div>${entryCard(last)}` : ''}
+    ${ringsHtml()}
+    ${draft && nu.act !== 'resume' ? `<button class="nudge" data-a="resume" style="border-color:var(--accent-line)">${ic('dumbbell')}<span><b>Gym workout in progress.</b> ${esc(draft.title || 'Gym workout')} · ${draft.exercises.length} exercises. Tap to continue.</span></button>` : ''}
+    ${cards}
     ${needBackup ? `<button class="nudge" data-a="backup">${ic('upload')}<span><b>Back up your data.</b> ${daysSinceBackup === null ? 'You haven\'t made a backup yet.' : `Last backup was ${daysSinceBackup} days ago.`} Takes 5 seconds.</span></button>` : ''}
+    <button class="tcustom" data-a="customise">${ic('sliders')}Customise this screen</button>
   </div>`;
   view.querySelector('.page').addEventListener('click', e => {
     const hh = e.target.closest('[data-h]'); if (hh) return Health.handle(hh);
+    const rg = e.target.closest('[data-ring]');
+    if (rg) { const r = rg.dataset.ring; if (r === 'steps') return STP.enabled ? go('progress') : enableSteps(); if (r === 'sleep') return Health.handle({ dataset: { h: 'sleep' } }); return Health.handle({ dataset: { h: 'nut' } }); }
     const pi = e.target.closest('[data-pi]');
     if (pi) return startPlanItem(day.items[+pi.dataset.pi]);
     const eid = e.target.closest('[data-eid]');
     if (eid) return openEntry(log.find(x => x.id === eid.dataset.eid));
     const b = e.target.closest('[data-a]'); if (!b) return;
     switch (b.dataset.a) {
+      case 'nu':
+        if (nu.act === 'pi') return startPlanItem(day.items[nu.idx]);
+        if (nu.act === 'resume') return openGym({});
+        if (nu.act === 'yoga') return Yoga.openPicker();
+        if (nu.act === 'workouts') { timersSeg = 'wk'; return go('timers'); }
+        return;
+      case 'cal': return go('calendar');
+      case 'customise': return customiseToday();
       case 'plan': return openPlanEditor();
       case 'gym': return openGym({});
       case 'resume': return openGym({});
@@ -981,6 +1206,7 @@ function viewToday() {
       case 'weight': return openBodyEntry(null);
       case 'yoga': return Yoga.openPicker();
       case 'myprog': timersSeg = 'prog'; return go('timers');
+      case 'workouts': timersSeg = 'wk'; return go('timers');
       case 'money': return Money.openMoney('home');
       case 'backup': return exportBackup();
       case 'steps-on': return enableSteps();
@@ -989,6 +1215,21 @@ function viewToday() {
     }
   });
   paintStepsCard();
+}
+function customiseToday() {
+  let order = todayOrder(); const hidden = new Set(S.todayHidden || []);
+  const s = sheet(`<h2>Customise Today</h2><p class="sub">Show, hide and reorder the cards. Next up and the rings always stay on top.</p><div class="block" style="padding:0" id="tcl"></div>
+    <div class="btns two"><button class="btn" data-a="reset">Reset</button><button class="btn primary" data-a="ok">Done</button></div>`);
+  const paint = () => { $('#tcl', s.el).innerHTML = order.map((id, i) => { const c = TODAY_CARDS.find(x => x[0] === id); return `<div class="tcrow ${hidden.has(id) ? 'off' : ''}"><button class="tctog" data-tg="${id}" aria-label="Show or hide"><span class="toggle sm ${hidden.has(id) ? '' : 'on'}"></span></button><span class="tcn">${esc(c[1])}</span><button class="round-btn sm" data-up="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>${ic('chevU')}</button><button class="round-btn sm" data-dn="${i}" aria-label="Move down" ${i < order.length - 1 ? '' : 'disabled'}>${ic('chevD')}</button></div>`; }).join(''); };
+  paint();
+  s.el.addEventListener('click', e => {
+    const tg = e.target.closest('[data-tg]'); if (tg) { const id = tg.dataset.tg; hidden.has(id) ? hidden.delete(id) : hidden.add(id); return paint(); }
+    const up = e.target.closest('[data-up]'); if (up) { const i = +up.dataset.up; [order[i - 1], order[i]] = [order[i], order[i - 1]]; return paint(); }
+    const dn = e.target.closest('[data-dn]'); if (dn) { const i = +dn.dataset.dn; [order[i + 1], order[i]] = [order[i], order[i + 1]]; return paint(); }
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'reset') { order = TODAY_CARDS.map(c => c[0]); hidden.clear(); return paint(); }
+    S.todayOrder = order; S.todayHidden = [...hidden]; saveSettings(); s.close(); rerenderKeepScroll(); toast('Today screen updated');
+  });
 }
 
 function startPlanItem(it) {
@@ -1000,11 +1241,20 @@ function startPlanItem(it) {
 }
 
 /* ---------- Timers ---------- */
+const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Program'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
+function viewWorkouts() {
+  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
+  view.querySelector('.page').addEventListener('click', e => {
+    const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
+    Coach.handleList(e);
+  });
+}
 function viewTimers() {
   if (timersSeg === 'prog') return viewProgramTab();
+  if (timersSeg === 'wk') return viewWorkouts();
   const mine = timersSeg === 'mine';
-  view.innerHTML = topbar('Timers') + `<div class="page">
-    <div class="seg"><button class="${mine ? 'on' : ''}" data-seg="mine">My Timers</button><button data-seg="prog">Program</button><button class="${mine ? '' : 'on'}" data-seg="tpl">Templates</button></div>
+  view.innerHTML = topbar('Train') + `<div class="page">
+    ${trainSeg(timersSeg)}
     ${mine ? `
     <div class="sect">Quick rest</div>
     <div class="chips" id="quick">${[30, 45, 60, 90, 120, 180].map(s => `<button class="chip" data-s="${s}">${fmtShort(s)}</button>`).join('')}</div>
@@ -1051,7 +1301,7 @@ function viewTimers() {
 }
 
 function viewProgramTab() {
-  view.innerHTML = topbar('Timers') + `<div class="page"><div class="seg"><button data-seg="mine">My Timers</button><button class="on" data-seg="prog">Program</button><button data-seg="tpl">Templates</button></div><div id="progbox"></div></div>`;
+  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('prog')}<div id="progbox"></div></div>`;
   Program.viewTab($('#progbox'));
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
@@ -1229,7 +1479,7 @@ function openRun(R) {
       <div class="run-center">
         <div class="ring-wrap ${R.timer.yoga ? 'has-fig' : ''}">
           <svg class="ring" viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="47"/><circle class="bar" id="rring" cx="50" cy="50" r="47" stroke-dasharray="${RING_C}" stroke-dashoffset="${RING_C}"/></svg>
-          ${R.timer.yoga ? '<div class="run-fig" id="rfig"></div>' : ''}
+          ${R.timer.yoga ? '<div class="run-fig" id="rfig"></div><div class="breath" id="rbreath"></div>' : ''}
           <div class="run-label" id="rlabel"></div>
           <div class="run-digits" id="rdig">00:00</div>
           <div class="run-sub" id="rsub"></div>
@@ -1396,7 +1646,23 @@ function paintRun(e, idx, rem) {
   else { next.style.background = PHASE.done; $('#rnv', runEl).textContent = 'FINISH'; }
   if (R.timer.yoga) {
     const fig = $('#rfig', runEl);
-    if (fig && fig.dataset.p !== (st.pose || '')) { fig.dataset.p = st.pose || ''; fig.innerHTML = st.pose ? Yoga.figure(st.pose) : ''; }
+    const stepMs = st.dur * 1000 - rem;
+    yogaClock = st.kind === 'flow' ? stepMs : 0;
+    if (fig && fig.dataset.p !== (st.pose || '') + st.kind) {
+      fig.dataset.p = (st.pose || '') + st.kind; fig.innerHTML = st.pose ? Yoga.figure(st.pose) : '';
+      const svg = fig.querySelector('svg[data-mv]'); if (svg && typeof Moves !== 'undefined') Moves.animate(svg, { dur: 8000, clock: () => (st.kind === 'flow' ? yogaClock : null) });
+      R.breathHalf = -1;
+    }
+    // Breathing guide: 4 s in, 4 s out, in step with the figure.
+    const br = $('#rbreath', runEl);
+    if (br) {
+      if (st.kind === 'flow' && st.dur >= 8) {
+        const half = Math.floor(stepMs / 4000), inhale = half % 2 === 0, k = (stepMs % 4000) / 4000;
+        br.textContent = inhale ? 'Breathe in' : 'Breathe out'; br.style.opacity = 1;
+        fig.style.transform = `scale(${(1 + 0.06 * (inhale ? k : 1 - k)).toFixed(3)})`;
+        if (R.running && half !== R.breathHalf) { R.breathHalf = half; if ((half === 2 || half === 3) && st.dur >= 20) say(inhale ? 'Breathe in' : 'And breathe out'); }
+      } else { br.style.opacity = 0; if (fig) fig.style.transform = ''; }
+    }
     $('#rl', runEl).textContent = R.steps.slice(idx).filter(x => x.kind === 'flow').length;
     $('#rc', runEl).textContent = Math.ceil((R.total - e) / 60000);
   } else {
@@ -2083,7 +2349,7 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), settings: S };
+  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), workouts: Coach.mine, settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
@@ -2126,6 +2392,7 @@ function importBackup() {
         Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program');
         if (data.money) Money.data = data.money;
         if (data.health) Health.data = data.health;
+        if (data.workouts) Coach.mine = data.workouts;
         if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
       } else {
         timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
@@ -2134,6 +2401,7 @@ function importBackup() {
         if (!Program.current && data.program) { Program.current = data.program; DB.set('program', data.program); }
         if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats), accounts: byId(cur.accounts, inc.accounts), goals: byId(cur.goals, inc.goals), people: byId(cur.people, inc.people), transfers: byId(cur.transfers, inc.transfers), settles: byId(cur.settles, inc.settles), limits: Object.assign({}, inc.limits, cur.limits) }); }
         if (data.health) Health.merge(data.health);
+        if (data.workouts) Coach.mine = byId(Coach.mine, data.workouts);
       }
       Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
@@ -2198,7 +2466,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.3 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.5 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2246,6 +2514,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (wantMoney) Money.openMoney();
   Money.boot();
   Health.scheduleScorecard();
+  setTimeout(maybeOnboard, 300);
   pushWidget();
 });
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });

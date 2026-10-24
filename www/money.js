@@ -1714,6 +1714,9 @@ const Money = (() => {
     set data(v) { M = Object.assign(fresh(), v || {}); save(); },
     renderTab, handleClick, openMoney, onHide, onShow, todayChip, boot, refresh, parseReceipt, parseHistory, stats, inr, widgetData, own, dayOnPace, weekSpend,
     isLocked: () => M.lockOn && !unlocked, lockOn: () => M.lockOn,
+    async quickAdd() { if (!(await openMoney())) return; return M.setup ? entrySheet({}) : setupView(); },
+    searchTx(q) { if (M.lockOn && !unlocked) return null; const k = q.toLowerCase(); return M.txns.filter(t => ((t.payee || '') + ' ' + cat(t.catId).name + ' ' + (t.note || '')).toLowerCase().includes(k)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(t => ({ id: t.id, title: t.payee || cat(t.catId).name, sub: `${dlabel(t.date)} · ${cat(t.catId).name}`, amt: (isIncome(t) ? '+' : '−') + inr(own(t), { dec: true }) })); },
+    editTx(id) { return entrySheet({ id }); },
     _cycleStart: cycleStart, _cycleEnd: cycleEnd, _guess: guessCat, _handleOcr: handleOcr,
   };
 })();
