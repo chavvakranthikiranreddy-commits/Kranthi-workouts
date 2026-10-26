@@ -409,6 +409,7 @@ const Health = (() => {
     merge(v) { if (!v) return; ['nut', 'sleep', 'check'].forEach(k => { H[k] = Object.assign({}, v[k] || {}, H[k]); }); H.targets = Object.keys(H.targets).length ? H.targets : (v.targets || {}); save(); },
     today() { const k = todayK(); const n = nutOn(k); const t = targets(); const e = H.sleep[k]; return { p: n.p, w: n.w, tp: t.p, tw: t.w, sleepH: e ? sleepHours(e) : 0, slept: !!e, ready: readiness(k) }; },
     fuelHtml, sleepCardHtml, checkinHtml, muscleMapHtml, photosHtml, hydrate, handle, scheduleScorecard, readiness, habits, muscleSets, widgetPart, scorecard,
+    openSleep(pre) { if (pre && (pre.bed || pre.wake)) { const k = todayK(); if (!H.sleep[k]) H.lastSleep = { bed: pre.bed || H.lastSleep.bed, wake: pre.wake || H.lastSleep.wake }; } return sleepSheet(); },
     _addP: addP, _addW: addW,
   };
 })();

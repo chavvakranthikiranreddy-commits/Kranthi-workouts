@@ -1,6 +1,6 @@
 # Muscle & Money
 
-Personal Android app for workouts and money. Workouts: interval timers, stopwatch, gym log, personalised programs, yoga & mobility routines, step counting and a workout calendar. Money: salary-day budgets, needs / wants / savings, bills with reminders and reading PhonePe / Google Pay screenshots.
+Personal all-in-one Android app: workouts, money and daily life. Workouts: interval timers, stopwatch, gym log, personalised programs, yoga & mobility routines, step counting and a workout calendar. Money: salary-day budgets, needs / wants / savings, bills with reminders and reading PhonePe / Google Pay screenshots.
 
 ## Get the APK (free, no coding, ~10 minutes the first time)
 
@@ -25,8 +25,16 @@ The big **Start** button in the middle of the bottom bar starts today's workout 
 ### PhonePe statement PDF
 In PhonePe, download your statement as a PDF, then **Share → Muscle & Money** (or Money → Settings → Import PhonePe statement). Payments already in the app are skipped, known shops are sorted automatically, and you pick a category once per unknown payee. See it by day, month or year in **Insights**.
 
+### Exercise photos and animations
+Every exercise shows a real person doing the move (start and end photos that flip in time with your reps), plus an animated figure with the working muscles in red. Switch between **Real photos** and **Animated** on any exercise. There are 876 exercises with photos and steps. Type any of them in **Create workout**. The photos come from the free, public-domain library at github.com/yuhonas/free-exercise-db and are added to the APK automatically when it is built (the `scripts/fetch_exercise_photos.py` step), so you don't upload them yourself.
+
+### Life (notes, tasks, alarms and daily tools)
+Tap **Life** at the top. **Home** shows today's reminders, tasks, medicines, habits and upcoming birthdays, the weather and a fresh quote. **Notes** holds notes and checklists (pin, colour, reminder, share). **Tasks** has To-do (type "Call mom tomorrow 6pm" and the date fills in), Reminders (once, daily, weekly, monthly, yearly), Habits with streaks, and Shopping lists that can go straight into Money. **Clock** has alarms, a world clock and a bedtime schedule. **Speak to add** (Life home, the + button, or the Life widget): say things like "Remind me to pay rent on the 5th", "Wake me up at 6:30", "Add milk and eggs to my shopping list" or "Spent 250 on lunch". **Briefing** reads out your day: weather, workout, reminders, bills, birthdays and what you can spend. Turn on **Morning briefing** on an alarm to hear it when you turn the alarm off. **Documents** keeps photos of your Aadhaar, PAN, licence, insurance and RC behind your fingerprint, with reminders before they expire. Bills from Money show on Life Home with a **Paid** button. Tools on Home: journal (can be locked with your fingerprint), focus timer, weather, medicine & water reminders, birthdays & countdowns, calculator and converter (units, %, EMI, GST).
+
+**Alarms with your own ringtone:** open an alarm → **Ringtone** → **Add a ringtone from your phone** and pick any MP3/M4A/WAV you downloaded. Alarms ring on the alarm volume even when the app is closed or the phone restarted, with Snooze and Turn off over the lock screen. The first time, if the Clock tab shows a yellow note, tap it and allow **Alarms & reminders** and **full-screen alerts**. Turn on **Log my sleep** on an alarm (or the bedtime schedule) and turning it off asks how you slept.
+
 ### Home-screen widget
-Long-press an empty spot on your home screen → **Widgets** → **Muscle & Money**, and drag it out. It shows today's steps, money left and safe to spend today (hidden when Money lock is on), today's workout and your streak. Tap it to open the app.
+Long-press an empty spot on your home screen → **Widgets** → **Muscle & Money**, and drag it out. There are two: the original one, and **Muscle & Money · Today** with your next alarm, today's tasks and reminders, and Task / Note / Speak buttons. It shows today's steps, money left and safe to spend today (hidden when Money lock is on), today's workout and your streak. Tap it to open the app.
 
 ## Updating the app later
 Change any file in the repo (or ask Claude to change it), and a new APK appears under Releases. Installing it updates the app and **keeps your timers and calendar**, because every build is signed with the same key (`android/app/kranthi-signing.p12`). Don't delete that file, and keep the repo private.

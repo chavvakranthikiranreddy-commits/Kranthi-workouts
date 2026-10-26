@@ -5,5 +5,7 @@
     <string name="package_name">com.kranthi.workouts</string>
     <string name="custom_url_scheme">com.kranthi.workouts</string>
     <string name="widget_name">Muscle &amp; Money</string>
+    <string name="life_widget_name">Muscle &amp; Money · Today</string>
+    <string name="life_widget_desc">Next alarm, today\'s tasks and reminders, quick note and voice add</string>
     <string name="widget_desc">Steps, money left, today\'s workout and streak</string>
 </resources>

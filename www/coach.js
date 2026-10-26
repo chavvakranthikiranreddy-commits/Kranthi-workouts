@@ -97,7 +97,7 @@ const Coach = (() => {
   }
 
   /* ---------- Train tab: workouts list ---------- */
-  const thumbs = w => uniqNames(w).slice(0, 3).map(n => `<span class="wkth">${Moves.svgFor(n, { cls: 'th' })}</span>`).join('');
+  const thumbs = w => uniqNames(w).slice(0, 3).map(n => `<span class="wkth">${Moves.thumb(n)}</span>`).join('');
   function card(w) {
     return `<button class="wkcard" data-wk="${w.id}" style="--wc:${w.color || 'var(--accent)'}"><span class="wkfigs">${thumbs(w)}</span>
       <span class="wkt"><b>${esc(w.name)}</b><span>${allItems(w).length} moves · ~${Math.round(estSec(w) / 60)} min${w.level ? ' · ' + esc(w.level) : ''}</span><small>${esc(eqOf(w))}</small></span>${ic('chevR', 'chev')}</button>`;
@@ -127,7 +127,7 @@ const Coach = (() => {
       <div class="gym-bar"><button class="btn" data-a="${w.tpl ? 'custom' : 'edit'}">${ic('edit')}${w.tpl ? 'Customise' : 'Edit'}</button><button class="btn primary" data-a="start">${ic('play')}Start</button></div></section>`);
     const paint = () => {
       const blocks = w.blocks.map(b => {
-        const rows = b.items.map(it => { const sg = it.reps ? suggest(it.name, it.reps) : null; return `<button class="wkrow" data-how="${esc(it.name)}"><span class="wkfig">${Moves.svgFor(it.name)}</span><span class="wkt"><b>${esc(it.name)}</b><span>${b.kind === 'single' ? esc(blockTxt(b)) : esc(amtTxt(it))}</span>${sg ? `<small class="${sg.up ? 'okt' : ''}">${esc(sg.text)}${sg.tip ? ' · ' + esc(sg.tip) : ''}</small>` : ''}</span>${ic('info', 'chev')}</button>`; }).join('');
+        const rows = b.items.map(it => { const sg = it.reps ? suggest(it.name, it.reps) : null; return `<button class="wkrow" data-how="${esc(it.name)}"><span class="wkfig">${Moves.thumb(it.name, '')}</span><span class="wkt"><b>${esc(it.name)}</b><span>${b.kind === 'single' ? esc(blockTxt(b)) : esc(amtTxt(it))}</span>${sg ? `<small class="${sg.up ? 'okt' : ''}">${esc(sg.text)}${sg.tip ? ' · ' + esc(sg.tip) : ''}</small>` : ''}</span>${ic('info', 'chev')}</button>`; }).join('');
         return b.kind === 'single' ? rows : `<div class="wkgroup"><div class="wkgh">${ic('repeat')}${esc(blockTxt(b))}${b.gap ? ` · ${b.gap} s between moves` : ''}</div>${rows}</div>`;
       }).join('');
       $('#wkd', scr).innerHTML = `${w.desc ? `<p class="sub" style="text-align:left;margin:0 0 10px">${esc(w.desc)}</p>` : ''}
@@ -187,12 +187,12 @@ const Coach = (() => {
       const box = $('#wsug', scr);
       if (!query) { box.innerHTML = ''; return; }
       const list = Moves.search(query, 6);
-      box.innerHTML = `<div class="block wksug">${list.map(n => `<button class="wksrow" data-add="${esc(n)}"><span class="wkth">${Moves.svgFor(n, { cls: 'th' })}</span><span class="wkt"><b>${esc(n)}</b><span>${esc(Moves.EQN[Moves.get(n).eq] || '')}</span></span>${ic('plus')}</button>`).join('')}
+      box.innerHTML = `<div class="block wksug">${list.map(n => `<button class="wksrow" data-add="${esc(n)}"><span class="wkth">${Moves.thumb(n)}</span><span class="wkt"><b>${esc(n)}</b><span>${esc(Moves.EQN[Moves.get(n).eq] || '')}${Moves.photoId(n) ? ' · 📷' : ''}</span></span>${ic('plus')}</button>`).join('')}
         ${list.some(n => n.toLowerCase() === query.toLowerCase()) ? '' : `<button class="wksrow" data-add="${esc(query)}" data-custom="1"><span class="wkth custom">${ic('plus')}</span><span class="wkt"><b>Add "${esc(query)}"</b><span>As your own exercise</span></span></button>`}</div>`;
     };
     const rowHtml = (b, bi) => {
       const head = b.kind === 'single' ? '' : `<button class="wkgh" data-grp="${bi}">${ic('repeat')}<span>${esc(blockTxt(b))}${b.gap ? ` · ${b.gap} s between` : ''}</span>${ic('edit')}</button>`;
-      const rows = b.items.map((it, ii) => `<div class="wkbrow"><button class="wkrow" data-ed="${bi}:${ii}"><span class="wkth">${Moves.svgFor(it.name, { cls: 'th' })}</span><span class="wkt"><b>${esc(it.name)}</b><span>${b.kind === 'single' ? esc(blockTxt(b)) : esc(amtTxt(it))}</span></span></button><button class="round-btn sm" data-mn="${bi}:${ii}" aria-label="Options">${ic('more')}</button></div>`).join('');
+      const rows = b.items.map((it, ii) => `<div class="wkbrow"><button class="wkrow" data-ed="${bi}:${ii}"><span class="wkth">${Moves.thumb(it.name)}</span><span class="wkt"><b>${esc(it.name)}</b><span>${b.kind === 'single' ? esc(blockTxt(b)) : esc(amtTxt(it))}</span></span></button><button class="round-btn sm" data-mn="${bi}:${ii}" aria-label="Options">${ic('more')}</button></div>`).join('');
       return b.kind === 'single' ? rows : `<div class="wkgroup">${head}${rows}</div>`;
     };
     const paint = () => {
@@ -265,7 +265,7 @@ const Coach = (() => {
     const sg = suggest(it.name, it.reps);
     const wkg = it.w != null ? it.w : 0;
     const s = sheet(`<h2>${esc(it.name)}</h2>
-      <div class="mvstage sm">${Moves.svgFor(it.name)}</div>
+      <div class="mvstage sm">${Moves.demo(it.name)}</div>
       <div class="seg" style="background:var(--surface-2)"><button class="${mode === 'reps' ? 'on' : ''}" data-md="reps">Reps</button><button class="${mode === 'time' ? 'on' : ''}" data-md="time">Time</button></div>
       <div class="block" style="padding:4px 14px">
         ${single1 ? stepper('xs', 'Sets', b.rounds, '', 1, 1, 10) : ''}
@@ -320,7 +320,7 @@ const Coach = (() => {
   function swapSheet(name, cb) {
     const list = Moves.alts(name);
     if (!list.length) { toast('No similar moves found'); return; }
-    const s = sheet(`<h2>Swap ${esc(name)}</h2><p class="sub">Same muscles, different equipment.</p><div class="block" style="padding:0">${list.map(n => `<button class="wksrow" data-sw="${esc(n)}"><span class="wkth">${Moves.svgFor(n, { cls: 'th' })}</span><span class="wkt"><b>${esc(n)}</b><span>${esc(Moves.EQN[Moves.get(n).eq] || '')}</span></span>${ic('swap')}</button>`).join('')}</div>`);
+    const s = sheet(`<h2>Swap ${esc(name)}</h2><p class="sub">Same muscles, different equipment.</p><div class="block" style="padding:0">${list.map(n => `<button class="wksrow" data-sw="${esc(n)}"><span class="wkth">${Moves.thumb(n)}</span><span class="wkt"><b>${esc(n)}</b><span>${esc(Moves.EQN[Moves.get(n).eq] || '')}</span></span>${ic('swap')}</button>`).join('')}</div>`);
     s.el.addEventListener('click', e => { const b = e.target.closest('[data-sw]'); if (b) { s.close(); cb(b.dataset.sw); } });
   }
 
@@ -408,7 +408,7 @@ const Coach = (() => {
       const logIt = s.logRef ? steps.find(x => x.ref === s.logRef) : null;
       el2('cphase').textContent = s.phase || (s.k === 'rest' ? s.label : s.k === 'ready' ? s.label : s.kind && s.kind !== 'single' ? (s.kind === 'superset' ? 'Superset' : 'Circuit') : w.name);
       el2('cbody').innerHTML = `
-        <div class="cstage ${isWork ? 'work' : 'rest'}">${Moves.svgFor(showName, { cls: 'big' })}</div>
+        <div class="cstage ${isWork ? 'work' : 'rest'}">${Moves.demo(showName, { cls: 'big' })}${Moves.hasBoth(showName) ? `<button class="demosw" data-a="demo">${ic(S.demo === 'anim' ? 'camera' : 'play')}${S.demo === 'anim' ? 'Photos' : 'Animated'}</button>` : ''}</div>
         <div class="cinfo">
           ${!isWork ? `<div class="clabel">${esc(s.k === 'ready' ? 'Get ready' : s.label)}${s.setLabel ? ` · ${esc(s.setLabel)}` : ''}</div><div class="cname sm">${s.k === 'rest' ? 'Next: ' : ''}${esc(showName || '')}</div>` : `<div class="cname">${esc(s.name)}</div><div class="clabel">${s.idx ? esc(s.idx) : s.sets ? `${s.kind === 'single' ? 'Set' : 'Round'} ${s.set} of ${s.sets}` : ''}${it && it.w ? ` · ${wOut(it.w)} ${wUnit()}` : ''}</div>`}
           <div class="cbig" id="cbig"></div>
@@ -418,8 +418,10 @@ const Coach = (() => {
           ${s.k === 'reps' ? `<div class="cbtns"><button class="btn sm primary" data-a="done">${ic('check')}Done</button></div>` : ''}
           ${prevLog && logIt ? `<div class="clog"><span>Last set</span>${stepper('lw', wUnit(), wOut(prevLog.w || 0), '', S.unit === 'lb' ? 5 : 2.5, 0, 500)}${stepper('lr', 'reps', prevLog.r, '', 1, 0, 60)}</div>` : ''}
         </div>`;
+      const ph = $('.cstage .exph', scr);
+      if (ph) { ph.style.setProperty('--exd', (s.k === 'reps' ? s.rep * (Moves.get(s.name).per || 1) : 2400) + 'ms'); ph.classList.toggle('paused', !!st.pausedAt); }
       const svg = $('svg[data-mv]', scr);
-      st.fig = Moves.animate(svg, s.k === 'reps' ? { dur: s.rep * (Moves.get(s.name).per || 1), clock: () => elapsed() } : { clock: () => (st.pausedAt ? null : performance.now()) });
+      if (svg) st.fig = Moves.animate(svg, s.k === 'reps' ? { dur: s.rep * (Moves.get(s.name).per || 1), clock: () => elapsed() } : { clock: () => (st.pausedAt ? null : performance.now()) });
       if (prevLog) wireSteppers(scr.querySelector('.clog'), (id, v) => v);
       update(true);
     }
@@ -471,6 +473,7 @@ const Coach = (() => {
     function togglePause() {
       if (st.pausedAt) { st.paused += performance.now() - st.pausedAt; st.pausedAt = 0; el2('cpp').innerHTML = ic('pause'); Awake.on(); }
       else { st.pausedAt = performance.now(); el2('cpp').innerHTML = ic('play'); }
+      { const ph = $('.cstage .exph', scr); if (ph) ph.classList.toggle('paused', !!st.pausedAt); }
     }
     const timer = setInterval(() => update(false), 100);
     const close = () => { clearInterval(timer); unback(); scr.remove(); PL = null; Awake.off(); };
@@ -513,6 +516,7 @@ const Coach = (() => {
         case 'done': return advance(true);
         case 'prev': return back();
         case 'plus': { const s = cur(); s.dur += 15000; return update(true); }
+        case 'demo': { S.demo = S.demo === 'anim' ? 'photo' : 'anim'; saveSettings(); return render(); }
         case 'pace': { const order = ['slow', 'normal', 'fast']; S.repSpeed = order[(order.indexOf(S.repSpeed || 'normal') + 1) % 3]; saveSettings(); toast(`Rep speed: ${S.repSpeed}`); return; }
       }
     });

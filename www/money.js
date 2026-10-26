@@ -1717,6 +1717,15 @@ const Money = (() => {
     async quickAdd() { if (!(await openMoney())) return; return M.setup ? entrySheet({}) : setupView(); },
     searchTx(q) { if (M.lockOn && !unlocked) return null; const k = q.toLowerCase(); return M.txns.filter(t => ((t.payee || '') + ' ' + cat(t.catId).name + ' ' + (t.note || '')).toLowerCase().includes(k)).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(t => ({ id: t.id, title: t.payee || cat(t.catId).name, sub: `${dlabel(t.date)} · ${cat(t.catId).name}`, amt: (isIncome(t) ? '+' : '−') + inr(own(t), { dec: true }) })); },
     editTx(id) { return entrySheet({ id }); },
+    // For the Life side and the morning briefing: unpaid bills due within `days` (overdue first). Null while Money is locked.
+    billsDue(days = 7) {
+      if (M.lockOn && !unlocked) return null;
+      const lim = addDays(today0(), days);
+      return M.bills.map(b => ({ b, nd: nextDue(b) })).filter(x => x.nd && x.nd.due <= lim).sort((x, y) => x.nd.due - y.nd.due)
+        .map(({ b, nd }) => ({ id: b.id, name: b.name, amount: b.amount, due: nd.due, overdue: nd.overdue }));
+    },
+    payBill(id, dueKey) { const b = M.bills.find(x => x.id === id); if (!b) return null; markPaid(b, parseKey(dueKey)); const st = stats(); return { name: b.name, left: st.left }; },
+    async quickAddPre(pre) { if (!(await openMoney())) return; return M.setup ? entrySheet(pre || {}) : setupView(); },
     _cycleStart: cycleStart, _cycleEnd: cycleEnd, _guess: guessCat, _handleOcr: handleOcr,
   };
 })();

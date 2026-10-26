@@ -94,6 +94,19 @@ const I = {
   pie: '<path d="M12 3.5v8.5h8.5A8.5 8.5 0 1 1 12 3.5z"/><path d="M15 3.8a8.5 8.5 0 0 1 5.2 5.2H15z"/>',
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
   scan: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8 12h8"/>',
+  clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M5 4 2.5 6.5M19 4l2.5 2.5"/>',
+  pin: '<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/>',
+  camera: '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h3L9 5h6l1.5 2h3A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.5"/>',
+  pill: '<rect x="3" y="8.5" width="18" height="7" rx="3.5" transform="rotate(-45 12 12)"/><path d="m8.5 8.5 7 7"/>',
+  drop: '<path d="M12 3.5s6 6.4 6 10.7a6 6 0 0 1-12 0C6 9.9 12 3.5 12 3.5z"/>',
+  calc: '<rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M8 7h8M8.5 12h.01M12 12h.01M15.5 12h.01M8.5 16h.01M12 16h.01M15.5 16h.01"/>',
+  cake: '<path d="M4 20h16v-7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2zM4 15.5c1.3 1 2.7 1 4 0s2.7-1 4 0 2.7 1 4 0 2.7-1 4 0M12 11V7.5M12 4.5v.01"/>',
+  cart: '<path d="M3 4h2.5l2 11h10.5l2-8H6.5"/><circle cx="9" cy="19.5" r="1.3"/><circle cx="17" cy="19.5" r="1.3"/>',
+  book: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5zM5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7h6"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.6 5.7 3.6 9s-1.1 6.3-3.6 9c-2.5-2.7-3.6-5.7-3.6-9S9.5 5.7 12 3z"/>',
+  leaf: '<path d="M5 19c0-8 5-13 15-14-1 10-6 15-14 15M5 19l7-7"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/>',
+  doc: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/>',
   flame: '<path d="M12 21.5c-4 0-6.5-2.7-6.5-6.2 0-3.6 2.8-5.6 3.8-9.3 2 1.3 3 3 3 4.8 1-.6 1.7-1.7 1.9-3 2.4 1.9 4.3 4.7 4.3 7.6 0 3.5-2.5 6.1-6.5 6.1z"/>',
 };
 const ic = (n, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${I[n] || ''}</svg>`;
@@ -103,7 +116,7 @@ const Cap = window.Capacitor;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const P = {};
 if (isNative) {
-  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget']) {
+  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget', 'Alarm', 'Speech']) {
     try { if (Cap.isPluginAvailable(n)) P[n] = Cap.registerPlugin(n); } catch (e) { /* plugin missing */ }
   }
 }
@@ -116,13 +129,18 @@ const DB = {
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'dark', accent: '#00E5FF', unit: 'kg', lastBackup: 0,
+  background: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#2F6BFF', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
+// 5.5: new light, colourful look for everyone once (dark mode is still in Settings).
+if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() === '#00E5FF') S.accent = '#2F6BFF'; saveSettings(); }
+// Each section has its own colour: Muscle uses your chosen colour, Money is green, Life is orange.
+const SECTION_COLORS = { money: '#12A150', life: '#F26B1D' };
+const curAccent = () => SECTION_COLORS[S.mode] || S.accent;
 
 const COLORS = ['#00E5FF', '#22D46A', '#FFD43B', '#FF9F1C', '#FF4057', '#B26BFF', '#FF5FC8', '#4D8DFF'];
-const ACCENTS = [['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
+const ACCENTS = [['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
 const PHASE = { prepare: '#FFD43B', work: '#22D46A', rest: '#FF4057', cyclerest: '#FF9F1C', cooldown: '#4D8DFF', stopwatch: '#00E5FF', done: '#00E5FF', flow: '#9D8CFF', ease: '#C9D2DC' };
 
 const iv = (name, kind, dur) => ({ id: uid(), name, kind, dur });
@@ -195,13 +213,14 @@ function lum([r, g, b]) { const f = c => { c /= 255; return c <= .03928 ? c / 12
 function applyTheme() {
   const root = document.documentElement;
   root.dataset.theme = S.theme === 'light' ? 'light' : 'dark';
-  const rgb = hexRgb(S.accent); const [r, g, b] = rgb;
+  const acc = curAccent(); root.dataset.mode = S.mode || 'muscle';
+  const rgb = hexRgb(acc); const [r, g, b] = rgb;
   const light = S.theme === 'light';
   const ink = lum(rgb) > 0.4 ? '#071114' : '#FFFFFF';
   // On a light background, bright accents need darkening to stay readable as text.
-  let text = S.accent;
+  let text = acc;
   if (light) { let k = 1, c = rgb; while (lum(c) > 0.16 && k > 0.3) { k -= 0.05; c = rgb.map(v => Math.round(v * k)); } text = `rgb(${c.join(',')})`; }
-  root.style.setProperty('--accent', S.accent);
+  root.style.setProperty('--accent', acc);
   root.style.setProperty('--accent-ink', ink);
   root.style.setProperty('--accent-text', text);
   root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},${light ? .14 : .14})`);
@@ -332,7 +351,7 @@ const BG = {
     try {
       await P.LocalNotifications.createChannel({ id: 'kw_phase', name: 'Timer phase alerts', description: 'Sound when a work/rest phase changes while the app is in the background', importance: 5, visibility: 1, vibration: true });
       await P.LocalNotifications.createChannel({ id: 'kw_status', name: 'Workout running', description: 'Shows that a timer is running', importance: 2, visibility: 1, vibration: false });
-      await P.LocalNotifications.createChannel({ id: 'kw_remind', name: 'Workout reminders', description: 'Daily reminders from your weekly plan', importance: 4, visibility: 1, vibration: true });
+      await P.LocalNotifications.createChannel({ id: 'kw_remind', name: 'Reminders', description: 'Workout plan, reminders, tasks, medicine and water', importance: 4, visibility: 1, vibration: true });
       P.LocalNotifications.addListener('localNotificationActionPerformed', a => { if (a && a.notification && a.notification.id >= 500) go('today'); });
     } catch (e) { /* ignore */ }
     this.refreshExact();
@@ -404,6 +423,7 @@ function pushWidget(now) {
       const workout = todays.length ? todays[todays.length - 1].title || 'Workout done' : !hasPlan() ? 'No weekly plan yet' : !day || day.rest ? 'Rest day' : day.items.map(i => i.name).join(' + ') || 'Nothing planned';
       await P.Widget.update({ steps: STP.today || 0, stepGoal: S.stepGoal, stepsOn: !!STP.enabled, money: !!m.money, locked: !!m.locked, left: m.left || 0, safe: m.safe || 0, workout, done: todays.length > 0, streak: st.cur, accent: S.accent });
     } catch (e) { /* widget not added or plugin missing */ }
+    try { if (typeof Life !== 'undefined') await Life.widgetPush(); } catch (e) { /* ignore */ }
   }, now ? 50 : 1500);
 }
 
@@ -425,6 +445,8 @@ function onForeground() {
   if (Gym.cur) Gym.tickClock();
   stepsRefresh();
   Money.onShow();
+  Life.onResume();
+  if (lifeMode() && !$('#layer > .screen')) Life.refresh();
   if (!Run.cur && !$('#layer > .screen') && currentTab === 'today') render();
 }
 document.addEventListener('visibilitychange', () => (document.hidden ? onBackground() : onForeground()));
@@ -769,7 +791,11 @@ const QUOTES = {
   ],
 };
 const dayIndex = (n, salt = 0) => { const d = today0(); const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5); return (doy + salt) % n; };
-const pickQuote = (set, salt) => QUOTES[set][dayIndex(QUOTES[set].length, salt)];
+// Random quote each time, never the same one twice in a row.
+const lastQuote = {};
+const pickQuote = set => { const list = QUOTES[set] || QUOTES.train; let q; for (let i = 0; i < 5; i++) { q = list[Math.floor(Math.random() * list.length)]; if (q !== lastQuote[set]) break; } lastQuote[set] = q; return q; };
+// Tap any quote card for a new one.
+document.addEventListener('click', e => { const f = e.target.closest && e.target.closest('figure.art'); if (!f) return; const q = f.querySelector('q'); if (q) { q.style.opacity = 0; setTimeout(() => { q.textContent = pickQuote(f.dataset.set || 'train'); q.style.opacity = 1; const fg = f.querySelector('.artfig'); if (fg && typeof Moves !== 'undefined') { fg.innerHTML = Moves.svgFor(pickMove(f.dataset.set || 'train'), { cls: 'artmv' }); Moves.mount(fg); } }, 150); } });
 
 // Original vector scenes drawn in code. They use the accent colour, so they follow the theme picker.
 const ART = {
@@ -818,11 +844,23 @@ const ART = {
     <path d="M0 180 L0 160 C90 146 170 170 260 156 C320 148 360 160 400 152 L400 180 Z" fill="#070B17"/>`,
 };
 let artSeq = 0;
+// Quote cards: a bright colour card with the anatomy figure doing a random move. Tap for a new quote and move.
+const ART_MOVES = {
+  train: ['Jumping Jacks', 'Squat Jumps', 'Kettlebell Swing', 'Push-ups', 'Burpee', 'Mountain Climbers', 'Dumbbell Thruster', 'Box Jump', 'High Knees', 'Walking Lunge', 'Dumbbell Curl', 'Lateral Raise'],
+  rest: ['Y:catcow', 'Y:child', 'Y:downdog', 'Y:warrior2', 'Y:triangle', 'Y:butterfly', 'Y:cobra', 'Y:mountain'],
+  progress: ['Deadlift', 'Bench Press', 'Pull-ups', 'Overhead Press', 'Barbell Row', 'Squat', 'Hip Thrust'],
+  done: ['Y:mountain', 'Arm Circles', 'Y:warrior2', 'Jumping Jacks', 'Y:chair'],
+  money: ['Y:mountain', 'Walking Lunge', 'Step-Up', 'Y:warrior2', 'Farmer Carry'],
+  life: ['Y:mountain', 'Y:warrior2', 'Jumping Jacks', 'Y:triangle', 'Walking Lunge', 'Arm Circles', 'Y:chair', 'High Knees'],
+};
+const pickMove = set => { const l = ART_MOVES[set] || ART_MOVES.train; return l[Math.floor(Math.random() * l.length)]; };
 function artCard(scene, quote, { small = false, tag = '' } = {}) {
-  const g = 'a' + (++artSeq);
-  return `<figure class="art ${small ? 'small' : ''}"><svg viewBox="0 0 400 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${ART[scene](g)}</svg>
-    <figcaption>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}<q>${esc(quote)}</q></figcaption></figure>`;
+  const set = Object.keys(QUOTES).find(k => QUOTES[k].includes(quote)) || 'train';
+  return `<figure class="art art2 ${small ? 'small' : ''} art-${set}" data-set="${set}"><span class="artblob"></span><span class="artfig">${Moves.svgFor(pickMove(set), { cls: 'artmv' })}</span>
+    <figcaption>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}<q>${esc(quote)}</q><small class="arthint">Tap for another</small></figcaption></figure>`;
 }
+// Start the figure animation on quote cards whenever they appear on screen.
+new MutationObserver(ms => { if (ms.some(m => m.addedNodes.length)) $$('figure.art2 svg[data-mv]').forEach(s2 => { if (!s2.__mv) Moves.animate(s2); }); }).observe(document.body, { childList: true, subtree: true });
 const TRAIN_SCENES = ['summit', 'runner', 'barbell', 'rings', 'stairs'];
 
 /* ---------- tabs / views ---------- */
@@ -843,17 +881,24 @@ const MTABS = [
   { id: 'm-insights', label: 'Insights', icon: 'pie' },
   { id: 'm-settings', label: 'Settings', icon: 'gear' },
 ];
+const LTABS = [
+  { id: 'l-home', label: 'Home', icon: 'leaf' },
+  { id: 'l-notes', label: 'Notes', icon: 'note' },
+  { id: 'l-tasks', label: 'Tasks', icon: 'check' },
+  { id: 'l-clock', label: 'Clock', icon: 'clock' },
+];
 const moneyMode = () => S.mode === 'money';
+const lifeMode = () => S.mode === 'life';
 // Bottom bar: two tabs, the big Start (or Add in Money) button, two tabs. Settings and search live at the top.
 function renderTabs() {
-  const list = (moneyMode() ? MTABS : TABS).filter(t => t.id !== 'settings' && t.id !== 'm-settings');
+  const list = (moneyMode() ? MTABS : lifeMode() ? LTABS : TABS).filter(t => t.id !== 'settings' && t.id !== 'm-settings');
   const btn = t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`;
-  const mid = `<button class="tab tstart" data-start aria-label="${moneyMode() ? 'Add expense' : 'Start a workout'}"><span class="sbtn">${ic(moneyMode() ? 'plus' : 'play')}</span>${moneyMode() ? 'Add' : 'Start'}</button>`;
+  const mid = `<button class="tab tstart" data-start aria-label="${moneyMode() ? 'Add expense' : lifeMode() ? 'Add note, task or reminder' : 'Start a workout'}"><span class="sbtn">${ic(moneyMode() || lifeMode() ? 'plus' : 'play')}</span>${moneyMode() || lifeMode() ? 'Add' : 'Start'}</button>`;
   $('#tabs').innerHTML = list.slice(0, 2).map(btn).join('') + mid + list.slice(2).map(btn).join('');
   try { $$('[data-mb="settings"]', modebar).forEach(b => b.classList.toggle('on', currentTab === 'settings' || currentTab === 'm-settings')); } catch (e) { /* modebar not built yet */ }
 }
 $('#tabs').addEventListener('click', e => {
-  if (e.target.closest('[data-start]')) { tap(); return moneyMode() ? Money.quickAdd() : openStartSheet(); }
+  if (e.target.closest('[data-start]')) { tap(); return moneyMode() ? Money.quickAdd() : lifeMode() ? Life.quickAdd() : openStartSheet(); }
   const b = e.target.closest('[data-tab]'); if (b) { tap(); go(b.dataset.tab); }
 });
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.btn.primary, .nu-go, .cplay, .qopt, .tring, .sgrid button')) tap(); }, true);
@@ -861,21 +906,23 @@ function tap(style = 'LIGHT') { if (!S.vibrate) return; try { if (P.Haptics) P.H
 function go(tab) { currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
 function render() {
   if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
+  if (currentTab.startsWith('l-')) return Life.renderTab(currentTab.slice(2));
   ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab]();
 }
 // The Muscle | Money switch at the top of every main screen.
-const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
+const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button><button data-mode="life" role="tab">${ic('leaf')}Life</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
 $('#app').insertBefore(modebar, $('#view'));
-function paintModebar() { $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
+function paintModebar() { applyTheme(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
 async function setMode(mode, quiet) {
   if (mode === 'money') return Money.openMoney();
+  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; } return; }
   S.mode = 'muscle'; saveSettings();
   currentTab = 'today'; renderTabs(); paintModebar();
   if (!quiet) { render(); view.scrollTop = 0; }
 }
 modebar.addEventListener('click', e => {
   const mb = e.target.closest('[data-mb]');
-  if (mb) { tap(); if (mb.dataset.mb === 'search') return openSearch(); return go(moneyMode() ? 'm-settings' : 'settings'); }
+  if (mb) { tap(); if (mb.dataset.mb === 'search') return openSearch(); if (lifeMode()) setMode('muscle', true); return go(moneyMode() ? 'm-settings' : 'settings'); }
   const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== (S.mode || 'muscle')) { tap(); setMode(b.dataset.mode); }
 });
 
@@ -886,7 +933,7 @@ function openStartSheet() {
   const recent = []; log.slice().sort((a, b) => b.at - a.at).forEach(x => { if (x.wk && !recent.includes(x.wk) && Coach.byId(x.wk)) recent.push(x.wk); });
   const s = sheet(`<h2>Start</h2>
     ${nu.act === 'pi' || nu.act === 'resume' ? `<button class="nextup sm" data-s="nu"><div class="nu-t"><span class="nu-tag">${esc(nu.tag)}</span><b>${esc(nu.title)}</b><span>${esc(nu.sub)}</span></div><span class="nu-go">${ic(nu.icon)}<span>${esc(nu.btn)}</span></span></button>` : ''}
-    ${recent.length ? `<div class="sect">Do again</div><div class="block" style="padding:0">${recent.slice(0, 3).map(id => { const w = Coach.byId(id); return `<button class="wksrow" data-s="wk" data-id="${id}"><span class="wkth">${Moves.svgFor(w.blocks[0].items[0].name, { cls: 'th' })}</span><span class="wkt"><b>${esc(w.name)}</b><span>${w.blocks.reduce((a, b) => a + b.items.length, 0)} moves</span></span>${ic('play')}</button>`; }).join('')}</div>` : ''}
+    ${recent.length ? `<div class="sect">Do again</div><div class="block" style="padding:0">${recent.slice(0, 3).map(id => { const w = Coach.byId(id); return `<button class="wksrow" data-s="wk" data-id="${id}"><span class="wkth">${Moves.thumb(w.blocks[0].items[0].name)}</span><span class="wkt"><b>${esc(w.name)}</b><span>${w.blocks.reduce((a, b) => a + b.items.length, 0)} moves</span></span>${ic('play')}</button>`; }).join('')}</div>` : ''}
     <div class="sect">Quick start</div>
     <div class="sgrid">
       <button data-s="workouts">${ic('play')}<b>Guided workout</b></button><button data-s="gym">${ic('dumbbell')}<b>Gym log</b></button><button data-s="yoga">${ic('lotus')}<b>Yoga</b></button>
@@ -916,7 +963,7 @@ const SETTINGS_INDEX = [
   ['Salary day', 'm-settings'], ['Monthly budget', 'm-settings'], ['Money lock', 'm-settings'], ['Accounts', 'm-settings'], ['Savings goals', 'm-settings'], ['Friends & splits', 'm-settings'], ['Import PhonePe statement', 'm-settings'], ['Export spreadsheet', 'm-settings'],
 ];
 function openSearch() {
-  const scr = el(`<section class="screen srchscr"><header class="topbar srch"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button><input class="field body" id="sq" placeholder="Search exercises, workouts, payments…" autocomplete="off" enterkeyhint="search"></header><div class="scroll"><div class="page" id="sres"></div></div></section>`);
+  const scr = el(`<section class="screen srchscr"><header class="topbar srch"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button><input class="field body" id="sq" placeholder="Search exercises, notes, payments…" autocomplete="off" enterkeyhint="search"></header><div class="scroll"><div class="page" id="sres"></div></div></section>`);
   layer.appendChild(scr);
   const close = () => { unback(); scr.remove(); };
   const unback = pushBack(close);
@@ -930,11 +977,13 @@ function openSearch() {
     const tms = [...timers, ...allTemplates()].filter(t => t.name.toLowerCase().includes(k)).slice(0, 6);
     const tx = Money.searchTx(q);
     const sets = SETTINGS_INDEX.filter(x => x[0].toLowerCase().includes(k));
+    const lf = Life.search(q);
     const sec = (title, html) => html ? `<div class="sect">${title}</div><div class="block" style="padding:0">${html}</div>` : '';
-    box.innerHTML = sec('Exercises', ex.map(n => row('ex:' + n, n, (Moves.get(n).muscles.map(m => Moves.MNAME[m]).filter(Boolean).slice(0, 3).join(', ')), '', `<span class="wkth">${Moves.svgFor(n, { cls: 'th' })}</span>`)).join(''))
+    box.innerHTML = sec('Exercises', ex.map(n => row('ex:' + n, n, (Moves.get(n).muscles.map(m => Moves.MNAME[m]).filter(Boolean).slice(0, 3).join(', ')), '', `<span class="wkth">${Moves.thumb(n)}</span>`)).join(''))
       + sec('Workouts', wks.map(w => row('wk:' + w.id, w.name, w.tpl ? 'Template' : 'My workout', '', `<span class="sico">${ic('play')}</span>`)).join(''))
       + sec('Timers & yoga', tms.map(t => row('tm:' + t.id, t.name, t.yoga ? 'Yoga & mobility' : fmt(totalOf(t)), '', `<span class="sico">${ic(t.yoga ? 'lotus' : 'timer')}</span>`)).join(''))
       + (tx === null ? sec('Payments', `<div class="empty" style="padding:14px">Unlock Money to search payments.</div>`) : sec('Payments', (tx || []).map(t => row('tx:' + t.id, t.title, t.sub, t.amt, `<span class="sico rs">₹</span>`)).join('')))
+      + sec('Notes, tasks & dates', lf.map(x => row('lf:' + x.type + ':' + x.id, x.title, x.sub, '', `<span class="sico">${ic({ note: 'note', task: 'check', rem: 'bell', ev: 'cake', jr: 'book' }[x.type])}</span>`)).join(''))
       + sec('Settings', sets.map(x => row('st:' + x[1] + ':' + (x[2] || ''), x[0], x[1].startsWith('m-') ? 'Money settings' : 'Settings', '', `<span class="sico">${ic('gear')}</span>`)).join(''))
       || `<div class="empty" style="padding-top:40px">Nothing found for "${esc(q)}".</div>`;
     Moves.mount(box);
@@ -948,6 +997,7 @@ function openSearch() {
     if (type === 'wk') { close(); return Coach.openDetail(Coach.byId(v)); }
     if (type === 'tm') { close(); const t = findTimer(v); if (t && t.yoga) return Yoga.showRoutine(t.id); return t && startTimer(t); }
     if (type === 'tx') return Money.editTx(v);
+    if (type === 'lf') { const [lt, ...id] = rest; return Life.openResult(lt, id.join(':')); }
     if (type === 'st') {
       close();
       const [where] = v.split(':');
@@ -1022,7 +1072,7 @@ function openOnboarding() {
     if (b.dataset.a === 'next') { read(); tap(); if (step === N - 1) return finish(); step++; paint(); }
   });
 }
-view.addEventListener('click', e => { if (currentTab.startsWith('m-')) Money.handleClick(e); });
+view.addEventListener('click', e => { if (currentTab.startsWith('m-')) Money.handleClick(e); else if (currentTab.startsWith('l-')) Life.handleClick(e); });
 function rerenderKeepScroll() { const t = view.scrollTop; render(); view.scrollTop = t; }
 const topbar = (title, right = '') => `<header class="topbar"><h1>${esc(title)}</h1>${right ? `<div class="tb-right">${right}</div>` : ''}</header>`;
 
@@ -2349,7 +2399,7 @@ function pickTimerFor(cb) {
 
 /* ---------- backup & restore ---------- */
 function backupData() {
-  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), workouts: Coach.mine, settings: S };
+  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), workouts: Coach.mine, life: Life.data, settings: S };
 }
 async function exportBackup() {
   const json = JSON.stringify(backupData());
@@ -2393,6 +2443,7 @@ function importBackup() {
         if (data.money) Money.data = data.money;
         if (data.health) Health.data = data.health;
         if (data.workouts) Coach.mine = data.workouts;
+        if (data.life) Life.data = data.life;
         if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
       } else {
         timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
@@ -2402,6 +2453,7 @@ function importBackup() {
         if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats), accounts: byId(cur.accounts, inc.accounts), goals: byId(cur.goals, inc.goals), people: byId(cur.people, inc.people), transfers: byId(cur.transfers, inc.transfers), settles: byId(cur.settles, inc.settles), limits: Object.assign({}, inc.limits, cur.limits) }); }
         if (data.health) Health.merge(data.health);
         if (data.workouts) Coach.mine = byId(Coach.mine, data.workouts);
+        if (data.life) Life.merge(data.life);
       }
       Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
       saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
@@ -2422,7 +2474,7 @@ function viewSettings() {
     <div class="block">
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Theme</div></span></div>
       <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0"><button class="${S.theme !== 'light' ? 'on' : ''}" data-theme="dark">Dark</button><button class="${S.theme === 'light' ? 'on' : ''}" data-theme="light">Light</button></div></div>
-      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Accent colour</div></span></div>
+      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Muscle colour</div><div class="s">Money is always green and Life orange, so you always know where you are</div></span></div>
       <div class="swatches">${ACCENTS.map(([n, c]) => `<button data-acc="${c}" class="${c.toLowerCase() === S.accent.toLowerCase() ? 'on' : ''}" style="background:${c}" aria-label="${n}"></button>`).join('')}</div>
     </div>
     <div class="sect">Sound & alerts</div>
@@ -2466,7 +2518,7 @@ function viewSettings() {
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 4.5 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 5.5 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
@@ -2508,11 +2560,13 @@ function viewSettings() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
 // program.js loads after this file, so draw the first screen once every script has run.
 window.addEventListener('DOMContentLoaded', () => {
-  const wantMoney = S.mode === 'money';
+  const wantMoney = S.mode === 'money', wantLife = S.mode === 'life';
   S.mode = 'muscle'; currentTab = 'today';
+  if (wantLife) { S.mode = 'life'; currentTab = 'l-home'; }
   renderTabs(); paintModebar(); render();
   if (wantMoney) Money.openMoney();
   Money.boot();
+  Life.boot();
   Health.scheduleScorecard();
   setTimeout(maybeOnboard, 300);
   pushWidget();
