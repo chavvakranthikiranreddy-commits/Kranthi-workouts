@@ -47,7 +47,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.work:work-runtime:2.10.0"
-    implementation "com.google.mlkit:text-recognition:16.0.1"
+    // Screenshot reader through Google Play services: the model is downloaded once by the phone instead of
+    // being bundled for every CPU type, which keeps the APK much smaller.
+    implementation "com.google.android.gms:play-services-mlkit-text-recognition:19.0.1"
     implementation "androidx.biometric:biometric:1.1.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"

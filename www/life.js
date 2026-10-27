@@ -1,4 +1,4 @@
-/* Muscle & Money: the Life side.
+/* Vyora: the Life side.
    Home (today's agenda, weather, quote, tools), Notes, Tasks (to-do, reminders, habits, shopping lists),
    Clock (alarms with your own ringtones, world clock, bedtime & smart wake) and tools:
    journal, focus timer, medicine & water reminders, birthdays & countdowns, weather, calculator & converter.
@@ -9,7 +9,29 @@ const Life = (() => {
   const fresh = () => ({ notes: [], reminders: [], tasks: [], habits: [], lists: [], journal: [], events: [], meds: [], medLog: {}, water: { on: false, from: '08:00', to: '21:00', every: 2 },
     focus: { work: 25, brk: 5, long: 15, sessions: [] }, cities: ['Asia/Kolkata', 'America/New_York', 'Europe/London'], weather: null, alarms: [], tones: [], bed: { on: false, bed: '23:00', wake: '06:30', days: [1, 1, 1, 1, 1, 1, 1], remind: 30 }, journalLock: false, nid: 10000, calcHist: [], docs: [] });
   let L = Object.assign(fresh(), DB.get('life', {}));
-  const save = () => { DB.set('life', L); };
+  /* Journal entries and document numbers/notes are kept encrypted (Android Keystore key via the Vault plugin).
+     The plain copy holds everything else, so reminders, widgets and the home screen work without decrypting. */
+  let secSealed = !!(DB.get('lifesec', null) || {}).blob;
+  let secFailed = false;
+  let secSaving = Promise.resolve();
+  const secretsOf = () => ({ journal: L.journal, docs: Object.fromEntries((L.docs || []).map(d => [d.id, { number: d.number || '', note: d.note || '' }])) });
+  const save = () => {
+    if (!(P.Vault && L.secure)) return DB.set('life', L);
+    const plain = clone(L); plain.journal = []; plain.docs = (plain.docs || []).map(d => { const c = Object.assign({}, d); delete c.number; delete c.note; return c; });
+    const ok = DB.set('life', plain);
+    if (!secSealed) { const snap = JSON.stringify(secretsOf()); secSaving = secSaving.then(async () => { try { const r = await P.Vault.encrypt({ text: snap }); if (DB.set('lifesec', { enc: 1, blob: r.data, at: Date.now() }) === false) logProblem('Could not save journal securely', 'life'); } catch (e) { logProblem('Could not encrypt journal', 'life'); toast('Could not save your journal securely. Try again.'); } }); }
+    return ok;
+  };
+  async function unsealLife() {
+    if (!P.Vault) return;
+    if (!secSealed) { if (!L.secure) { L.secure = true; save(); } return; }
+    try {
+      const r = await P.Vault.decrypt({ data: DB.get('lifesec', {}).blob }); const sec = JSON.parse(r.text);
+      L.journal = sec.journal || []; (L.docs || []).forEach(d => { const x = (sec.docs || {})[d.id]; if (x) { d.number = x.number; d.note = x.note; } });
+      secSealed = false; L.secure = true;
+    } catch (e) { secFailed = true; logProblem('Could not decrypt journal', 'life'); }
+  }
+  const lifeLockedMsg = () => toast('Your journal and document details can\'t be opened on this phone. Restore them from a Vyora backup.');
   let tab = 'home', taskSeg = 'todo', clockSeg = 'alarms', noteQuery = '';
   const nextNid = () => { L.nid = (L.nid || 10000) + 10; return L.nid; };
   const WDS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
@@ -27,9 +49,9 @@ const Life = (() => {
       const pend = await P.LocalNotifications.getPending();
       const old = (pend.notifications || []).filter(n => n.id >= 10000).map(n => ({ id: n.id }));
       if (old.length) await P.LocalNotifications.cancel({ notifications: old });
-      const perm = await P.LocalNotifications.checkPermissions(); if (perm.display !== 'granted') return;
+      const perm = await P.LocalNotifications.checkPermissions(); if (perm.display !== 'granted') { L.sched = { at: Date.now(), denied: true }; return; }
       const list = [], now = new Date();
-      const N = (id, title, body, schedule) => list.push({ id, title, body, channelId: 'kw_remind', schedule: Object.assign({ allowWhileIdle: true }, schedule), isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
+      const N = (id, title, body, schedule, ch) => list.push({ id, title, body, channelId: ch || 'kw_remind', schedule: Object.assign({ allowWhileIdle: true }, schedule), isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
       const atNext = (hm, fromDate) => { const [h, m] = hm.split(':').map(Number); const d = new Date(fromDate || now); d.setHours(h, m, 0, 0); return d; };
       L.reminders.filter(r => r.on).forEach(r => {
         const [h, m] = r.time.split(':').map(Number);
@@ -39,13 +61,26 @@ const Life = (() => {
       });
       L.tasks.filter(t => !t.done && t.due && t.time).forEach(t => { const at = atNext(t.time, parseKey(t.due)); if (at > now) N(t.nid, '✅ ' + t.title, 'Task due', { at }); });
       L.habits.filter(h => h.time).forEach(h => { const [hh, mm] = h.time.split(':').map(Number); N(h.nid, `${h.icon} ${h.name}`, 'Keep your streak going', { on: { hour: hh, minute: mm } }); });
-      L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const [hh, mm] = tm.split(':').map(Number); N(md.nid + i, `💊 ${md.name}`, md.dose ? `Take ${md.dose}` : 'Time for your medicine', { on: { hour: hh, minute: mm } }); }));
+      L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const [hh, mm] = tm.split(':').map(Number); N(md.nid + i, S.notifDetails ? `💊 ${md.name}` : '💊 Medicine reminder', S.notifDetails ? (md.dose ? `Take ${md.dose}` : 'Time for your medicine') : 'Open Vyora to see which one', { on: { hour: hh, minute: mm } }, 'kw_private'); }));
       if (L.water.on) waterTimes().forEach((tm, i) => { const [hh, mm] = tm.split(':').map(Number); N(90000 + i, '💧 Drink water', 'A glass now keeps you on track', { on: { hour: hh, minute: mm } }); });
       L.events.forEach(ev => { const nx = nextEvent(ev); if (!nx) return; [0, ev.before || 0].filter((v, i, a) => a.indexOf(v) === i).forEach((b, i) => { const at = addDays(nx, -b); at.setHours(9, 0, 0, 0); if (at > now) N(ev.nid + i, `${ev.type === 'birthday' ? '🎂' : ev.type === 'anniversary' ? '💍' : '📅'} ${ev.name}`, b ? `In ${b} day${b > 1 ? 's' : ''}` : ev.type === 'birthday' ? 'Birthday today. Send your wishes!' : 'Today', { at }); }); });
       if (L.bed.on && L.bed.remind) L.bed.days.forEach((on, d) => { if (!on) return; const [hh, mm] = L.bed.bed.split(':').map(Number); const t = (hh * 60 + mm - L.bed.remind + 1440) % 1440; N(91000 + d, '🌙 Bedtime soon', `Wind down for ${t12(L.bed.bed)}. Phone away, lights low.`, { on: { weekday: ((d - (hh * 60 + mm < L.bed.remind ? 1 : 0) + 7) % 7) + 1, hour: Math.floor(t / 60), minute: t % 60 } }); });
-      (L.docs || []).filter(d => d.exp).forEach(d => { const ex = parseKey(d.exp); [[d.before || 30, 0], [0, 1]].forEach(([b, j]) => { const at = addDays(ex, -b); at.setHours(9, 0, 0, 0); if (at > now) N(d.nid + j, `📄 ${d.name} ${b ? 'expires in ' + b + ' days' : 'expires today'}`, 'Renew it in time. Open Documents in Muscle & Money.', { at }); }); });
-      if (list.length) await P.LocalNotifications.schedule({ notifications: list.slice(0, 400) });
-    } catch (e) { console.warn('life notifications', e); }
+      (L.docs || []).filter(d => d.exp).forEach(d => { const ex = parseKey(d.exp); [[d.before || 30, 0], [0, 1]].forEach(([b, j]) => { const at = addDays(ex, -b); at.setHours(9, 0, 0, 0); if (at > now) N(d.nid + j, S.notifDetails ? `📄 ${d.name} ${b ? 'expires in ' + b + ' days' : 'expires today'}` : `📄 A document ${b ? 'expires in ' + b + ' days' : 'expires today'}`, 'Renew it in time. Open Documents in Vyora.', { at }, 'kw_private'); }); });
+      // Android allows a limited number of pending notifications: keep the soonest ones and say if some were left out.
+      const nextAt = n => { const sc = n.schedule; if (sc.at) return +new Date(sc.at); const o = sc.on || {}; const d = new Date(); d.setSeconds(0, 0); d.setHours(o.hour || 0, o.minute || 0); for (let i = 0; i < 8; i++) { if (d > now && (o.weekday == null || d.getDay() + 1 === o.weekday)) return +d; d.setDate(d.getDate() + 1); } return +d; };
+      list.sort((a, b) => nextAt(a) - nextAt(b));
+      const MAX = 300;
+      if (list.length) await P.LocalNotifications.schedule({ notifications: list.slice(0, MAX) });
+      L.sched = { at: Date.now(), total: list.length, scheduled: Math.min(list.length, MAX), error: null };
+    } catch (e) { L.sched = { at: Date.now(), error: String(e && e.message || e) }; logProblem('Reminders could not be scheduled', 'life'); }
+  }
+  // Permission and scheduling status, so a reminder never silently fails.
+  function notifStatusHtml() {
+    const st = L.sched || {};
+    if (!isNative) return `<div class="mwarn">${ic('info')}<span>Reminders pop up in the installed app.</span></div>`;
+    if (st.denied) return `<button class="mwarn bad" data-a="notifperm">${ic('bell')}<span><b>Notifications are off for Vyora.</b> Reminders won't appear. Tap to allow them.</span></button>`;
+    if (st.error) return `<div class="mwarn bad">${ic('info')}<span>Reminders couldn't be scheduled (${esc(st.error)}). Try again, or restart the phone.</span></div>`;
+    return `<div class="nstatus">${ic('check')}<span>${st.total ? `${st.scheduled} reminder alerts scheduled${st.total > st.scheduled ? ` · <b class="badt">${st.total - st.scheduled} later ones will be added as the soonest ones pass</b>` : ''}` : 'Notifications allowed'} · Battery saver can delay alerts on some phones.</span><button class="btn sm" data-a="notiftest">Test</button></div>`;
   }
   async function askNotif() { try { if (typeof BG !== 'undefined') await BG.ensurePermission(true); } catch (e) { /* ignore */ } }
   function nextOccur(r) {
@@ -100,6 +135,18 @@ const Life = (() => {
   function upcomingEvents(days = 30) {
     return L.events.map(ev => ({ ev, d: nextEvent(ev) })).filter(x => x.d && (x.d - today0()) / 864e5 <= days).sort((a, b) => a.d - b.d);
   }
+  const TOOLS = [['journal', 'book', 'Journal'], ['focus', 'target', 'Focus'], ['weather', 'sun', 'Weather'], ['meds', 'pill', 'Medicine'], ['water', 'drop', 'Water'], ['events', 'cake', 'Birthdays'], ['calc', 'calc', 'Calculator'], ['convert', 'swap', 'Converter'], ['lists', 'cart', 'Shopping'], ['docs', 'lock', 'Documents'], ['world', 'globe', 'World clock'], ['voice', 'mic', 'Voice add'], ['brief', 'sun', 'Briefing'], ['bills', 'wallet', 'Bills'], ['alarm', 'clock', 'Alarms']];
+  const favTools = () => (Array.isArray(L.favTools) && L.favTools.length ? L.favTools : ['journal', 'meds', 'docs', 'lists', 'focus', 'weather', 'calc', 'events', 'brief']);
+  // All tools, with a star to pin your favourites to Today.
+  function allTools() {
+    const s = sheet(`<h2>All tools</h2><p class="sub">Tap a tool to open it. Tap ☆ to pin it to Today.</p><div class="block" style="padding:0" id="atl"></div>`);
+    const paint = () => { const f = favTools(); $('#atl', s.el).innerHTML = TOOLS.map(([k, icn, n]) => `<div class="lrow"><button class="lrm atrow" data-open="${k}"><span class="atico">${ic(icn)}</span><b>${n}</b></button><button class="round-btn sm fav ${f.includes(k) ? 'on' : ''}" data-fav="${k}" aria-label="${f.includes(k) ? 'Remove from favourites' : 'Add to favourites'}">${f.includes(k) ? '★' : '☆'}</button></div>`).join(''); };
+    paint();
+    s.el.addEventListener('click', e => {
+      const fv = e.target.closest('[data-fav]'); if (fv) { const f = favTools().slice(); const k = fv.dataset.fav; const i = f.indexOf(k); if (i >= 0) f.splice(i, 1); else f.push(k); L.favTools = f.length ? f : ['journal']; save(); paint(); refresh(); return; }
+      const o = e.target.closest('[data-open]'); if (o) { s.close(); setTimeout(() => openTool(o.dataset.open), 150); }
+    });
+  }
   function homeView() {
     const now = new Date(); const h = now.getHours();
     const nextA = nextAlarm();
@@ -117,8 +164,8 @@ const Life = (() => {
       ${habitsMini()}
       ${(() => { const bl = (billsSafe(7) || []).filter(b => !b.overdue && Math.round((b.due - today0()) / 864e5) > 0); return ev.length || bl.length ? `<div class="sect"><span>Coming up</span><button class="linkbtn" data-tool="events">All</button></div><div class="block" style="padding:0">${ev.map(x => evRow(x.ev, x.d)).join('')}${bl.length ? `<div class="agenda">${bl.map(billRow).join('')}</div>` : ''}</div>` : ''; })()}
       ${docsSoon().length ? `<button class="nudge warn" data-tool="docs">${ic('doc')}<span><b>${esc(docsSoon()[0].name)}</b> ${docExpTxt(docsSoon()[0])}. Tap to see your documents.</span></button>` : ''}
-      <div class="sect">Tools</div>
-      <div class="tools">${[['journal', 'book', 'Journal'], ['focus', 'target', 'Focus'], ['weather', 'sun', 'Weather'], ['meds', 'pill', 'Medicine'], ['water', 'drop', 'Water'], ['events', 'cake', 'Birthdays'], ['calc', 'calc', 'Calculator'], ['convert', 'swap', 'Converter'], ['lists', 'cart', 'Shopping'], ['docs', 'lock', 'Documents'], ['world', 'globe', 'World clock'], ['voice', 'mic', 'Voice add'], ['brief', 'sun', 'Briefing'], ['bills', 'wallet', 'Bills'], ['alarm', 'clock', 'Alarms']].map(([k, icn, n]) => `<button data-tool="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}</div>
+      <div class="sect"><span>Favourite tools</span><button class="linkbtn" data-a="alltools">See all tools</button></div>
+      <div class="tools">${favTools().map(k => TOOLS.find(t => t[0] === k)).filter(Boolean).map(([k, icn, n]) => `<button data-tool="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}<button data-a="alltools" aria-label="See all tools"><span>${ic('more')}</span><b>All tools</b></button></div>
     </div>`;
     if (L.weather && (!L.weather.at || Date.now() - L.weather.at > 30 * 60000)) refreshWeather(true);
   }
@@ -214,7 +261,7 @@ const Life = (() => {
         ${grp('Overdue', open.filter(t => t.due && t.due < k))}${grp('Today', open.filter(t => t.due === k))}${grp('Upcoming', open.filter(t => t.due && t.due > k).sort((a, b) => a.due.localeCompare(b.due)))}${grp('Any time', open.filter(t => !t.due))}
         ${!open.length ? '<div class="empty"><b>All clear</b>Type a task above and press enter.</div>' : ''}${done.length ? `<div class="sect">Done</div><div class="block" style="padding:0">${done.map(taskRow).join('')}</div>` : ''}`;
     } else if (taskSeg === 'rem') {
-      body = `<button class="btn primary" data-add="reminder" style="margin-top:4px">${ic('plus')}New reminder</button>
+      body = `${notifStatusHtml()}<button class="btn primary" data-add="reminder" style="margin-top:4px">${ic('plus')}New reminder</button>
         <div class="block" style="padding:0;margin-top:12px">${L.reminders.filter(r => !r.note_id || true).sort((a, b) => a.time.localeCompare(b.time)).map(r => `<div class="lrow"><button class="lrm" data-rem="${r.id}"><b>${esc(r.title)}</b><span>${t12(r.time)} · ${remRepeatTxt(r)}${r.note_id ? ' · from a note' : ''}</span></button><button class="toggle ${r.on ? 'on' : ''}" data-remtog="${r.id}" aria-label="On or off"></button></div>`).join('') || '<div class="empty" style="padding:18px">No reminders yet. Bills, calls, pills, anything.</div>'}</div>`;
     } else if (taskSeg === 'habits') {
       const days = []; for (let i = 6; i >= 0; i--) days.push(addDays(today0(), -i));
@@ -377,7 +424,7 @@ const Life = (() => {
           <button class="set-row" data-a="bedon"><span class="st"><div class="t">Bedtime schedule</div><div class="s">Reminder before bed and a smart wake-up alarm</div></span><span class="toggle ${b.on ? 'on' : ''}"></span></button>
           <div class="set-row"><span class="st"><div class="t">Wind-down reminder</div><div class="s">Minutes before bedtime</div></span><select id="brem" class="timein">${[0, 15, 30, 45, 60].map(v => `<option value="${v}" ${b.remind === v ? 'selected' : ''}>${v ? v + ' min' : 'Off'}</option>`).join('')}</select></div>
         </div>
-        <div class="sect">Sleep cycles</div><div class="block" style="padding:12px 16px"><p class="hint" style="margin:0 0 8px">Waking at the end of a 90-minute cycle feels easier. To wake at ${t12(b.wake)}, try sleeping at:</p><div class="presets" style="justify-content:flex-start;margin:0">${[6, 5, 4].map(c => { const x = ((wh * 60 + wm) - c * 90 - 15 + 1440) % 1440; const hm = `${pad(Math.floor(x / 60))}:${pad(x % 60)}`; return `<button class="chip small" data-cyc="${hm}">${t12(hm)} · ${c * 1.5} h</button>`; }).join('')}</div></div>
+        <div class="sect">Sleep cycles</div><div class="block" style="padding:12px 16px"><p class="hint" style="margin:0 0 8px">Sleep cycles last roughly 90 minutes (it varies from person to person), and waking near the end of one can feel easier. To wake at ${t12(b.wake)}, you could aim to fall asleep around:</p><div class="presets" style="justify-content:flex-start;margin:0">${[6, 5, 4].map(c => { const x = ((wh * 60 + wm) - c * 90 - 15 + 1440) % 1440; const hm = `${pad(Math.floor(x / 60))}:${pad(x % 60)}`; return `<button class="chip small" data-cyc="${hm}">${t12(hm)} · ${c * 1.5} h</button>`; }).join('')}</div></div>
         <p class="hint">With the schedule on, the wake alarm logs your sleep when you turn it off, so your readiness score fills in by itself.</p>`;
     }
     view.innerHTML = topbar('Clock') + `<div class="page"><div class="seg">${segs.map(([k, n]) => `<button class="${clockSeg === k ? 'on' : ''}" data-cseg="${k}">${n}</button>`).join('')}</div>${body}</div>`;
@@ -443,8 +490,8 @@ const Life = (() => {
       a.hm = $('#ahm', s.el).value || a.hm; a.label = $('#alb', s.el).value.trim(); a.snooze = +$('#asn', s.el).value; a.on = true;
       const i = L.alarms.findIndex(x => x.id === a.id); if (i >= 0) L.alarms[i] = a; else L.alarms.push(a);
       L.alarms.sort((x, y) => x.hm.localeCompare(y.hm));
-      save(); s.close(); await syncAlarms(); refresh();
-      const nx = nextAlarm(); if (nx && nx.a.id === a.id) toast(`Alarm set for ${untilTxt(nx.at)} from now`);
+      save(); s.close(); const ok = await syncAlarms(); refresh();
+      if (ok || !P.Alarm) alarmToast(a); else toast('Alarm saved, but the phone refused to schedule it. Check Settings → Phone features.');
     });
   }
   let previewAudio = null;
@@ -513,13 +560,20 @@ const Life = (() => {
       return String(r.uri || '').replace(/^file:\/\//, '');
     } catch (e) { return ''; }
   }
+  // Returns true only when the phone accepted the alarms, so the app never claims an alarm is set when it isn't.
   async function syncAlarms() {
-    if (!P.Alarm) return;
+    if (!P.Alarm) return false;
     try {
       const list = [];
       for (const a of L.alarms) { const [h, m] = a.hm.split(':').map(Number); list.push({ id: a.id, hour: h, minute: m, days: a.days.reduce((acc, on, i) => acc | (on ? 1 << i : 0), 0), enabled: !!a.on, label: a.label || 'Alarm', sound: await tonePath(a.tone), vibrate: a.vibrate !== false, snooze: a.snooze || 0, smart: !!a.smart }); }
       await P.Alarm.setAll({ alarms: list });
-    } catch (e) { console.warn('alarms', e); }
+      return true;
+    } catch (e) { logProblem('Alarms could not be scheduled: ' + (e && e.message || e), 'alarm'); return false; }
+  }
+  async function alarmToast(a) {
+    if (!P.Alarm) { toast(isNative ? 'Alarm saved, but this build can\'t ring alarms. Install the latest Vyora APK.' : 'Alarm saved. Alarms ring in the installed app.'); return; }
+    try { const p = await P.Alarm.permissions(); if (!p.exact) { toast('Alarm saved, but "Alarms & reminders" permission is off, so it may ring late. Open the Clock tab to allow it.'); return; } } catch (e) { /* ignore */ }
+    const nx = nextAlarm(); if (nx && nx.a.id === a.id) toast(`Alarm set for ${untilTxt(nx.at)} from now`);
   }
   // After an alarm rings: one-off alarms switch themselves off, and a smart alarm asks how you slept.
   async function onResume() {
@@ -549,12 +603,13 @@ const Life = (() => {
   }
 
   /* ---------- tools ---------- */
-  function toolScreen(title, inner, onMount) {
-    const scr = el(`<section class="screen ltool"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button></div><h1>${esc(title)}</h1></header><div class="scroll"><div class="page" id="tbody">${inner}</div></div></section>`);
+  function toolScreen(title, inner, onMount, { secure = title === 'Journal' || title === 'Documents' } = {}) {
+    const scr = el(`<section class="screen ltool ${secure ? 'secure-screen' : ''}"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button></div><h1>${esc(title)}</h1></header><div class="scroll"><div class="page" id="tbody">${inner}</div></div></section>`);
     layer.appendChild(scr);
-    const close = () => { unback(); scr.remove(); if (scr._cleanup) scr._cleanup(); refresh(); };
+    const close = () => { unback(); scr.remove(); if (scr._cleanup) scr._cleanup(); updateSecure(); refresh(); };
     const unback = pushBack(close);
     scr.addEventListener('click', e => { if (e.target.closest('[data-a="close"]')) close(); });
+    updateSecure();
     if (onMount) onMount(scr, $('#tbody', scr), close);
     return scr;
   }
@@ -567,15 +622,19 @@ const Life = (() => {
       L.weather.data = await r.json(); L.weather.at = Date.now(); save();
       if (tab === 'home') refresh();
       const ws = $('#wxbox'); if (ws) ws.innerHTML = weatherHtml();
-    } catch (e) { if (!quiet) toast('Could not load weather. Check your internet.'); }
+      L.weather.offline = false;
+    } catch (e) { if (L.weather) { L.weather.offline = true; save(); const ws = $('#wxbox'); if (ws && L.weather.data) ws.innerHTML = weatherHtml(); } if (!quiet) toast('Could not load weather. Check your internet.'); }
   }
   function weatherHtml() {
     const w = L.weather && L.weather.data; if (!w) return '<div class="empty">Loading…</div>';
     const c = w.current; const hrs = [];
+    const ago = L.weather.at ? Math.round((Date.now() - L.weather.at) / 60000) : null;
+    const stale = L.weather.offline || (ago != null && ago > 180);
+    const agoTxt = ago == null ? '' : ago < 2 ? 'just now' : ago < 60 ? `${ago} min ago` : ago < 1440 ? `${Math.round(ago / 60)} h ago` : `${Math.round(ago / 1440)} days ago`;
     const nowH = new Date().toISOString().slice(0, 13);
     const start = Math.max(0, w.hourly.time.findIndex(t => t.slice(0, 13) >= nowH));
     for (let i = start; i < start + 24 && i < w.hourly.time.length; i += 2) hrs.push(i);
-    return `<div class="wxhero"><span class="wxbig">${wx(c.weather_code)[0]}</span><b>${Math.round(c.temperature_2m)}°</b><span>${esc(wx(c.weather_code)[1])}</span><small>Feels like ${Math.round(c.apparent_temperature)}° · Humidity ${c.relative_humidity_2m}% · Wind ${Math.round(c.wind_speed_10m)} km/h</small></div>
+    return `${stale ? `<div class="mwarn">${ic('info')}<span>${L.weather.offline ? 'You seem to be offline. ' : ''}Showing weather from ${agoTxt}. Pull down or reopen to refresh when you're online.</span></div>` : ''}<div class="wxhero"><span class="wxbig">${wx(c.weather_code)[0]}</span><b>${Math.round(c.temperature_2m)}°</b><span>${esc(wx(c.weather_code)[1])}</span><small>Feels like ${Math.round(c.apparent_temperature)}° · Humidity ${c.relative_humidity_2m}% · Wind ${Math.round(c.wind_speed_10m)} km/h</small></div>
       <div class="wxhours">${hrs.map(i => `<div><small>${new Date(w.hourly.time[i]).toLocaleTimeString(undefined, { hour: 'numeric' })}</small><span>${wx(w.hourly.weather_code[i])[0]}</span><b>${Math.round(w.hourly.temperature_2m[i])}°</b><small>${w.hourly.precipitation_probability[i] || 0}%</small></div>`).join('')}</div>
       <div class="sect">7 days</div><div class="block" style="padding:0">${w.daily.time.map((d, i) => `<div class="wxday"><span>${i ? new Date(d).toLocaleDateString(undefined, { weekday: 'short' }) : 'Today'}</span><span>${wx(w.daily.weather_code[i])[0]}</span><small>${w.daily.precipitation_probability_max[i] || 0}%</small><span class="wxr"><em>${Math.round(w.daily.temperature_2m_min[i])}°</em><i></i><b>${Math.round(w.daily.temperature_2m_max[i])}°</b></span></div>`).join('')}</div>
       <p class="hint">Sunrise ${new Date(w.daily.sunrise[0]).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · Sunset ${new Date(w.daily.sunset[0]).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · UV ${Math.round(w.daily.uv_index_max[0] || 0)}${w.daily.uv_index_max[0] >= 8 ? ' (very high, use sunscreen)' : ''}. Data from Open-Meteo.</p>`;
@@ -597,28 +656,35 @@ const Life = (() => {
   // Journal
   const MOODS = ['😫', '😕', '😐', '🙂', '😄'];
   async function unlockJournal() {
-    if (!L.journalLock || !P.AppLock) return true;
+    if (secFailed) { lifeLockedMsg(); return false; }
+    if (!L.journalLock) return true;
+    // Fail closed: a locked journal never opens without a successful check.
+    if (!P.AppLock) { toast('The journal is locked and this device can\'t check your fingerprint or screen lock'); return false; }
+    try { const a = await P.AppLock.available(); if (!a.available) { await confirmBox('Journal stays locked', 'Your phone\'s screen lock is turned off, so Vyora can\'t confirm it\'s you. Turn it back on in phone Settings → Security to open the journal.', [{ label: 'OK', cls: 'primary', value: 1 }]); return false; } } catch (e) { return false; }
     try { const r = await P.AppLock.authenticate({ title: 'Open journal' }); return !!r.ok; } catch (e) { return false; }
   }
   async function journalTool() {
-    if (!(await unlockJournal())) return;
+    if (!(await unlockJournal())) return false;
     toolScreen('Journal', '', (scr, body) => {
       const paint = () => {
         const list = L.journal.slice().sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
         body.innerHTML = `<button class="btn primary" data-a="jnew">${ic('edit')}Write today's entry</button>
-          ${P.AppLock ? `<label class="mremember" data-a="jlock"><span class="toggle sm ${L.journalLock ? 'on' : ''}"></span><span>Lock journal with fingerprint</span></label>` : ''}
+          <div class="lockstate ${L.journalLock ? 'on' : ''}">${ic(L.journalLock ? 'lock' : 'unlock')}<span><b>${L.journalLock ? 'Locked' : 'Not locked'}</b>${L.journalLock ? 'Needs your fingerprint or screen lock to open' : 'Anyone holding your unlocked phone can read it'}${P.Vault && L.secure ? ' · encrypted on this phone' : ''}</span>${P.AppLock ? `<button class="btn sm" data-a="jlock">${L.journalLock ? 'Unlock' : 'Lock'}</button>` : ''}</div>
+          <p class="hint">${S.lastBackup ? `Last backup ${Math.floor((Date.now() - S.lastBackup) / 864e5) || 'today'}${Math.floor((Date.now() - S.lastBackup) / 864e5) ? ' days ago' : ''}. ` : 'Not backed up yet. '}<button class="linkbtn" data-a="jbackup">Back up now</button></p>
           <div class="block" style="padding:0;margin-top:12px">${list.map(j => `<button class="jrow" data-j="${j.id}"><span class="jm">${MOODS[(j.mood || 3) - 1]}</span><span class="wkt"><b>${esc(dayName(j.date))}</b><span>${esc((j.text || '').slice(0, 90))}</span></span>${j.photos && j.photos.length ? ic('camera') : ''}</button>`).join('') || '<div class="empty" style="padding:18px">Your private diary. Write a few lines a day: what went well, what you learned, what you are grateful for.</div>'}</div>`;
       };
       paint();
       body.addEventListener('click', e => {
         if (e.target.closest('[data-a="jnew"]')) return journalEditor(null, paint);
-        if (e.target.closest('[data-a="jlock"]')) { L.journalLock = !L.journalLock; save(); return paint(); }
+        if (e.target.closest('[data-a="jbackup"]')) return exportBackup();
+        if (e.target.closest('[data-a="jlock"]')) { (async () => { if (L.journalLock) { const r = await P.AppLock.authenticate({ title: 'Turn off journal lock' }).catch(() => ({ ok: false })); if (!r.ok) return; } else { const a = await P.AppLock.available().catch(() => ({ available: false })); if (!a.available) { toast('Set a phone screen lock first'); return; } } L.journalLock = !L.journalLock; save(); paint(); })(); return; }
         const j = e.target.closest('[data-j]'); if (j) journalEditor(L.journal.find(x => x.id === j.dataset.j), paint);
       });
     });
   }
   function journalEditor(j0, after) {
     const j = j0 ? clone(j0) : { id: uid(), date: dkey(new Date()), mood: 0, text: '', photos: [], at: Date.now() };
+    const removed = [];
     const prompts = ['What went well today?', 'What am I grateful for?', 'What did I learn?', 'What would make tomorrow great?'];
     const s = sheet(`<h2>${esc(dayName(j.date))}</h2><input type="date" class="field body" id="jd" value="${j.date}" style="margin-bottom:10px">
       <div class="faces">${MOODS.map((m, i) => `<button class="${j.mood === i + 1 ? 'on' : ''}" data-mood="${i + 1}">${m}</button>`).join('')}</div>
@@ -631,14 +697,14 @@ const Life = (() => {
     s.el.addEventListener('click', async e => {
       const m = e.target.closest('[data-mood]'); if (m) { j.mood = +m.dataset.mood; $$('[data-mood]', s.el).forEach(x => x.classList.toggle('on', x === m)); return; }
       const pr = e.target.closest('[data-pr]'); if (pr) { const t = $('#jt', s.el); t.value += (t.value ? '\n\n' : '') + pr.dataset.pr + '\n'; t.focus(); return; }
-      const pd = e.target.closest('[data-jpd]'); if (pd) { j.photos.splice(+pd.dataset.jpd, 1); return paintPh(); }
+      const pd = e.target.closest('[data-jpd]'); if (pd) { removed.push(...j.photos.splice(+pd.dataset.jpd, 1)); return paintPh(); }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'photo') { const p = await pickPhoto(); if (p) { j.photos.push(p); paintPh(); } return; }
-      if (b.dataset.a === 'del') { if (await confirmBox('Delete this entry?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.journal = L.journal.filter(x => x.id !== j.id); save(); s.close(); after(); } return; }
+      if (b.dataset.a === 'del') { if (await confirmBox('Delete this entry?', 'Its photos are deleted from the app too.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.journal = L.journal.filter(x => x.id !== j.id); save(); dropFiles([...(j0 ? j0.photos || [] : []), ...removed, ...j.photos]); s.close(); after(); } return; }
       j.text = $('#jt', s.el).value.trim(); j.date = $('#jd', s.el).value || j.date;
       if (!j.text && !j.photos.length && !j.mood) { s.close(); return; }
       const i = L.journal.findIndex(x => x.id === j.id); if (i >= 0) L.journal[i] = j; else L.journal.push(j);
-      save(); s.close(); after(); toast('Saved to your journal');
+      if (save() === false) return; dropFiles(removed); s.close(); after(); toast('Saved to your journal');
     });
   }
   async function pickPhoto(folder = 'journal', max = 1200) {
@@ -650,13 +716,27 @@ const Life = (() => {
         const small = await new Promise(r => { const im = new Image(); im.onload = () => { const sc = Math.min(1, max / Math.max(im.width, im.height)); const c = document.createElement('canvas'); c.width = im.width * sc; c.height = im.height * sc; c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); r(c.toDataURL('image/jpeg', 0.8)); }; im.onerror = () => r(null); im.src = raw; });
         if (!small) return res(null);
         const id = uid();
-        try { if (P.Filesystem) { const path = `${folder}/${id}.jpg`; await P.Filesystem.writeFile({ path, data: small.split(',')[1], directory: 'DATA', recursive: true }); return res({ path }); } } catch (e) { /* fall back */ }
+        try {
+          if (P.Filesystem && P.Vault && L.secure) { const r2 = await P.Vault.encrypt({ text: small.split(',')[1] }); const path = `${folder}/${id}.enc`; await P.Filesystem.writeFile({ path, data: r2.data, directory: 'DATA', encoding: 'utf8', recursive: true }); return res({ path, enc: true }); }
+          if (P.Filesystem) { const path = `${folder}/${id}.jpg`; await P.Filesystem.writeFile({ path, data: small.split(',')[1], directory: 'DATA', recursive: true }); return res({ path }); }
+        } catch (e) { toast('Could not save that photo'); return res(null); }
         res({ data: small });
       };
       document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
     });
   }
-  async function photoSrc(p) { if (p.data) return p.data; try { const r = await P.Filesystem.readFile({ path: p.path, directory: 'DATA' }); return 'data:image/jpeg;base64,' + r.data; } catch (e) { return null; } }
+  // Remove photo files nobody points to any more (deleted documents, journal entries or removed photos).
+  async function dropFiles(photos) {
+    if (!P.Filesystem) return;
+    const inUse = new Set([...L.journal.flatMap(j => (j.photos || []).map(p => p.path)), ...(L.docs || []).flatMap(d => (d.photos || []).map(p => p.path))].filter(Boolean));
+    for (const p of photos || []) { if (p && p.path && !inUse.has(p.path)) { try { await P.Filesystem.deleteFile({ path: p.path, directory: 'DATA' }); } catch (e) { logProblem('Could not delete a photo file', 'life'); } } }
+  }
+  async function photoB64(p) {
+    if (p.data) return p.data.split(',')[1];
+    if (p.enc && P.Vault) { try { const r = await P.Filesystem.readFile({ path: p.path, directory: 'DATA', encoding: 'utf8' }); const d = await P.Vault.decrypt({ data: r.data }); return d.text; } catch (e) { /* restored from a backup as a plain photo */ } }
+    try { const r = await P.Filesystem.readFile({ path: p.path, directory: 'DATA' }); return r.data; } catch (e) { return null; }
+  }
+  async function photoSrc(p) { const b = await photoB64(p); return b ? 'data:image/jpeg;base64,' + b : null; }
   // Focus (Pomodoro)
   let FT = null;
   function focusTool() {
@@ -933,16 +1013,27 @@ const Life = (() => {
   const docExpTxt = d => { const n = docDays(d); return n == null ? '' : n < 0 ? `expired ${-n} day${n === -1 ? '' : 's'} ago` : n === 0 ? 'expires today' : `expires in ${n} day${n === 1 ? '' : 's'}`; };
   const docsSoon = (days = 30) => (L.docs || []).filter(d => { const n = docDays(d); return n != null && n <= days; }).sort((a, b) => docDays(a) - docDays(b));
   async function unlockDocs() {
-    if (!P.AppLock) return true;
-    try { const r = await P.AppLock.authenticate({ title: 'Open documents' }); return !!(r && r.ok); } catch (e) { return false; }
+    if (secFailed) { lifeLockedMsg(); return false; }
+    if (L.docsLock === false) return true;
+    if (!P.AppLock) { if (!isNative) return true; toast('Documents are locked and this device can\'t check your screen lock'); return false; }
+    let avail = false; try { avail = !!(await P.AppLock.available()).available; } catch (e) { avail = false; }
+    if (!avail) {
+      const v = await confirmBox('Documents stay locked', 'Documents are protected by your phone\'s screen lock, which is turned off. Turn it back on in phone Settings → Security. Or, if you accept that anyone holding this phone could see them, turn protection off.', [{ label: 'OK', cls: 'primary', value: 0 }, { label: 'Turn protection off', cls: 'danger', value: 1 }]);
+      if (v === 1) { L.docsLock = false; save(); return true; }
+      return false;
+    }
+    try { const r = await P.AppLock.authenticate({ title: 'Open documents' }); if (r && r.ok) return true; } catch (e) { /* fall through */ }
+    toast('Documents stay locked'); return false;
   }
   async function docsTool() {
-    if (!(await unlockDocs())) { toast('Documents stay locked'); return; }
+    if (!(await unlockDocs())) return;
     toolScreen('Documents', '', (scr, body) => {
+      body.addEventListener('click', e => { if (e.target.closest('[data-a="dlockon"]')) { L.docsLock = true; save(); toast('Documents protected again'); scr.querySelector('[data-a="close"]').click(); } });
       const paint = () => {
         const list = (L.docs || []).slice().sort((a, b) => (docDays(a) ?? 9e9) - (docDays(b) ?? 9e9));
         body.innerHTML = `<button class="btn primary" data-a="dadd">${ic('plus')}Add a document</button>
-          <p class="hint">${P.AppLock ? '🔒 Locked with your fingerprint or screen lock. ' : ''}Photos stay on this phone only. You get a reminder before anything expires.</p>
+          <div class="lockstate ${L.docsLock !== false ? 'on' : ''}">${ic(L.docsLock !== false ? 'lock' : 'unlock')}<span><b>${L.docsLock !== false ? 'Protected' : 'Not protected'}</b>${L.docsLock !== false ? 'Opens only with your fingerprint or screen lock' : 'Anyone holding this phone can open Documents'}${P.Vault && L.secure ? ' · numbers and photos encrypted' : ''}</span>${L.docsLock === false ? '<button class="btn sm" data-a="dlockon">Protect</button>' : ''}</div>
+          <p class="hint">Photos stay on this phone only. You get a reminder before anything expires.</p>
           <div class="docgrid">${list.map(d => { const t = docType(d.type), n = docDays(d); return `<button class="doccard ${n != null && n < 0 ? 'bad' : n != null && n <= 30 ? 'soon' : ''}" data-doc="${d.id}"><span class="dico">${t[1]}</span><b>${esc(d.name)}</b><small>${d.exp ? esc(docExpTxt(d)) : esc(t[2])}</small>${d.photos && d.photos.length ? `<em>${d.photos.length} photo${d.photos.length > 1 ? 's' : ''}</em>` : ''}</button>`; }).join('') || '<div class="empty" style="grid-column:1/-1"><b>Your documents, in one safe place</b>Aadhaar, PAN, licence, insurance, RC… keep a photo handy and never miss a renewal.</div>'}</div>`;
       };
       paint();
@@ -953,11 +1044,12 @@ const Life = (() => {
     });
   }
   function docSheet(d0, after) {
+    const removedD = [];
     const isNew = !d0; const d = d0 ? clone(d0) : { id: uid(), nid: nextNid(), type: 'aadhaar', name: 'Aadhaar', number: '', exp: '', before: 30, photos: [], note: '' };
     const s = sheet(`<h2>${isNew ? 'Add document' : 'Edit document'}</h2>
       <div class="presets" style="justify-content:flex-start">${DOC_TYPES.map(([k, e, n]) => `<button class="chip small ${d.type === k ? 'on' : ''}" data-dt="${k}">${e} ${n}</button>`).join('')}</div>
       <input class="field body" id="dn" placeholder="Name (e.g. Bike insurance)" value="${esc(d.name)}" maxlength="40" style="margin-top:10px">
-      <input class="field body" id="dnum" placeholder="Number (optional)" value="${esc(d.number || '')}" maxlength="40" style="margin-top:8px" autocomplete="off">
+      <div class="qadd" style="margin-top:8px"><input class="field body" id="dnum" type="password" placeholder="Number (optional)" value="${esc(d.number || '')}" maxlength="40" autocomplete="off"><button class="round-btn" data-a="shownum" aria-label="Show or hide number">${ic('info')}</button></div>
       <div class="sect">Expiry date (optional)</div><input type="date" class="field body" id="dexp" value="${d.exp || ''}">
       <div class="presets" style="justify-content:flex-start;margin-top:8px">${[[7, '1 week before'], [30, '1 month before'], [60, '2 months before']].map(([v, n]) => `<button class="chip small ${d.before === v ? 'on' : ''}" data-db="${v}">${n}</button>`).join('')}</div>
       <div class="jph" id="dph"></div>
@@ -968,24 +1060,26 @@ const Life = (() => {
     s.el.addEventListener('click', async e => {
       const dt = e.target.closest('[data-dt]'); if (dt) { const prev = docType(d.type)[2]; d.type = dt.dataset.dt; $$('[data-dt]', s.el).forEach(x => x.classList.toggle('on', x === dt)); const nm = $('#dn', s.el); if (!nm.value || nm.value === prev) nm.value = docType(d.type)[2]; return; }
       const db = e.target.closest('[data-db]'); if (db) { d.before = +db.dataset.db; $$('[data-db]', s.el).forEach(x => x.classList.toggle('on', x === db)); return; }
-      const pd = e.target.closest('[data-dpd]'); if (pd) { d.photos.splice(+pd.dataset.dpd, 1); return paintPh(); }
+      const pd = e.target.closest('[data-dpd]'); if (pd) { removedD.push(...d.photos.splice(+pd.dataset.dpd, 1)); return paintPh(); }
       const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'shownum') { const n = $('#dnum', s.el); n.type = n.type === 'password' ? 'text' : 'password'; return; }
       if (b.dataset.a === 'photo') { const p = await pickPhoto('docs', 1800); if (p) { d.photos.push(p); paintPh(); } return; }
-      if (b.dataset.a === 'del') { if (await confirmBox('Delete this document?', 'Its photos are removed from the app.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.docs = L.docs.filter(x => x.id !== d.id); save(); reschedule(); s.close(); after && after(); } return; }
+      if (b.dataset.a === 'del') { if (await confirmBox('Delete this document?', 'Its photos are deleted from the phone too. This can\'t be undone.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.docs = L.docs.filter(x => x.id !== d.id); save(); dropFiles([...(d0 ? d0.photos || [] : []), ...removedD, ...d.photos]); reschedule(); s.close(); after && after(); } return; }
       d.name = $('#dn', s.el).value.trim() || docType(d.type)[2]; d.number = $('#dnum', s.el).value.trim(); d.exp = $('#dexp', s.el).value || '';
       L.docs = L.docs || []; const i = L.docs.findIndex(x => x.id === d.id); if (i >= 0) L.docs[i] = d; else L.docs.push(d);
-      save(); if (d.exp) await askNotif(); reschedule(); s.close(); after && after(); toast(d.exp ? `Saved · ${docExpTxt(d)}` : 'Saved');
+      if (save() === false) return; dropFiles(removedD); if (d.exp) await askNotif(); reschedule(); s.close(); after && after(); toast(d.exp ? `Saved · ${docExpTxt(d)}` : 'Saved');
     });
   }
   function docView(d, after) {
     const t = docType(d.type);
-    const scr = el(`<section class="screen"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button></div><h1>${esc(d.name)}</h1><div class="tb-right"><button class="round-btn" data-a="edit" aria-label="Edit">${ic('edit')}</button></div></header>
+    const scr = el(`<section class="screen secure-screen"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button></div><h1>${esc(d.name)}</h1><div class="tb-right"><button class="round-btn" data-a="edit" aria-label="Edit">${ic('edit')}</button></div></header>
       <div class="scroll"><div class="page"><div class="docinfo"><span class="dico">${t[1]}</span><div><b>${esc(t[2])}</b>${d.number ? `<span class="docnum" data-a="num">${esc(d.number.replace(/.(?=.{4})/g, '•'))}</span><small>Tap the number to show or copy it</small>` : ''}${d.exp ? `<span class="${docDays(d) < 0 ? 'badt' : ''}">${esc(docExpTxt(d))} · ${parseKey(d.exp).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>` : ''}</div></div>
       <div class="docphotos" id="dvp">${d.photos.length ? '' : '<div class="empty">No photos yet. Tap the pencil to add the front and back.</div>'}</div></div></div></section>`);
     layer.appendChild(scr);
     (async () => { const box = $('#dvp', scr); for (let i = 0; i < d.photos.length; i++) { const src = await photoSrc(d.photos[i]); if (src) box.insertAdjacentHTML('beforeend', `<button class="docph" data-full="${i}"><img src="${src}" alt="${esc(d.name)} photo ${i + 1}"></button>`); } })();
-    const close = () => { unback(); scr.remove(); after && after(); };
+    const close = () => { unback(); scr.remove(); updateSecure(); after && after(); };
     const unback = pushBack(close);
+    updateSecure();
     let shown = false;
     scr.addEventListener('click', async e => {
       const f = e.target.closest('[data-full]'); if (f) { const img = $('img', f); const v = el(`<div class="imgview"><img src="${img.src}" alt=""><button class="round-btn" aria-label="Close">${ic('close')}</button></div>`); document.body.appendChild(v); v.addEventListener('click', () => v.remove()); return; }
@@ -1046,7 +1140,7 @@ const Life = (() => {
     if (P.Speech) { try { const r = await P.Speech.listen({ lang: 'en-IN' }); return r && r.text; } catch (e) { if (!/cancel|nothing/i.test(String(e && e.message || e))) toast(String(e && e.message || 'Voice is not available')); return null; } }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SR) return new Promise(res => { const r = new SR(); r.lang = 'en-IN'; r.onresult = e => res(e.results[0][0].transcript); r.onerror = () => res(null); r.onend = () => setTimeout(() => res(null), 50); try { r.start(); toast('Listening…'); } catch (e) { res(null); } });
-    return promptText('Type what you would say', { placeholder: 'Remind me to pay rent on the 5th', ok: 'Add' });
+    return promptText('Type what you would say', { placeholder: 'Remind me to pay rent on the 5th', ok: 'Add', max: 160 });
   }
   async function voiceAdd(preset) {
     const text = preset || await listen(); if (!text) return;
@@ -1071,7 +1165,7 @@ const Life = (() => {
     if (v.kind === 'reminder') { L.reminders.push({ id: uid(), nid: nextNid(), title: v.title || 'Reminder', note: '', time: v.time, date: v.date || dkey(new Date()), repeat: v.repeat, days: v.repeat === 'weekly' ? v.days : [0, 1, 1, 1, 1, 1, 0], on: true }); save(); await askNotif(); reschedule(); toast(`Reminder set · ${t12(v.time)}`); }
     else if (v.kind === 'task') { L.tasks.unshift({ id: uid(), nid: nextNid(), title: v.title || 'Task', due: v.date, time: v.time, done: false, at: Date.now() }); save(); reschedule(); toast('Task added'); }
     else if (v.kind === 'note') { L.notes.unshift({ id: uid(), type: 'text', title: '', body: v.text, items: [], color: '', pin: false, at: Date.now() }); save(); toast('Note saved'); }
-    else if (v.kind === 'alarm') { const a = { id: Date.now() % 1e9, hm: v.time, days: v.days, label: v.label || '', tone: 'b:rise', vibrate: true, snooze: 10, on: true, smart: false, brief: true }; L.alarms.push(a); L.alarms.sort((x, y) => x.hm.localeCompare(y.hm)); save(); await syncAlarms(); const nx = nextAlarm(); toast(nx && nx.a.id === a.id ? `Alarm set for ${untilTxt(nx.at)} from now` : `Alarm set · ${t12(v.time)}`); }
+    else if (v.kind === 'alarm') { const a = { id: Date.now() % 1e9, hm: v.time, days: v.days, label: v.label || '', tone: 'b:rise', vibrate: true, snooze: 10, on: true, smart: false, brief: true }; L.alarms.push(a); L.alarms.sort((x, y) => x.hm.localeCompare(y.hm)); save(); const ok = await syncAlarms(); if (ok || !P.Alarm) alarmToast(a); else toast('Alarm saved, but the phone refused to schedule it.'); }
     else if (v.kind === 'shop') { let l = L.lists.find(x => x.name.toLowerCase() === v.list.toLowerCase()); if (!l) { l = { id: uid(), name: v.list, icon: '🛒', items: [] }; L.lists.push(l); } v.items.forEach(t => l.items.unshift({ t: t.charAt(0).toUpperCase() + t.slice(1), q: '', d: false })); save(); toast(`Added to ${l.name}`); }
     else if (v.kind === 'expense') { return Money.quickAddPre({ amount: v.amount, payee: v.payee ? v.payee.charAt(0).toUpperCase() + v.payee.slice(1) : '' }); }
     refresh();
@@ -1115,7 +1209,7 @@ const Life = (() => {
     if (k === 'task') { taskSeg = 'todo'; go('l-tasks'); return setTimeout(() => { const q = $('#tq', view); if (q) q.focus(); }, 100); }
     if (k === 'reminder') return reminderSheet(null);
     if (k === 'alarm') return alarmSheet(null);
-    if (k === 'journal') return journalTool().then(() => { if (L.journal) journalEditor(null, () => refresh()); });
+    if (k === 'journal') return journalTool().then(ok => { if (ok !== false) journalEditor(null, () => refresh()); });
     if (k === 'expense') return Money.quickAdd();
     if (k === 'water') { Health._addW(250); toast('+250 ml water 💧'); return; }
     if (k === 'event') return eventSheet(null, () => refresh());
@@ -1146,7 +1240,7 @@ const Life = (() => {
     const li = t.closest('[data-list]'); if (li) return listScreen(li.dataset.list);
     const md = t.closest('[data-med]'); if (md) return markMed(md.dataset.med);
     const al = t.closest('[data-alarm]'); if (al) return alarmSheet(L.alarms.find(a => a.id === +al.dataset.alarm));
-    const at = t.closest('[data-altog]'); if (at) { const a = L.alarms.find(x => x.id === +at.dataset.altog); a.on = !a.on; save(); await syncAlarms(); refresh(); if (a.on) { const nx = nextAlarm(); if (nx && nx.a.id === a.id) toast(`Alarm set for ${untilTxt(nx.at)} from now`); } return; }
+    const at = t.closest('[data-altog]'); if (at) { const a = L.alarms.find(x => x.id === +at.dataset.altog); a.on = !a.on; save(); const ok = await syncAlarms(); refresh(); if (a.on) { if (ok || !P.Alarm) alarmToast(a); else toast('The phone refused to schedule this alarm. Check Settings → Phone features.'); } return; }
     const cz = t.closest('[data-czdel]'); if (cz) { L.cities = L.cities.filter(z => z !== cz.dataset.czdel); save(); return refresh(); }
     const bd = t.closest('[data-bd]'); if (bd) { L.bed.days[+bd.dataset.bd] = L.bed.days[+bd.dataset.bd] ? 0 : 1; save(); syncBedAlarm(); reschedule(); return refresh(); }
     const cy = t.closest('[data-cyc]'); if (cy) { L.bed.bed = cy.dataset.cyc; save(); syncBedAlarm(); reschedule(); toast(`Bedtime set to ${t12(cy.dataset.cyc)}`); return refresh(); }
@@ -1157,7 +1251,10 @@ const Life = (() => {
       case 'habadd': return habitSheet(null);
       case 'listadd': { const n = await promptText('New list', { placeholder: 'e.g. Groceries', suggestions: ['Groceries', 'Vegetables', 'Amazon', 'Trip packing'], ok: 'Create' }); if (n) { const l = { id: uid(), name: n, icon: /trip|pack/i.test(n) ? '🧳' : /amazon|online/i.test(n) ? '📦' : '🛒', items: [] }; L.lists.push(l); save(); refresh(); listScreen(l.id); } return; }
       case 'cityadd': return citySheet();
+      case 'notifperm': await askNotif(); reschedule(); setTimeout(refresh, 800); return;
+      case 'notiftest': try { await P.LocalNotifications.schedule({ notifications: [{ id: 9990, title: '🔔 Test reminder', body: 'Reminders are working.', channelId: 'kw_remind', schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true }, smallIcon: 'ic_stat_kw', iconColor: S.accent }] }); toast('A test reminder will pop up in 5 seconds'); } catch (err) { toast('Could not send a test reminder'); } return;
       case 'voice': return voiceAdd();
+      case 'alltools': return allTools();
       case 'brief': return openBriefing(false);
       case 'bedon': { L.bed.on = !L.bed.on; save(); if (L.bed.on) await askNotif(); syncBedAlarm(); reschedule(); toast(L.bed.on ? `Bedtime ${t12(L.bed.bed)} · wake ${t12(L.bed.wake)}` : 'Bedtime schedule off'); return refresh(); }
       case 'exact': try { await P.Alarm.openExactSettings(); } catch (err) { /* ignore */ } return;
@@ -1173,7 +1270,7 @@ const Life = (() => {
     L.tasks.forEach(t => { if (t.title.toLowerCase().includes(k)) out.push({ type: 'task', id: t.id, title: t.title, sub: t.done ? 'Done' : t.due ? 'Due ' + dayName(t.due) : 'Task' }); });
     L.reminders.forEach(r => { if (r.title.toLowerCase().includes(k)) out.push({ type: 'rem', id: r.id, title: r.title, sub: `Reminder · ${t12(r.time)}` }); });
     L.events.forEach(e => { if (e.name.toLowerCase().includes(k)) out.push({ type: 'ev', id: e.id, title: e.name, sub: e.type === 'birthday' ? 'Birthday' : 'Date' }); });
-    if (!(L.journalLock)) L.journal.forEach(j => { if ((j.text || '').toLowerCase().includes(k)) out.push({ type: 'jr', id: j.id, title: dayName(j.date), sub: 'Journal' }); });
+    if (!L.journalLock && !secSealed) L.journal.forEach(j => { if ((j.text || '').toLowerCase().includes(k)) out.push({ type: 'jr', id: j.id, title: dayName(j.date), sub: 'Journal' }); });
     return out.slice(0, 10);
   }
   function openResult(type, id) {
@@ -1184,13 +1281,15 @@ const Life = (() => {
     if (type === 'jr') return journalEditor(L.journal.find(j => j.id === id), refresh);
   }
 
-  function boot() { reschedule(); onResume().then(syncAlarms); setTimeout(checkWidgetAction, 600); }
+  function boot() { unsealLife().then(() => { reschedule(); onResume().then(syncAlarms); setTimeout(checkWidgetAction, 600); }); }
 
   return {
     renderTab, handleClick, refresh, quickAdd, boot, onResume, search, openResult, openTool, widgetPush, voiceAdd, openBriefing,
+    get rawData() { return clone(L); },
+    isSealed: () => secSealed, photoB64, reschedule,
     get data() { const d = clone(L); d.journal = d.journal.map(j => Object.assign({}, j, { photos: (j.photos || []).filter(p => !p.data) })); d.docs = (d.docs || []).map(x => Object.assign({}, x, { photos: (x.photos || []).filter(p => !p.data) })); return d; },
-    set data(v) { L = Object.assign(fresh(), v || {}); save(); reschedule(); syncAlarms(); },
-    merge(v) { if (!v) return; const byId = (a, b) => { const m = new Map(); (a || []).forEach(x => m.set(x.id, x)); (b || []).forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; }; ['notes', 'reminders', 'tasks', 'habits', 'lists', 'journal', 'events', 'meds', 'alarms', 'docs'].forEach(k => { L[k] = byId(L[k], v[k]); }); save(); reschedule(); syncAlarms(); },
+    set data(v) { L = Object.assign(fresh(), v || {}, P.Vault ? { secure: true } : {}); secSealed = false; secFailed = false; save(); reschedule(); syncAlarms(); },
+    merge(v) { if (!v) return; if (secFailed) { secSealed = false; secFailed = false; } const byId = (a, b) => { const m = new Map(); (a || []).forEach(x => m.set(x.id, x)); (b || []).forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; }; ['notes', 'reminders', 'tasks', 'habits', 'lists', 'journal', 'events', 'meds', 'alarms', 'docs'].forEach(k => { L[k] = byId(L[k], v[k]); }); save(); reschedule(); syncAlarms(); },
     _calc: calcEval, _smart: smartDate, _synth: synthTone, _voice: parseVoice, _when: parseWhen,
   };
 })();

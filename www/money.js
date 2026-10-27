@@ -1,4 +1,4 @@
-/* Muscle & Money: money tracker.
+/* Vyora: money tracker.
    Salary-day budget cycles, needs / wants / savings, safe-to-spend, 50/30/20 targets, income,
    recurring bills with reminders, and payment screenshots read on the phone.
    Uses helpers from app.js ($, $$, el, esc, ic, sheet, menu, toast, confirmBox, DB, S, P, isNative ...). */
@@ -48,15 +48,44 @@ const Money = (() => {
 
   const fresh = () => ({ setup: false, cycleDay: 1, budget: 40000, budgets: {}, split: { needs: 50, wants: 30, savings: 20 }, cats: DEFAULT_CATS.map(c => ({ ...c })), txns: [], rules: {}, bills: [], lockOn: false, pin: null, remindTime: '09:00',
     accounts: [], transfers: [], goals: [], limits: {}, alerted: {}, people: [], settles: [], lastReport: null, lastAcc: null, alertsOn: true });
-  let M = Object.assign(fresh(), DB.get('money', {}));
-  const save = () => DB.set('money', M);
+  /* Money can be stored encrypted (Android Keystore key, see VaultPlugin). While it is sealed, only the lock
+     settings are readable and nothing is ever written over the encrypted copy. */
+  const RAW = DB.get('money', {});
+  let LK = Object.assign({ fails: 0, until: 0 }, DB.get('moneylock', {}));
+  let sealed = !!(RAW && RAW.enc && RAW.blob);
+  let M = sealed ? Object.assign(fresh(), { setup: true, lockOn: true, pin: LK.pin || null, enc: true }) : Object.assign(fresh(), RAW);
+  const saveLock = () => DB.set('moneylock', LK);
+  let saving = Promise.resolve();
+  const save = () => {
+    if (sealed) return saving; // never overwrite encrypted data with the empty placeholder
+    LK.lockOn = M.lockOn; LK.pin = M.pin; LK.enc = !!M.enc; saveLock();
+    if (M.enc && P.Vault) {
+      const snap = JSON.stringify(M);
+      saving = saving.then(async () => { try { const r = await P.Vault.encrypt({ text: snap }); DB.set('money', { enc: 1, blob: r.data, at: Date.now() }); } catch (e) { toast('Could not save Money securely. Try again.'); } });
+      return saving;
+    }
+    DB.set('money', M); return saving;
+  };
+  async function unseal() {
+    if (!sealed) return true;
+    try {
+      const r = await P.Vault.decrypt({ data: DB.get('money', {}).blob });
+      M = Object.assign(fresh(), JSON.parse(r.text)); sealed = false; return true;
+    } catch (e) {
+      await confirmBox('Money data can\'t be opened', 'The encrypted Money data on this phone can\'t be read (this can happen after moving to a new phone). Restore it from a Vyora backup in Settings. Your workouts and Life data are not affected.', [{ label: 'OK', cls: 'primary', value: 1 }]);
+      return false;
+    }
+  }
+  // Locking again wipes the decrypted copy from memory once pending saves finish.
+  async function reseal() { if (!M.enc || !P.Vault || sealed) return; await saving; sealed = true; M = Object.assign(fresh(), { setup: true, lockOn: true, pin: M.pin, enc: true }); }
   let unlocked = false;
   let lastHidden = 0;
   let mTab = 'home';
   let txFilter = 'all', txQuery = '', txCycleOffset = 0, insCycleOffset = 0;
 
   /* ---------- formatting ---------- */
-  const inr = (n, { sign = false, dec = false } = {}) => {
+  const inr = (n, { sign = false, dec = false, raw = false } = {}) => {
+    if (M.hide && !raw) return '₹••••'; // amounts hidden (eye button on the Money overview)
     const v = Math.abs(Math.round((n || 0) * (dec ? 100 : 1)) / (dec ? 100 : 1));
     const s = v.toLocaleString('en-IN', { maximumFractionDigits: dec ? 2 : 0 });
     return (n < 0 ? '−' : sign ? '+' : '') + '₹' + s;
@@ -156,7 +185,7 @@ const Money = (() => {
     save(); scheduleBillReminders(); if (!txnId) checkAlerts();
   }
   async function scheduleBillReminders() {
-    if (!P.LocalNotifications) return;
+    if (!P.LocalNotifications || sealed) return;
     const ids = [{ id: 700 }]; for (let i = 0; i < 60; i++) ids.push({ id: 600 + i });
     try { await P.LocalNotifications.cancel({ notifications: ids }); } catch (e) { /* ignore */ }
     const [hh, mi] = (M.remindTime || '09:00').split(':').map(Number);
@@ -168,7 +197,7 @@ const Money = (() => {
       let when = 'tomorrow';
       if (at <= new Date()) { at = new Date(nd.due); at.setHours(hh, mi, 0, 0); when = 'today'; }
       if (at <= new Date()) return;
-      list.push({ id: 600 + i, title: `${bill.name} due ${when}`, body: `${inr(bill.amount)} · open Muscle & Money to mark it paid`, channelId: 'kw_remind', schedule: { at, allowWhileIdle: true }, isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
+      list.push({ id: 600 + i, title: S.notifDetails ? `${bill.name} due ${when}` : `A bill is due ${when}`, body: S.notifDetails ? `${inr(bill.amount)} · open Vyora to mark it paid` : 'Open Vyora to see the details', channelId: 'kw_private', schedule: { at, allowWhileIdle: true }, isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
     });
     if (M.setup) {
       const ns = cycleStart(new Date(), 1); const at = new Date(ns); at.setHours(hh, mi, 0, 0);
@@ -320,7 +349,7 @@ const Money = (() => {
   function handleOcr(r, image) {
     const list = parseHistory(r);
     if (list.length >= 2) enqueue({ batch: list, image });
-    else enqueue(Object.assign(parseReceipt(r), { image, src: 'screenshot' }));
+    else { const pr = parseReceipt(r); enqueue(Object.assign(pr, { image, src: 'screenshot' }, pr.amount ? { ocrOk: true } : { error: (r && r.text ? 'Could not find the amount in this screenshot' : 'No text found in this image') })); }
   }
   function isDupe(it) {
     const k = norm(it.payee).slice(0, 10); const dk = dkey(it.date);
@@ -412,6 +441,7 @@ const Money = (() => {
     const left = queue.length;
     const s = sheet(`<h2>${existing ? 'Edit' : pre.src === 'screenshot' ? 'From screenshot' : 'Add'} ${d.type === 'income' ? 'income' : 'expense'}</h2>
       ${pre.image ? `<button class="shot" data-a="img"><img src="${pre.image}" alt="Payment screenshot"><span>${pre.app ? esc(pre.app) + ' · ' : ''}tap to view</span></button>` : ''}
+      ${pre.ocrOk ? `<div class="mwarn ok">${ic('scan')}<span>Read from your screenshot. <b>Check the amount, payee and date</b> before saving.</span></div>` : ''}
       ${pre.error ? `<div class="mwarn">${ic('info')}<span>${esc(pre.error)}. Fill in the details below.</span></div>` : ''}
       ${pre.noOcr ? `<div class="mwarn">${ic('info')}<span>${isNative ? 'This build of the app is missing the screenshot reader. Upload the <b>android</b> folder from the update and install the new build.' : 'Reading screenshots works in the installed app.'} Fill in the details below for now.</span></div>` : ''}
       ${pre.status === 'failed' ? `<div class="mwarn bad">${ic('info')}<span>This payment looks <b>failed</b>. Only save it if money actually left your account.</span></div>` : ''}
@@ -493,8 +523,9 @@ const Money = (() => {
         const linked = !existing && d.type === 'expense' ? autoLinkBill(d) : null;
         save(); s.close(); refresh();
         const st = stats();
+        const undo = existing ? null : () => { M.txns = M.txns.filter(t => t.id !== d.id); if (linked) M.bills.forEach(bl => Object.keys(bl.paid || {}).forEach(k => { if (bl.paid[k] === d.id) delete bl.paid[k]; })); save(); refresh(); toast('Removed'); };
         if (goalBefore && !wasDone && goalSaved(goalBefore) >= goalBefore.target) { toast(`🎉 Goal reached: ${goalBefore.name}!`); try { buzz(400); } catch (err) { /* ignore */ } return; }
-        toast(d.type === 'income' ? `Income saved: ${inr(d.amount)}` : `${inr(own(d))} · ${cat(d.catId).name}${linked ? ` · ${linked} marked paid` : ''}. ${st.left >= 0 ? inr(st.left) + ' left' : inr(-st.left) + ' over budget'}`);
+        toast(d.type === 'income' ? `Income saved: ${inr(d.amount)}` : `${inr(own(d))} · ${cat(d.catId).name}${linked ? ` · ${linked} marked paid` : ''}. ${st.left >= 0 ? inr(st.left) + ' left' : inr(-st.left) + ' over budget'}`, { undo });
         if (d.type === 'expense') checkAlerts();
       }
     });
@@ -572,35 +603,54 @@ const Money = (() => {
     });
   }
   async function unlock() {
-    if (!M.lockOn || unlocked) return true;
+    if (!M.lockOn || unlocked) return sealed ? unseal() : true;
     if (M.pin) {
-      const v = await pinPad('Unlock Money', 'Enter your 4-digit PIN');
-      if (v && (await sha(v)) === M.pin) { unlocked = true; return true; }
-      if (v) toast('Wrong PIN');
+      if (LK.until > Date.now()) { toast(`Too many wrong PINs. Try again in ${Math.ceil((LK.until - Date.now()) / 1000)} s`); return false; }
+      const v = await pinPad('Unlock Money', LK.fails ? `Enter your 4-digit PIN · ${Math.max(0, 5 - LK.fails)} tries before a short wait` : 'Enter your 4-digit PIN');
+      if (v && (await sha(v)) === M.pin) { LK.fails = 0; LK.until = 0; saveLock(); if (!(await unseal())) return false; unlocked = true; await upgradeEnc(); return true; }
+      if (v) {
+        LK.fails = (LK.fails || 0) + 1;
+        // After 5 wrong tries: wait 30 s, doubling each time, up to 15 minutes.
+        if (LK.fails >= 5) LK.until = Date.now() + Math.min(15 * 60000, 30000 * Math.pow(2, LK.fails - 5));
+        saveLock(); toast(LK.until > Date.now() ? `Wrong PIN. Locked for ${Math.round((LK.until - Date.now()) / 1000)} s` : 'Wrong PIN');
+      }
       return false;
     }
     if (P.AppLock && !(await deviceLockAvailable())) {
-      // The phone's own screen lock was removed, so there is nothing to unlock with.
-      M.lockOn = false; save(); unlocked = true; toast('Phone screen lock is off, so Money lock was turned off'); return true;
-    }
-    if (P.AppLock) {
-      try { const r = await P.AppLock.authenticate({ title: 'Unlock Money' }); if (r.ok) { unlocked = true; return true; } } catch (e) { /* ignore */ }
+      // Fail closed: without a screen lock there's no way to confirm it's you, so Money stays locked.
+      await confirmBox('Money stays locked', 'Your phone\'s screen lock (PIN, pattern or fingerprint) is turned off, so Vyora can\'t confirm it\'s you. Turn the screen lock back on in phone Settings → Security, then open Money again.', [{ label: 'OK', cls: 'primary', value: 1 }]);
       return false;
     }
+    if (P.AppLock) {
+      try { const r = await P.AppLock.authenticate({ title: 'Unlock Money' }); if (r.ok) { if (!(await unseal())) return false; unlocked = true; await upgradeEnc(); return true; } } catch (e) { /* ignore */ }
+      return false;
+    }
+    // No way to check who you are on this build: keep Money closed rather than opening it.
+    if (isNative) { toast('Money can\'t be unlocked: phone lock isn\'t available'); return false; }
+    if (!(await unseal())) return false;
     unlocked = true; return true;
   }
+  // Lock on + the phone supports the secure keystore: keep Money encrypted at rest.
+  async function upgradeEnc() {
+    if (!M.lockOn || M.enc || !P.Vault) return;
+    try { const a = await P.Vault.available(); if (!a.available) return; } catch (e) { return; }
+    M.enc = true; await save();
+  }
   async function toggleLock() {
-    if (M.lockOn) { M.lockOn = false; M.pin = null; save(); unlocked = true; toast('Money lock is off'); return refresh(); }
+    if (M.lockOn) {
+      if (!(await unlock())) return;
+      M.lockOn = false; M.pin = null; M.enc = false; save(); unlocked = true; toast('Money lock is off. Money data is no longer encrypted.'); return refresh();
+    }
     if (await deviceLockAvailable()) {
       const r = await P.AppLock.authenticate({ title: 'Turn on Money lock' }).catch(() => ({ ok: false }));
       if (!r.ok) return;
-      M.lockOn = true; M.pin = null; save(); unlocked = true; toast('Money is locked with your fingerprint or phone lock');
+      M.lockOn = true; M.pin = null; save(); unlocked = true; await upgradeEnc(); toast(M.enc ? 'Money is locked and encrypted on this phone' : 'Money is locked with your fingerprint or phone lock');
       return refresh();
     }
     const a = await pinPad('Create a PIN', 'Pick 4 digits to lock the Money side'); if (!a) return;
     const b = await pinPad('Confirm PIN', 'Enter the same 4 digits again'); if (!b) return;
     if (a !== b) { toast('PINs did not match. Try again.'); return; }
-    M.lockOn = true; M.pin = await sha(a); save(); unlocked = true; toast('Money lock is on');
+    M.lockOn = true; M.pin = await sha(a); save(); unlocked = true; await upgradeEnc(); toast(M.enc ? 'Money lock is on and data is encrypted' : 'Money lock is on');
     refresh();
   }
 
@@ -615,8 +665,8 @@ const Money = (() => {
   }
   function onHide() { lastHidden = Date.now(); }
   function onShow() {
-    if (M.lockOn && lastHidden && Date.now() - lastHidden > 60000) {
-      unlocked = false;
+    if (M.lockOn && lastHidden && Date.now() - lastHidden > (S.lockAfter ?? 60) * 1000) {
+      unlocked = false; reseal();
       if (S.mode === 'money') { setMode('muscle', true); openMoney(); }
     }
     checkShared();
@@ -683,15 +733,16 @@ const Money = (() => {
     const recent = M.txns.slice().sort((a, b) => (b.date.localeCompare(a.date)) || (b.at - a.at)).slice(0, 6);
     const bills = M.bills.map(b => ({ b, nd: nextDue(b) })).filter(x => x.nd).sort((x, y) => x.nd.due - y.nd.due).slice(0, 3);
     const pct = st.budget ? Math.min(100, st.total / st.budget * 100) : 0;
-    view.innerHTML = topbarM('Money') + `<div class="page">
+    view.innerHTML = topbarM('Money', `<button class="round-btn" data-a="hideamt" aria-label="${M.hide ? 'Show amounts' : 'Hide amounts'}">${ic(M.hide ? 'lock' : 'unlock')}</button>`) + `<div class="page">
       <div class="mhero">
-        <div class="k">${short(st.s)} – ${short(st.e)} · ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left</div>
+        <div class="k">Budget period ${short(st.s)} – ${short(st.e)} · ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left</div>
+        <div class="mlabel">Budget left${M.accounts && M.accounts.length ? ' (not your bank balance)' : ''}</div>
         <div class="big ${st.left < 0 ? 'neg' : ''}">${inr(st.left)}</div>
         <div class="sub2">${st.left >= 0 ? 'left' : 'over'} of ${inr(st.budget)} budget · ${Math.round(pct)}% used</div>
         ${stackBar(st)}
         <div class="mlegend">${GKEYS.map(g => `<span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name} ${inr(st.spent[g])}</span>`).join('')}</div>
         <div class="mhero-row">
-          <div class="safe"><span>Safe to spend today</span><b>${inr(Math.max(0, st.safe - st.spentToday))}</b><small>${st.spentToday ? `${inr(st.safe)}/day · ${inr(st.spentToday)} spent today` : `${inr(st.safe)} per day for ${st.daysLeft} days`}</small></div>
+          <div class="safe" data-a="safewhy" role="button" tabindex="0"><span>Safe to spend today ⓘ</span><b>${inr(Math.max(0, st.safe - st.spentToday))}</b><small>${st.spentToday ? `${inr(st.safe)}/day · ${inr(st.spentToday)} spent today` : `${inr(st.safe)} per day for ${st.daysLeft} days`}</small></div>
           ${paceChip(st)}
         </div>
         ${st.reserve > 0 ? `<p class="hint" style="margin:8px 0 0">Keeps ${inr(st.reserve)} aside for ${[st.billNW ? 'upcoming bills' : '', st.savingsLeft ? 'your savings goal' : ''].filter(Boolean).join(' and ')}.</p>` : ''}
@@ -710,7 +761,7 @@ const Money = (() => {
       ${bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
       <div class="sect"><span>Recent</span>${M.txns.length ? '<button class="linkbtn" data-go="txns">See all</button>' : ''}</div>
       <div class="block" style="padding:0">${recent.map(txRow).join('') || `<div class="empty" style="padding:18px">No entries yet. Tap <b style="display:inline;font-family:var(--body);font-size:14px">Add expense</b> or share a payment screenshot to this app.</div>`}</div>
-      <p class="hint" style="margin-top:14px">Tip: in PhonePe or Google Pay, open a payment and tap <b>Share</b> → <b>Muscle &amp; Money</b>. You can also share a whole <b>PhonePe statement PDF</b> (History → Download statement) to add a month in one go.</p>
+      <p class="hint" style="margin-top:14px">Tip: in PhonePe or Google Pay, open a payment and tap <b>Share</b> → <b>Vyora</b>. You can also share a whole <b>PhonePe statement PDF</b> (History → Download statement) to add a month in one go.</p>
     </div>
     <button class="fab" data-a="add" aria-label="Add expense">${ic('plus')}</button>`;
   }
@@ -745,7 +796,7 @@ const Money = (() => {
 
   function budgetView() {
     const st = stats();
-    view.innerHTML = topbarM('Budget') + `<div class="page">
+    view.innerHTML = topbarM('Budget & bills') + `<div class="page">
       <div class="block">
         <button class="set-row" data-a="cbud"><span class="st"><div class="t">This cycle's budget</div><div class="s">${short(st.s)} – ${short(st.e)}</div></span><span class="val">${inr(st.budget)}</span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="dbud"><span class="st"><div class="t">Default monthly budget</div><div class="s">Used for every new cycle</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
@@ -863,7 +914,8 @@ const Money = (() => {
       <p class="hint" style="margin:8px 2px 0">${Object.keys(M.rules).length} payee${Object.keys(M.rules).length === 1 ? '' : 's'} remembered for automatic categories.${Object.keys(M.rules).length ? ' <button class="linkbtn" data-a="rules">Manage</button>' : ''}</p>
       <div class="sect">Privacy & reminders</div>
       <div class="block">
-        <button class="set-row" data-a="lock"><span class="st"><div class="t">Money lock</div><div class="s">${M.lockOn ? (M.pin ? 'On · 4-digit PIN' : 'On · fingerprint or phone lock') : 'Ask for fingerprint, phone lock or PIN before showing Money'}</div></span><span class="toggle ${M.lockOn ? 'on' : ''}"></span></button>
+        ${M.lockOn ? `<div class="set-row"><span class="st"><div class="t">Lock again</div><div class="s">After you leave the app</div></span><select id="lockafter" class="timein">${[[0, 'Right away'], [60, 'After 1 min'], [300, 'After 5 min']].map(([v, n]) => `<option value="${v}" ${(S.lockAfter ?? 60) === v ? 'selected' : ''}>${n}</option>`).join('')}</select></div>` : ''}
+        <button class="set-row" data-a="lock"><span class="st"><div class="t">Money lock</div><div class="s">${M.lockOn ? (M.pin ? 'On · 4-digit PIN' : 'On · fingerprint or phone lock') + (M.enc ? ' · encrypted on this phone' : '') + ` · locks again ${(S.lockAfter ?? 60) === 0 ? 'as soon as you leave the app' : (S.lockAfter ?? 60) === 300 ? '5 minutes after you leave the app' : '1 minute after you leave the app'}` : 'Ask for fingerprint, phone lock or PIN before showing Money, and encrypt your money data on this phone'}</div></span><span class="toggle ${M.lockOn ? 'on' : ''}"></span></button>
         <div class="set-row"><span class="st"><div class="t">Bill reminder time</div><div class="s">The day before a bill is due</div></span><input type="time" id="rtime" value="${esc(M.remindTime)}" class="timein"></div>
       </div>
       <div class="sect">Your data</div>
@@ -875,6 +927,7 @@ const Money = (() => {
       </div>
       <p class="hint" style="margin-top:14px">Everything stays on this phone. Screenshots are read on the phone and never uploaded.</p>
     </div>`;
+    const la = $('#lockafter', view); if (la) la.addEventListener('change', () => { S.lockAfter = +la.value; saveSettings(); toast('Saved'); refresh(); });
     const rt = $('#rtime', view); rt.addEventListener('change', () => { M.remindTime = rt.value || '09:00'; save(); scheduleBillReminders(); toast('Reminder time saved'); });
   }
 
@@ -982,7 +1035,7 @@ const Money = (() => {
     const rows = [['Date', 'Type', 'Amount', 'Your share', 'Group', 'Category', 'Payee', 'Account', 'Note', 'Source']];
     M.txns.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(t => { const c = cat(t.catId); rows.push([t.date, t.type, t.amount, isIncome(t) ? t.amount : own(t), isIncome(t) ? 'Income' : GROUPS[c.group || 'wants'].name, c.name, t.payee || '', t.acc && accOf(t.acc) ? accOf(t.acc).name : '', t.note || '', t.src || '']); });
     const csv = rows.map(r => r.map(v => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(',')).join('\n');
-    const fname = `muscle-money-${dkey(new Date())}.csv`;
+    const fname = `vyora-${dkey(new Date())}.csv`;
     try {
       if (P.Filesystem && P.Share) { const r = await P.Filesystem.writeFile({ path: fname, data: csv, directory: 'CACHE', encoding: 'utf8' }); await P.Share.share({ title: 'Money export', files: [r.uri], dialogTitle: 'Save or send the spreadsheet' }); }
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); }
@@ -1345,6 +1398,7 @@ const Money = (() => {
 
   /* ---------- home-screen widget ---------- */
   function widgetData() {
+    if (sealed) return { money: true, locked: true, left: 0, safe: 0 };
     if (!M.setup) return { money: false };
     const st = stats();
     return { money: true, locked: !!M.lockOn, left: Math.round(st.left), safe: Math.round(Math.max(0, st.safe - st.spentToday)) };
@@ -1651,6 +1705,11 @@ const Money = (() => {
   function refresh() { if (S.mode === 'money' && !$('#layer > .screen')) { const t = view.scrollTop; renderTab(mTab); view.scrollTop = t; } }
   async function handleClick(e) {
     const t = e.target;
+    if (t.closest('[data-a="hideamt"]')) { M.hide = !M.hide; save(); refresh(); toast(M.hide ? 'Amounts hidden' : 'Amounts shown'); return; }
+    if (t.closest('[data-a="safewhy"]')) {
+      const st = stats(); const sp = Math.max(0, st.safe - st.spentToday);
+      return confirmBox('How "safe to spend" works', M.hide ? 'Show amounts (eye button) to see the numbers.' : `Budget left this period: ${inr(st.left)}\nKept aside for upcoming bills and savings: ${inr(st.reserve || 0)}\nDays left including today: ${st.daysLeft}\n\n(${inr(st.left)} − ${inr(st.reserve || 0)}) ÷ ${st.daysLeft} days = ${inr(st.safe)} per day\nSpent today: ${inr(st.spentToday)} → ${inr(sp)} left today.\n\nThis is a guide from your budget, not your bank balance.`, [{ label: 'Got it', cls: 'primary', value: 1 }]);
+    }
     const tx = t.closest('[data-tx]'); if (tx) return entrySheet({ id: tx.dataset.tx });
     const pay = t.closest('[data-pay]'); if (pay) { const bill = M.bills.find(b => b.id === pay.dataset.pay); markPaid(bill, parseKey(pay.dataset.due)); refresh(); const st = stats(); toast(`${bill.name} paid · ${inr(st.left)} left`); return; }
     const bl = t.closest('[data-bill]'); if (bl) return billSheet(M.bills.find(b => b.id === bl.dataset.bill));
@@ -1711,7 +1770,11 @@ const Money = (() => {
 
   return {
     get data() { return M; },
-    set data(v) { M = Object.assign(fresh(), v || {}); save(); },
+    set data(v) { const keep = { lockOn: M.lockOn, pin: M.pin, enc: M.enc }; M = Object.assign(fresh(), v || {}, keep); sealed = false; save(); },
+    // Backups and restores need the real data, so they ask to unlock first.
+    async ensureOpen() { if (!M.lockOn && !sealed) return true; return unlock(); },
+    isSealed: () => sealed,
+    rescheduleBills: () => scheduleBillReminders(),
     renderTab, handleClick, openMoney, onHide, onShow, todayChip, boot, refresh, parseReceipt, parseHistory, stats, inr, widgetData, own, dayOnPace, weekSpend,
     isLocked: () => M.lockOn && !unlocked, lockOn: () => M.lockOn,
     async quickAdd() { if (!(await openMoney())) return; return M.setup ? entrySheet({}) : setupView(); },

@@ -1,4 +1,4 @@
-/* Muscle & Money: quote bank. Adds to QUOTES from app.js; one is picked at random each time a card is drawn. */
+/* Vyora: quote bank. Adds to QUOTES from app.js; one is picked at random each time a card is drawn. */
 'use strict';
 (() => {
   const more = {

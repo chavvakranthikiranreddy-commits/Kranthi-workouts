@@ -1,4 +1,4 @@
-/* Muscle & Money: daily health.
+/* Vyora: daily health.
    Protein & water, sleep & readiness, progress photos, muscle map, daily check-in and weekly scorecard.
    Uses helpers from app.js ($, $$, el, esc, ic, sheet, toast, DB, S, P, log, plan, STP, latestBody ...). */
 'use strict';
@@ -171,7 +171,7 @@ const Health = (() => {
     log.forEach(x => {
       if (!x.exercises || parseKey(x.date) < from) return;
       x.exercises.forEach(ex => {
-        const n = (ex.sets || []).filter(s => (s.r > 0) || s.done).length; if (!n) return;
+        const n = (ex.sets || []).filter(s => (s.r > 0) || s.t > 0 || s.done).length; if (!n) return;
         const w = PAT[patternOf(ex)]; if (!w) return;
         Object.entries(w).forEach(([m, f]) => { out[m] += n * f; });
       });
@@ -410,6 +410,8 @@ const Health = (() => {
     today() { const k = todayK(); const n = nutOn(k); const t = targets(); const e = H.sleep[k]; return { p: n.p, w: n.w, tp: t.p, tw: t.w, sleepH: e ? sleepHours(e) : 0, slept: !!e, ready: readiness(k) }; },
     fuelHtml, sleepCardHtml, checkinHtml, muscleMapHtml, photosHtml, hydrate, handle, scheduleScorecard, readiness, habits, muscleSets, widgetPart, scorecard,
     openSleep(pre) { if (pre && (pre.bed || pre.wake)) { const k = todayK(); if (!H.sleep[k]) H.lastSleep = { bed: pre.bed || H.lastSleep.bed, wake: pre.wake || H.lastSleep.wake }; } return sleepSheet(); },
+    replacePhotos(list) { H.photos = (list || []).filter(ph => ph && ph.id); imgCache.clear(); save(); },
+    addPhotos(list) { (list || []).forEach(ph => { if (ph && ph.id && !H.photos.some(x => x.id === ph.id)) H.photos.push(ph); }); save(); },
     _addP: addP, _addW: addW,
   };
 })();

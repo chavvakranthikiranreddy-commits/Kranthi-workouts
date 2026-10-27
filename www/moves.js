@@ -1,4 +1,4 @@
-/* Muscle & Money: animated exercise library.
+/* Vyora: animated exercise library.
    Every exercise is a jointed figure posed with angles and blended between keyframes.
    The worked muscles glow, equipment is drawn in the hands, and feet stay on the floor.
    Uses helpers from app.js ($, $$, el, esc, ic, sheet, S, isNative) and Program._EX for the gym library. */
@@ -550,6 +550,8 @@ const Moves = (() => {
   let io = null;
   function animate(svg, opts = {}) {
     if (!svg || svg.__mv) return svg && svg.__mv;
+    // Respect "remove animations": keep figures still unless a workout timer is driving them.
+    if (!opts.clock && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
     const m = get(svg.dataset.mv), pr = prep(m);
     const el = {}; PARTS.forEach(c => { el[c] = svg.querySelector('.mv-' + c); });
     const a = { svg, pr, m, t0: performance.now(), dur: opts.dur || pr.A.dur, clock: opts.clock || null, visible: true, el };
@@ -569,10 +571,13 @@ const Moves = (() => {
   const PHOTO_WEB = 'https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/';
   const photoId = name => { const m = get(name); return m.photo || null; };
   const photoSrc = (id, i) => `ex/${id}/${i}.jpg`;
-  const imgTag = (id, i, cls = '') => `<img class="${cls}" src="${photoSrc(id, i)}" data-exid="${esc(id)}" data-exi="${i}" alt="" loading="lazy" decoding="async">`;
+  const imgTag = (id, i, cls = '', name = '') => `<img class="${cls}" src="${photoSrc(id, i)}" data-exid="${esc(id)}" data-exi="${i}" data-exn="${esc(name)}" alt="" loading="lazy" decoding="async">`;
   document.addEventListener('error', e => {
-    const t = e.target; if (!t || t.tagName !== 'IMG' || !t.dataset.exid || t.dataset.web) return;
-    t.dataset.web = 1; t.src = PHOTO_WEB + t.dataset.exid + '/' + t.dataset.exi + '.jpg';
+    const t = e.target; if (!t || t.tagName !== 'IMG' || !t.dataset.exid) return;
+    if (!t.dataset.web) { t.dataset.web = 1; t.src = PHOTO_WEB + t.dataset.exid + '/' + t.dataset.exi + '.jpg'; return; }
+    // Neither the bundled nor the online photo loaded: show the animated figure instead of a broken image.
+    const box = t.closest('.exph, .exthumb'); const n = t.dataset.exn;
+    if (box && n && !box.dataset.fell) { box.dataset.fell = 1; const holder = document.createElement('span'); holder.innerHTML = svgFor(n, { cls: box.classList.contains('exthumb') ? 'th' : 'big' }); box.replaceWith(holder.firstChild); mount(document); }
   }, true);
   const wantsPhoto = () => (typeof S === 'undefined' || S.demo !== 'anim');
   // A demo: the real photos flipping between start and end position, or the animated figure.
@@ -580,11 +585,36 @@ const Moves = (() => {
     const id = photoId(name); const useAnim = anim != null ? anim : !wantsPhoto();
     if (!id || useAnim) return svgFor(name, { cls, still });
     const dur = Math.max(1600, Math.min(4200, (ARCH[get(name).arch] || {}).dur || 2400));
-    return `<div class="exph ${cls}" style="--exd:${dur}ms" role="img" aria-label="${esc(get(name).name)} photo demo">${imgTag(id, 0, 'a')}${imgTag(id, 1, 'b')}</div>`;
+    return `<div class="exph ${cls}" style="--exd:${dur}ms" role="img" aria-label="${esc(get(name).name)} photo demo">${imgTag(id, 0, 'a', name)}${imgTag(id, 1, 'b', name)}</div>`;
   }
   // Small square thumbnail: first photo, or the figure.
-  function thumb(name, cls = 'th') { const id = photoId(name); return id && wantsPhoto() ? `<span class="exthumb">${imgTag(id, 0)}</span>` : svgFor(name, { cls }); }
+  function thumb(name, cls = 'th') { const id = photoId(name); return id && wantsPhoto() ? `<span class="exthumb">${imgTag(id, 0, '', name)}</span>` : svgFor(name, { cls }); }
   const hasBoth = name => !!photoId(name);
+
+  /* ---------- back-friendly mode & pain flags ---------- */
+  // Heavy hinges and twisting core work are swapped for options that load the lower back less.
+  // This is a cautious default, not a diagnosis. Moves you mark as painful are always swapped.
+  const BACK_SWAPS = [
+    [/^(barbell |dumbbell |trap bar |sumo )?deadlift$/i, 'Hip Thrust'], [/romanian deadlift|stiff.?legged/i, 'Leg Curl'], [/single-leg romanian/i, 'Single-Leg Glute Bridge'],
+    [/good morning/i, 'Glute Bridge'], [/bent.?over|^barbell row$|t-bar row|^dumbbell row$|pendlay/i, 'Chest-Supported Row'],
+    [/swing/i, 'Glute Bridge'], [/snatch|power clean|hang clean|^clean/i, 'Step-Up'], [/thruster/i, 'Dumbbell Shoulder Press'],
+    [/russian twist|bicycle crunch|woodchop|windmill|oblique twist|plate twist/i, 'Dead Bug'], [/back extension|hyperextension/i, 'Bird Dog'],
+    [/jefferson|toes to bar/i, 'Dead Bug'],
+  ];
+  const painList = () => (typeof S !== 'undefined' && Array.isArray(S.painMoves) ? S.painMoves : []);
+  const isPainful = name => painList().some(n => n.toLowerCase() === String(name || '').toLowerCase());
+  function setPainful(name, on) {
+    const l = painList().filter(n => n.toLowerCase() !== String(name).toLowerCase()); if (on) l.push(get(name).name);
+    S.painMoves = l; saveSettings();
+  }
+  // Returns { name, why } when a move should be swapped, otherwise null.
+  function safeSwap(name) {
+    const m = get(name); const n = m.name;
+    if (isPainful(n)) { const a = alts(n).find(x => !isPainful(x) && !BACK_SWAPS.some(([re]) => re.test(x))); return a ? { name: a, why: 'you marked it as painful' } : null; }
+    if (typeof S !== 'undefined' && S.backSafe === false) return null;
+    const hit = BACK_SWAPS.find(([re]) => re.test(n)); if (!hit || hit[1].toLowerCase() === n.toLowerCase()) return null;
+    return { name: hit[1], why: 'back-friendly mode' };
+  }
 
   /* ---------- how-to sheet ---------- */
   function youtube(name) {
@@ -604,15 +634,19 @@ const Moves = (() => {
       ${m.lib ? '' : `<div class="cues">${m.cues.slice(0, 4).map((c, i) => `<div class="cue"><b>${i + 1}</b><span>${esc(c)}</span></div>`).join('')}</div>`}
       ${steps ? `<details class="xsteps" ${m.lib ? 'open' : ''}><summary>Step by step</summary><ol>${steps.map(x => `<li>${esc(x)}</li>`).join('')}</ol></details>` : ''}
       ${alts(m.name).length ? `<div class="sect">Similar moves</div><div class="accchips">${alts(m.name).slice(0, 6).map(n => `<button class="catchip" data-alt="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : ''}
-      <div class="btns"><button class="btn" data-a="yt">${ic('play')}Watch demos on YouTube</button></div>`);
+      <label class="mremember painrow" data-a="pain"><span class="toggle sm ${isPainful(m.name) ? 'on' : ''}"></span><span><b>This move hurts me</b><br><small>It will be swapped out of workouts and never pushed heavier</small></span></label>
+      ${safeSwap(m.name) && !isPainful(m.name) ? `<p class="hint">🛡 With back-friendly mode on, workouts use <b>${esc(safeSwap(m.name).name)}</b> instead.</p>` : ''}
+      <div class="btns ${typeof Coach !== 'undefined' && Coach.hasHistory(m.name) ? 'two' : ''}">${typeof Coach !== 'undefined' && Coach.hasHistory(m.name) ? `<button class="btn" data-a="hist">${ic('chart')}My history</button>` : ''}<button class="btn" data-a="yt">${ic('play')}YouTube demos</button></div>`);
     mount(s.el);
     s.el.addEventListener('click', e => {
       const dm = e.target.closest('[data-dm]');
       if (dm) { anim = dm.dataset.dm === 'anim'; if (typeof S !== 'undefined') { S.demo = anim ? 'anim' : 'photo'; saveSettings(); } $$('[data-dm]', s.el).forEach(x => x.classList.toggle('on', x === dm)); $('#mvd', s.el).innerHTML = demo(m.name, { cls: 'big', anim }); mount(s.el); return; }
       if (e.target.closest('[data-a="yt"]')) return youtube(m.name);
+      if (e.target.closest('[data-a="hist"]')) { s.close(); return setTimeout(() => Coach.history(m.name), 150); }
+      const pn = e.target.closest('[data-a="pain"]'); if (pn) { const on = !isPainful(m.name); setPainful(m.name, on); $('.toggle', pn).classList.toggle('on', on); toast(on ? 'Marked as painful. It will be swapped in your workouts.' : 'Unmarked'); return; }
       const alt = e.target.closest('[data-alt]'); if (alt) { s.close(); setTimeout(() => (onSwap ? onSwap(alt.dataset.alt) : howTo(alt.dataset.alt)), 150); }
     });
   }
 
-  return { demo, thumb, photoId, hasBoth, get, all, search, alts, svgFor, animate, mount, howTo, tempo, isKnown, poseKey, MNAME, EQN, TYPE_DEF, _ARCH: ARCH, _prep: prep };
+  return { safeSwap, isPainful, setPainful, demo, thumb, photoId, hasBoth, get, all, search, alts, svgFor, animate, mount, howTo, tempo, isKnown, poseKey, MNAME, EQN, TYPE_DEF, _ARCH: ARCH, _prep: prep };
 })();

@@ -17,7 +17,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="MUSCLE &amp; MONEY"
+            android:text="VYORA"
             android:textColor="#8B95A3"
             android:textSize="11sp"
             android:textStyle="bold"

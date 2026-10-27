@@ -1,4 +1,4 @@
-/* Muscle & Money: yoga & mobility poses, follow-along routines and pose drawings.
+/* Vyora: yoga & mobility poses, follow-along routines and pose drawings.
    Routines are normal interval timers, so they use the same run screen, voice and logging.
    Uses helpers from app.js (TEMPLATES, mk, iv, uid, esc, ic, sheet, totalOf, fmtShort, startTimer ...). */
 'use strict';

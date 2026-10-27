@@ -1,4 +1,4 @@
-/* Muscle & Money: workouts you build by typing exercise names, ready-made full-body templates,
+/* Vyora: workouts you build by typing exercise names, ready-made full-body templates,
    and a guided player that counts down, counts every rep out loud and runs your rests.
    Uses helpers from app.js and Moves (moves.js). */
 'use strict';
@@ -87,13 +87,19 @@ const Coach = (() => {
   // Weight suggestion from your last session of this exercise.
   function suggest(name, reps) {
     const st = exerciseStats(name); if (!st.last) return null;
+    if (S.suggest === false) { const sets0 = st.last.sets; return { text: `Last: ${sets0.map(x => (x.w ? `${wOut(x.w)}×${x.r}` : `${x.r}`)).join(', ')}${sets0.some(x => x.w) ? ' ' + wUnit() : ' reps'}`, tip: '', w: null, up: false }; }
+    st.lastPain = (() => { const x = log.slice().reverse().find(e => (e.exercises || []).some(q => q.name === name) || (e.pain || []).includes(name)); return !!(x && (x.pain || []).includes(name)); })();
     const sets = st.last.sets; const top = sets.reduce((m, s) => Math.max(m, s.w || 0), 0);
     if (!top) return { text: `Last: ${sets.map(s => s.r).join(', ')} reps`, w: null };
     const hitAll = sets.filter(s => (s.w || 0) === top).every(s => s.r >= (reps || 0));
     const m = Moves.get(name);
     const step = m.eq === 'B' ? 2.5 : 2;
-    const next = hitAll ? Math.round((top + step) * 2) / 2 : top;
-    return { text: `Last: ${wOut(top)} ${wUnit()} × ${sets.filter(s => (s.w || 0) === top).map(s => s.r).join(', ')}`, tip: hitAll ? `Try ${wOut(next)} ${wUnit()}` : `Stay at ${wOut(top)} ${wUnit()}`, w: next, up: hitAll };
+    // Only go heavier when every set hit the target, the last set wasn't an all-out effort, and the move doesn't hurt.
+    const maxed = sets.some(s => s.e === 0), hurt = Moves.isPainful(name) || (st.lastPain);
+    const up = hitAll && !maxed && !hurt;
+    const next = up ? Math.round((top + step) * 2) / 2 : top;
+    const tip = hurt ? `Stay light at ${wOut(top)} ${wUnit()} or lighter. It hurt before` : up ? `Try ${wOut(next)} ${wUnit()}` : maxed && hitAll ? `Stay at ${wOut(top)} ${wUnit()}. Last set was all-out` : `Stay at ${wOut(top)} ${wUnit()}`;
+    return { text: `Last: ${wOut(top)} ${wUnit()} × ${sets.filter(s => (s.w || 0) === top).map(s => s.r).join(', ')}`, tip, w: next, up };
   }
 
   /* ---------- Train tab: workouts list ---------- */
@@ -341,7 +347,7 @@ const Coach = (() => {
   }
   async function share(w) {
     const lines = w.blocks.map(b => b.kind === 'single' ? `• ${b.items[0].name} – ${blockTxt(b)}` : `• ${b.kind === 'superset' ? 'Superset' : 'Circuit'} ×${b.rounds}: ${b.items.map(i => `${i.name} (${i.time ? i.time + 's' : i.reps})`).join(', ')}`);
-    const text = `💪 ${w.name}\n${lines.join('\n')}\n\nOpen Muscle & Money → Timers → Workouts → Import, and paste this code:\n${encode(w)}`;
+    const text = `💪 ${w.name}\n${lines.join('\n')}\n\nOpen Vyora → Timers → Workouts → Import, and paste this code:\n${encode(w)}`;
     try { if (P.Share) await P.Share.share({ title: w.name, text, dialogTitle: 'Share workout' }); else if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Copied. Paste it in a chat.'); } } catch (e) { /* cancelled */ }
   }
   function importSheet() {
@@ -358,6 +364,24 @@ const Coach = (() => {
       mine.unshift(w); saveMine(); s.close(); if (currentTab === 'timers') rerenderKeepScroll(); toast(`${w.name} added`); setTimeout(() => openDetail(w), 150);
     });
   }
+
+  /* ---------- exercise history ---------- */
+  const hasHistory = name => exerciseStats(Moves.get(name).name).sessions.length > 0;
+  function history(name0) {
+    const name = Moves.get(name0).name; const st = exerciseStats(name);
+    const ses = st.sessions.slice().reverse();
+    const pts = st.sessions.map(x => Math.max(...x.sets.map(s => e1rm(s.w || 0, s.r))));
+    const W = 300, H = 90, max = Math.max(...pts, 1), min = Math.min(...pts) * 0.92;
+    const xy = pts.map((v, i) => [pts.length > 1 ? i / (pts.length - 1) * W : W / 2, H - 8 - (v - min) / Math.max(1, max - min) * (H - 20)]);
+    const anyW = pts.some(v => v > 0);
+    const s = sheet(`<h2>${esc(name)}</h2><p class="sub">${st.sessions.length} session${st.sessions.length === 1 ? '' : 's'} logged${st.bestSet ? ` · best set ${esc(setStr(st.bestSet))}` : ''}</p>
+      ${anyW && pts.length > 1 ? `<div class="hchart" role="img" aria-label="Estimated one-rep max over time, from ${wOut(pts[0])} to ${wOut(pts[pts.length - 1])} ${wUnit()}"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline points="${xy.map(p => p.map(v => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${xy.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="var(--accent)"/>`).join('')}</svg><small>Estimated 1-rep max (${wUnit()}) per session · best ${wOut(max)} ${wUnit()}</small></div>` : ''}
+      ${Moves.isPainful(name) ? '<p class="hint">⚠️ You marked this move as painful. Workouts swap it for a safer option.</p>' : ''}
+      <div class="block" style="padding:0">${ses.slice(0, 20).map(x => `<div class="mini-row"><span>${esc(dlabelShort(x.date))}<small>${x.sets.length} set${x.sets.length > 1 ? 's' : ''}</small></span><b>${esc(summarizeSets(x.sets))}</b></div>`).join('') || '<div class="empty" style="padding:16px">No sets logged yet.</div>'}</div>
+      ${(() => { const sg = suggest(name, 0); return sg && sg.tip ? `<p class="hint">Next time: <b>${esc(sg.tip)}</b></p>` : ''; })()}`);
+    return s;
+  }
+  const dlabelShort = k => parseKey(k).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
 
   /* ---------- guided player ---------- */
   function buildSteps(w) {
@@ -382,18 +406,42 @@ const Coach = (() => {
     return steps;
   }
   let PL = null;
-  function play(w) {
+  // Back-friendly swaps happen before the workout starts, so you see exactly what changed.
+  async function play(w0, resume) {
     if (PL) return;
+    let w = w0;
+    if (!resume) {
+      const swaps = [];
+      const w2 = clone(w0);
+      w2.blocks.forEach(b => b.items.forEach(it => { const sw = Moves.safeSwap(it.name); if (sw) { swaps.push([it.name, sw.name, sw.why]); it.name = sw.name; } }));
+      if (swaps.length) {
+        const v = await confirmBox('Safer swaps for your back', swaps.map(([a, b2, why]) => `${a} → ${b2} (${why})`).join('\n'), [{ label: 'Use safer moves', cls: 'primary', value: 'swap' }, { label: 'Keep original', cls: 'ghost', value: 'keep' }]);
+        if (v === 'swap') w = w2; else if (!v) return;
+      }
+    }
     Snd.unlock();
-    const steps = buildSteps(w);
-    const done = {}; // "bi:ii" -> [{ w, r }]
-    const logSet = (ref, wv, r) => { const k = ref.bi + ':' + ref.ii; (done[k] = done[k] || [])[ref.r] = { w: wv || 0, r }; };
+    const skipped = new Set(resume ? resume.skip || [] : []);
+    const ri = resume ? resume.i : 0, isSk = x => x.ref && skipped.has(x.ref.bi + ':' + x.ref.ii);
+    const steps = buildSteps(w).filter((x, j) => !(j > ri && isSk(x)));
+    if (resume && steps[ri] && isSk(steps[ri])) steps[ri] = Object.assign({}, steps[ri], { k: 'rest', dur: 3000, quick: true, label: 'Skipped', next: (steps[ri + 1] || {}).name || (steps[ri + 1] || {}).next || 'Finish', ref: null });
+    const done = resume ? resume.done : {}; // "bi:ii" -> [{ w, r, e }]
+    const pain = new Set(resume ? resume.pain || [] : []);
+    // Every set is stored as completed (reps or seconds) or skipped; skipped sets never count as done.
+    const logSet = (ref, wv, r, e, extra) => { const k = ref.bi + ':' + ref.ii; (done[k] = done[k] || [])[ref.r] = Object.assign({ w: wv || 0, r, e: e == null ? undefined : e }, extra || {}); if (!(extra && extra.skipped)) lastRef = ref; };
+    let lastRef = resume ? resume.lastRef || null : null;
     const scr = el(`<section class="screen coach"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="x" aria-label="Stop">${ic('close')}</button></div><h1 id="cphase">${esc(w.name)}</h1><div class="tb-right"><button class="round-btn" data-a="pace" id="cpace" aria-label="Rep speed">${ic('stopwatch')}</button></div></header>
       <div class="cprog"><i id="cbar"></i></div>
       <div class="cbody" id="cbody"></div>
-      <div class="cctl"><button class="round-btn big" data-a="prev" aria-label="Back">${ic('chevL')}</button><button class="cplay" data-a="pp" id="cpp" aria-label="Pause">${ic('pause')}</button><button class="round-btn big" data-a="next" aria-label="Skip">${ic('chevR')}</button></div></section>`);
+      <div class="cctl"><button class="round-btn big" data-a="prev" aria-label="Back">${ic('chevL')}</button><button class="cplay" data-a="pp" id="cpp" aria-label="Pause">${ic('pause')}</button><button class="round-btn big" data-a="next" aria-label="Skip set or next step">${ic('chevR')}</button></div></section>`);
     layer.appendChild(scr);
-    const st = PL = { i: 0, t0: performance.now(), paused: 0, pausedAt: 0, lastRep: 0, lastSec: -1, fig: null, start: Date.now(), extra: 0 };
+    const st = PL = { i: resume ? Math.min(resume.i, steps.length - 1) : 0, t0: performance.now(), paused: 0, pausedAt: resume ? performance.now() : 0, lastRep: 0, lastSec: -1, fig: null, start: resume ? resume.start : Date.now(), extra: 0 };
+    // Save progress so a workout survives the phone killing the app.
+    const persist = () => { try { DB.set('coachsession', { w, i: st.i, done, pain: [...pain], skip: [...skipped], lastRef, start: st.start, at: Date.now() }); } catch (e) { /* storage full */ } };
+    const forget = () => DB.del('coachsession');
+    persist();
+    // Leaving the app during a set pauses it, so nothing is counted while you're away. Rest timers keep running.
+    const onVis = () => { const s = cur(); if (document.hidden) { persist(); if (s && (s.k === 'reps' || s.k === 'time') && !st.pausedAt) togglePause(); } };
+    document.addEventListener('visibilitychange', onVis);
     const el2 = id => $('#' + id, scr);
     const elapsed = () => (st.pausedAt ? st.pausedAt : performance.now()) - st.t0 - st.paused;
     const cur = () => steps[st.i];
@@ -404,19 +452,22 @@ const Coach = (() => {
       const showName = isWork || s.k === 'ready' ? s.name : s.next;
       const it = isWork ? s.it : s.nextIt;
       const sg = it && it.reps ? suggest(showName, it.reps) : null;
-      const prevLog = s.logRef ? (done[s.logRef.bi + ':' + s.logRef.ii] || [])[s.logRef.r] : null;
-      const logIt = s.logRef ? steps.find(x => x.ref === s.logRef) : null;
+      // The last completed set stays editable on the next screens until another set is logged.
+      const prevLog = lastRef && !(isWork && s.ref && s.ref === lastRef) ? (done[lastRef.bi + ':' + lastRef.ii] || [])[lastRef.r] : null;
+      const logIt = prevLog ? steps.find(x => x.ref && x.ref.bi === lastRef.bi && x.ref.ii === lastRef.ii && x.ref.r === lastRef.r) : null;
       el2('cphase').textContent = s.phase || (s.k === 'rest' ? s.label : s.k === 'ready' ? s.label : s.kind && s.kind !== 'single' ? (s.kind === 'superset' ? 'Superset' : 'Circuit') : w.name);
       el2('cbody').innerHTML = `
-        <div class="cstage ${isWork ? 'work' : 'rest'}">${Moves.demo(showName, { cls: 'big' })}${Moves.hasBoth(showName) ? `<button class="demosw" data-a="demo">${ic(S.demo === 'anim' ? 'camera' : 'play')}${S.demo === 'anim' ? 'Photos' : 'Animated'}</button>` : ''}</div>
+        <div class="cstage ${isWork ? 'work' : 'rest'} ${st.pausedAt ? 'paused' : ''}"><span class="cpaused" aria-live="polite">${st.pausedAt ? 'Paused' : ''}</span>${Moves.demo(showName, { cls: 'big' })}${Moves.hasBoth(showName) ? `<button class="demosw" data-a="demo">${ic(S.demo === 'anim' ? 'camera' : 'play')}${S.demo === 'anim' ? 'Photos' : 'Animated'}</button>` : ''}</div>
         <div class="cinfo">
           ${!isWork ? `<div class="clabel">${esc(s.k === 'ready' ? 'Get ready' : s.label)}${s.setLabel ? ` · ${esc(s.setLabel)}` : ''}</div><div class="cname sm">${s.k === 'rest' ? 'Next: ' : ''}${esc(showName || '')}</div>` : `<div class="cname">${esc(s.name)}</div><div class="clabel">${s.idx ? esc(s.idx) : s.sets ? `${s.kind === 'single' ? 'Set' : 'Round'} ${s.set} of ${s.sets}` : ''}${it && it.w ? ` · ${wOut(it.w)} ${wUnit()}` : ''}</div>`}
           <div class="cbig" id="cbig"></div>
           <div class="csub" id="csub"></div>
-          ${sg && !isWork ? `<div class="csug">${esc(sg.text)}${sg.tip ? ` · <b>${esc(sg.tip)}</b>` : ''}</div>` : ''}
+          ${sg ? `<div class="csug">${esc(sg.text)}${sg.tip ? ` · <b>${esc(sg.tip)}</b>` : ''}</div>` : ''}
+          ${isWork && s.ref ? `<button class="painbtn ${pain.has(s.name) ? 'on' : ''}" data-a="hurt">⚠️ ${pain.has(s.name) ? 'Marked as painful' : 'This hurts'}</button>` : ''}
           ${s.k === 'rest' && !s.quick ? `<div class="cbtns"><button class="btn sm" data-a="plus">+15 s</button><button class="btn sm" data-a="skip">Skip rest</button></div>` : ''}
-          ${s.k === 'reps' ? `<div class="cbtns"><button class="btn sm primary" data-a="done">${ic('check')}Done</button></div>` : ''}
-          ${prevLog && logIt ? `<div class="clog"><span>Last set</span>${stepper('lw', wUnit(), wOut(prevLog.w || 0), '', S.unit === 'lb' ? 5 : 2.5, 0, 500)}${stepper('lr', 'reps', prevLog.r, '', 1, 0, 60)}</div>` : ''}
+          ${isWork && s.ref ? `<button class="btn primary big csetdone" data-a="done">${ic('check')}Complete set</button><button class="linkbtn cskip" data-a="skipset">Skip this set</button>` : ''}
+          ${prevLog && logIt ? `<div class="clog" data-ref="${lastRef.bi}:${lastRef.ii}:${lastRef.r}"><span>${esc(logIt.name)} · set ${lastRef.r + 1}: what you did</span>${prevLog.t != null ? stepper('lt', 'sec', prevLog.t, '', 5, 0, 900) : stepper('lw', wUnit(), wOut(prevLog.w || 0), '', S.unit === 'lb' ? 5 : 2.5, 0, 500) + stepper('lr', 'reps', prevLog.r, '', 1, 0, 100)}</div>
+            <div class="effort" role="group" aria-label="How hard was that set?"><span>How hard?</span>${[[3, 'Easy'], [2, 'Good'], [1, 'Hard'], [0, 'All-out']].map(([v, n]) => `<button data-eff="${v}" class="${prevLog.e === v ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
         </div>`;
       const ph = $('.cstage .exph', scr);
       if (ph) { ph.style.setProperty('--exd', (s.k === 'reps' ? s.rep * (Moves.get(s.name).per || 1) : 2400) + 'ms'); ph.classList.toggle('paused', !!st.pausedAt); }
@@ -451,54 +502,84 @@ const Coach = (() => {
       }
       const doneMs = steps.slice(0, st.i).reduce((a, x) => a + x.dur, 0) + Math.min(e, s.dur);
       el2('cbar').style.width = (doneMs / totalMs * 100).toFixed(1) + '%';
-      if (e >= s.dur && !st.pausedAt) advance();
+      if (e >= s.dur && !st.pausedAt) {
+        // Coming back after a long time away: move on one step and wait, instead of racing through the workout.
+        if (e - s.dur > 4000) { advance(); if (PL === st && !st.pausedAt) { togglePause(); toast('Paused while you were away. Tap play to continue.'); } return; }
+        advance();
+      }
     }
     function saveLogFrom() {
-      // Read the "last set" steppers before leaving a rest step.
-      const s = cur(); if (!s || !s.logRef) return;
-      const box = scr.querySelector('.clog'); if (!box) return;
-      const wv = val(box, 'lw'), r = val(box, 'lr');
-      logSet(s.logRef, S.unit === 'lb' ? wv / KG_LB : wv, r);
+      // Read the "what you did" steppers for the last completed set before moving on.
+      if (!lastRef) return;
+      const box = scr.querySelector('.clog'); if (!box || box.dataset.ref !== `${lastRef.bi}:${lastRef.ii}:${lastRef.r}`) return;
+      const k = lastRef.bi + ':' + lastRef.ii, cur0 = (done[k] || [])[lastRef.r]; if (!cur0) return;
+      const eb = scr.querySelector('.effort .on');
+      if (cur0.t != null) { cur0.t = val(box, 'lt'); }
+      else { const wv = val(box, 'lw'); cur0.w = S.unit === 'lb' ? wv / KG_LB : wv; cur0.r = val(box, 'lr'); }
+      if (eb) cur0.e = +eb.dataset.eff;
     }
-    function advance(manual) {
+    // how: 'done' (completed), 'skip' (skipped set) or nothing (timer ran out = completed as planned).
+    function advance(manual, how) {
       const s = cur();
-      if (s && s.k === 'reps') { const n = manual ? Math.max(Math.floor(elapsed() / s.rep), s.reps) : s.reps; logSet(s.ref, s.it.w || 0, Math.min(n, s.reps)); }
-      if (s && s.k === 'time' && s.ref) logSet(s.ref, s.it.w || 0, 0);
       saveLogFrom();
+      if (s && s.ref && (s.k === 'reps' || s.k === 'time')) {
+        if (how === 'skip') logSet(s.ref, 0, 0, undefined, { skipped: true });
+        else if (s.k === 'reps') logSet(s.ref, s.it.w || 0, s.reps);
+        else logSet(s.ref, s.it.w || 0, 0, undefined, { t: Math.round(how === 'done' ? Math.min(elapsed(), s.dur) / 1000 : s.dur / 1000) });
+      }
       st.i++; st.t0 = performance.now(); st.paused = 0; st.lastRep = 0; st.lastSec = -1;
       if (st.i >= steps.length) return finish();
+      persist();
       render(); cue(cur());
     }
     function back() { if (st.i === 0) { st.t0 = performance.now(); st.paused = 0; return render(); } st.i = Math.max(0, st.i - 1); st.t0 = performance.now(); st.paused = 0; st.lastRep = 0; render(); cue(cur()); }
     function togglePause() {
       if (st.pausedAt) { st.paused += performance.now() - st.pausedAt; st.pausedAt = 0; el2('cpp').innerHTML = ic('pause'); Awake.on(); }
-      else { st.pausedAt = performance.now(); el2('cpp').innerHTML = ic('play'); }
-      { const ph = $('.cstage .exph', scr); if (ph) ph.classList.toggle('paused', !!st.pausedAt); }
+      else { st.pausedAt = performance.now(); el2('cpp').innerHTML = ic('play'); persist(); }
+      { const ph = $('.cstage .exph', scr); if (ph) ph.classList.toggle('paused', !!st.pausedAt); const cs = $('.cstage', scr); if (cs) { cs.classList.toggle('paused', !!st.pausedAt); const cp = $('.cpaused', cs); if (cp) cp.textContent = st.pausedAt ? 'Paused' : ''; } }
     }
     const timer = setInterval(() => update(false), 100);
-    const close = () => { clearInterval(timer); unback(); scr.remove(); PL = null; Awake.off(); };
+    const close = () => { clearInterval(timer); unback(); scr.remove(); PL = null; Awake.off(); forget(); document.removeEventListener('visibilitychange', onVis); };
     const unback = pushBack(() => stop());
     async function stop() {
       if (!st.pausedAt) togglePause();
-      const anyLogged = Object.values(done).some(a => a.some(x => x && x.r > 0));
-      const v = await confirmBox('End workout?', anyLogged ? 'Save what you did so far to your calendar?' : '', anyLogged ? [{ label: 'Save & finish', cls: 'primary', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }] : [{ label: 'End', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }]);
+      saveLogFrom();
+      const anyLogged = Object.values(done).some(a => a.some(x => x && !x.skipped && (x.r > 0 || x.t > 0)));
+      const v = await confirmBox('End workout?', anyLogged ? 'Save what you did so far to your calendar? If you discard, the sets you logged are deleted.' : '', anyLogged ? [{ label: 'Save & finish', cls: 'primary', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }] : [{ label: 'End', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }]);
       if (!v) return togglePause();
       if (v === 'save') return finish(true);
       close();
     }
     function finish(early) {
-      clearInterval(timer);
+      clearInterval(timer); document.removeEventListener('visibilitychange', onVis);
       Snd.finish(); speak(early ? 'Workout saved' : 'Workout complete. Great job!');
+      saveLogFrom();
       const exercises = [];
-      w.blocks.forEach((b, bi) => b.items.forEach((it, ii) => { const sets = (done[bi + ':' + ii] || []).filter(Boolean).filter(x => x.r > 0).map(x => ({ w: Math.round((x.w || 0) * 10) / 10, r: x.r })); if (sets.length) exercises.push({ name: it.name, sets }); else if (it.time && (done[bi + ':' + ii] || []).some(Boolean)) exercises.push({ name: it.name, sets: [], timed: true }); }));
+      // Strength sets keep weight and reps; timed sets keep seconds; skipped sets are counted but never as done.
+      w.blocks.forEach((b, bi) => b.items.forEach((it, ii) => {
+        const all = (done[bi + ':' + ii] || []).filter(Boolean);
+        const sets = all.filter(x => !x.skipped && (x.r > 0 || x.t > 0)).map(x => x.t != null ? { t: x.t } : Object.assign({ w: Math.round((x.w || 0) * 10) / 10, r: x.r }, x.e != null ? { e: x.e } : {}));
+        const skippedN = all.filter(x => x.skipped).length;
+        if (sets.length || skippedN) exercises.push(Object.assign({ name: it.name, sets }, it.time ? { timed: true } : {}, skippedN ? { skipped: skippedN } : {}));
+      }));
       const dur = Math.round((Date.now() - st.start) / 1000);
       const prs = [];
       exercises.forEach(ex => { if (!ex.sets.length) return; const s0 = exerciseStats(ex.name); const top = Math.max(...ex.sets.map(x => x.w || 0)); if (s0.sessions.length && top > s0.maxW && top > 0) prs.push(`${ex.name}: ${wOut(top)} ${wUnit()} (heaviest)`); });
-      const entry = { id: uid(), date: dkey(new Date()), at: st.start, title: w.name, kind: 'gym', cat: 'Strength', dur, exercises: exercises.filter(x => x.sets.length), notes: '', feel: 0, color: w.color || S.accent, auto: true, prs, wk: w.id };
-      log.push(entry); saveLog();
-      const sets = entry.exercises.reduce((a, x) => a + x.sets.length, 0), vol = entry.exercises.reduce((a, x) => a + x.sets.reduce((b, s) => b + (s.w || 0) * s.r, 0), 0);
+      const entry = { id: uid(), date: dkey(new Date()), at: st.start, title: w.name, kind: 'gym', cat: 'Strength', dur, exercises: exercises.filter(x => x.sets.length || x.skipped), notes: '', feel: 0, color: w.color || S.accent, auto: true, prs, wk: w.id, pain: pain.size ? [...pain] : undefined };
+      log.push(entry);
+      if (saveLog() === false) {
+        // Storage is full: keep the session so nothing is lost, and say so instead of claiming success.
+        log.pop(); persist();
+        el2('cbody').innerHTML = `<div class="cdone"><div class="cdbig">⚠️</div><h2>Couldn't save yet</h2><p class="sub">Your phone storage looks full. Your sets are kept. Free some space, then tap Retry.</p><button class="btn primary" data-a="retry" style="margin-top:16px">Retry</button></div>`;
+        scr.querySelector('.cctl').style.display = 'none';
+        scr.addEventListener('click', e => { if (e.target.closest('[data-a="retry"]')) { scr.querySelector('.cctl').style.display = ''; finish(early); } }, { once: true });
+        return;
+      }
+      forget();
+      const sets = entry.exercises.reduce((a, x) => a + x.sets.length, 0), vol = entry.exercises.reduce((a, x) => a + x.sets.reduce((b, s) => b + (s.w || 0) * (s.r || 0), 0), 0);
+      const skippedAll = entry.exercises.reduce((a, x) => a + (x.skipped || 0), 0);
       el2('cbody').innerHTML = `<div class="cdone"><div class="cdbig">💪</div><h2>${early ? 'Saved' : 'Workout complete'}</h2><p class="sub">${esc(w.name)} · ${fmtMins(dur)}</p>
-        <div class="stats"><div class="stat"><div class="k">Sets</div><div class="v">${sets}</div></div><div class="stat"><div class="k">Lifted</div><div class="v sm">${vol ? Math.round(S.unit === 'lb' ? vol * KG_LB : vol).toLocaleString() + ' ' + wUnit() : '—'}</div></div></div>
+        <div class="stats"><div class="stat"><div class="k">Sets done</div><div class="v">${sets}</div>${skippedAll ? `<div class="s">${skippedAll} skipped</div>` : ''}</div><div class="stat"><div class="k">Lifted</div><div class="v sm">${vol ? Math.round(S.unit === 'lb' ? vol * KG_LB : vol).toLocaleString() + ' ' + wUnit() : '—'}</div></div></div>
         ${prs.length ? `<div class="prs">🏆 <b>New personal record${prs.length > 1 ? 's' : ''}</b><br>${prs.map(esc).join('<br>')}</div>` : ''}
         <div class="sect" style="justify-content:center">How did it feel?</div><div class="feel">${FEEL.map((f, i) => `<button data-f="${i + 1}" aria-label="${f.t}">${f.e}</button>`).join('')}</div>
         <button class="btn primary" data-a="close" style="margin-top:16px">Done</button></div>`;
@@ -506,26 +587,56 @@ const Coach = (() => {
       scr.addEventListener('click', e => { const f = e.target.closest('[data-f]'); if (f) { entry.feel = +f.dataset.f; saveLog(); $$('[data-f]', scr).forEach(x => x.classList.toggle('on', x === f)); } });
       if (typeof pushWidget === 'function') pushWidget();
     }
+    // "This hurts": pause, remember it, and offer to skip the rest of this exercise.
+    async function hurt() {
+      const s = cur(); if (!s || !s.ref) return;
+      if (!st.pausedAt) togglePause();
+      pain.add(s.name); Moves.setPainful(s.name, true); persist();
+      const v = await confirmBox(`Stop ${s.name}?`, 'Pain is a signal to stop, not push through. The app will swap this move out of future workouts and won\'t suggest heavier weight. If pain is sharp, spreads down the leg, or comes with numbness or weakness, stop and get it checked.', [{ label: 'Skip this exercise', cls: 'primary', value: 'skip' }, { label: 'Keep going lighter', cls: 'ghost', value: 'keep' }]);
+      if (v === 'skip') {
+        const key = s.ref.bi + ':' + s.ref.ii; skipped.add(key);
+        for (let j = steps.length - 1; j > st.i; j--) if (steps[j].ref && steps[j].ref.bi + ':' + steps[j].ref.ii === key) steps.splice(j, 1);
+        steps[st.i] = Object.assign({}, steps[st.i], { k: 'rest', dur: 3000, quick: true, label: 'Skipped', next: (steps[st.i + 1] || {}).name || (steps[st.i + 1] || {}).next || 'Finish', ref: null });
+        togglePause(); render(); return;
+      }
+      render();
+    }
     scr.addEventListener('click', e => {
+      const ef = e.target.closest('[data-eff]'); if (ef) { $$('.effort [data-eff]', scr).forEach(x => x.classList.toggle('on', x === ef)); saveLogFrom(); persist(); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
       switch (b.dataset.a) {
         case 'x': return stop();
         case 'close': close(); if (currentTab === 'today' || currentTab === 'calendar') rerenderKeepScroll(); return;
         case 'pp': return togglePause();
-        case 'next': case 'skip': return advance(true);
-        case 'done': return advance(true);
+        case 'next': { const s = cur(); return advance(true, s && s.ref && (s.k === 'reps' || s.k === 'time') ? 'skip' : undefined); }
+        case 'skip': return advance(true);
+        case 'skipset': return advance(true, 'skip');
+        case 'done': return advance(true, 'done');
         case 'prev': return back();
         case 'plus': { const s = cur(); s.dur += 15000; return update(true); }
         case 'demo': { S.demo = S.demo === 'anim' ? 'photo' : 'anim'; saveSettings(); return render(); }
+        case 'hurt': return hurt();
         case 'pace': { const order = ['slow', 'normal', 'fast']; S.repSpeed = order[(order.indexOf(S.repSpeed || 'normal') + 1) % 3]; saveSettings(); toast(`Rep speed: ${S.repSpeed}`); return; }
       }
     });
     Awake.on();
-    render(); cue(cur());
+    render();
+    if (resume && resume.autoFinish) return finish(true);
+    if (resume) { el2('cpp').innerHTML = ic('play'); toast('Workout restored. Tap play to continue.'); } else cue(cur());
+  }
+  // A guided workout that was still running when the app closed.
+  const pendingSession = () => { const p = DB.get('coachsession', null); return p && p.w && Date.now() - (p.at || 0) < 12 * 3600e3 ? p : null; };
+  async function offerResume() {
+    const p = pendingSession(); if (!p || PL) return;
+    const n = Object.values(p.done || {}).reduce((a, x) => a + (x || []).filter(y => y && y.r > 0).length, 0);
+    const v = await confirmBox('Continue your workout?', `${p.w.name} · ${n} set${n === 1 ? '' : 's'} logged so far.`, [{ label: 'Continue', cls: 'primary', value: 'go' }, { label: 'Save what I did', cls: 'ghost', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }]);
+    if (v === 'go') return play(p.w, p);
+    if (v === 'save') return play(p.w, Object.assign({}, p, { autoFinish: true }));
+    if (v === 'drop') DB.del('coachsession');
   }
 
   return {
     byId: findW, listHtml, handleList, openDetail, openBuilder, play, importSheet, templates: tpls, decode, encode, get mine() { return mine; },
-    set mine(v) { mine = Array.isArray(v) ? v : []; saveMine(); }, buildSteps, _suggest: suggest,
+    set mine(v) { mine = Array.isArray(v) ? v : []; saveMine(); }, buildSteps, _suggest: suggest, history, hasHistory, pendingSession, offerResume,
   };
 })();

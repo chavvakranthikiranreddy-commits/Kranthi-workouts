@@ -2,7 +2,7 @@
   "name": "kranthi-workouts",
   "version": "1.0.0",
   "private": true,
-  "description": "Kranthi Workouts - personal interval timer and workout calendar",
+  "description": "Vyora - personal fitness, money and life app",
   "scripts": {
     "sync": "npx cap sync android"
   },

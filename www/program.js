@@ -1,4 +1,4 @@
-/* Kranthi Workouts: personalised program builder.
+/* Vyora: personalised program builder.
    Rules come from current research summaries:
    - each muscle about 2x per week; full-body and split routines work equally when weekly sets match
    - ~8-10 sets per muscle per week for beginners, 10-15 intermediate, up to ~20 advanced
@@ -576,6 +576,8 @@ const Program = (() => {
       exercises: s.items.map(it => {
         const x = itemForWeek(it, w);
         const sg = suggest(x);
+        const sw = typeof Moves !== 'undefined' ? Moves.safeSwap(x.name) : null;
+        if (sw) return { name: sw.name, swappedFrom: x.name, sets: Array.from({ length: x.sets }, () => ({ w: null, r: 0, done: false })), t: { sets: x.sets, lo: x.lo, hi: x.hi, rir: x.rir, rest: x.rest, timed: x.timed, pattern: x.pattern, hint: `Swapped from ${x.name} (${sw.why})`, sw: null, up: false } };
         return { name: x.name, sets: Array.from({ length: x.sets }, () => ({ w: null, r: 0, done: false })), t: { sets: x.sets, lo: x.lo, hi: x.hi, rir: x.rir, rest: x.rest, timed: x.timed, pattern: x.pattern, hint: sg.text, sw: sg.w, up: !!sg.up } };
       }),
     };

@@ -99,7 +99,7 @@ public class OcrPlugin extends Plugin {
                     added++;
                 } catch (Exception e) {
                     JSObject r = new JSObject();
-                    r.put("error", "Could not read this screenshot");
+                    r.put("error", friendly(e));
                     synchronized (pending) { pending.add(r); }
                     added++;
                 }
@@ -142,9 +142,18 @@ public class OcrPlugin extends Plugin {
                 }
                 call.resolve(recognizeBitmap(bmp));
             } catch (Exception e) {
-                call.reject("Could not read this screenshot");
+                call.reject(friendly(e));
             }
         });
+    }
+
+    /** The text model comes from Google Play services and may still be downloading on first use. */
+    static String friendly(Exception e) {
+        String m = String.valueOf(e.getMessage()).toLowerCase();
+        Throwable c = e.getCause();
+        if (c != null) m += " " + String.valueOf(c.getMessage()).toLowerCase();
+        if (m.contains("waiting") || m.contains("download") || m.contains("module")) return "The screenshot reader is still downloading on this phone. Try again in a minute";
+        return "Could not read this screenshot";
     }
 
     private JSObject recognizeBitmap(Bitmap bmp) throws Exception {

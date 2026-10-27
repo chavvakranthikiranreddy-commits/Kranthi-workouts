@@ -68,4 +68,20 @@ public class AppLockPlugin extends Plugin {
             }
         });
     }
+
+    /** Hide the app content in the recent-apps screen and block screenshots while private screens are open. */
+    @PluginMethod
+    public void setSecure(final PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        if (getActivity() == null) { call.resolve(); return; }
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (on) getActivity().getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+                else getActivity().getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE);
+            } catch (Exception ignored) {
+                // keep going
+            }
+            call.resolve();
+        });
+    }
 }

@@ -1,4 +1,4 @@
-/* Muscle & Money: workouts (timers, gym log, programs, yoga, steps) and money tracking */
+/* Vyora: workouts (timers, gym log, programs, yoga, steps) and money tracking */
 'use strict';
 
 /* ---------- helpers ---------- */
@@ -116,7 +116,7 @@ const Cap = window.Capacitor;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const P = {};
 if (isNative) {
-  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget', 'Alarm', 'Speech']) {
+  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget', 'Alarm', 'Speech', 'Vault']) {
     try { if (Cap.isPluginAvailable(n)) P[n] = Cap.registerPlugin(n); } catch (e) { /* plugin missing */ }
   }
 }
@@ -124,23 +124,47 @@ if (isNative) {
 /* ---------- storage ---------- */
 const DB = {
   get(k, d) { try { const v = localStorage.getItem('kw_' + k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('kw_' + k, JSON.stringify(v)); } catch (e) { toast('Could not save. Phone storage may be full.'); } if (k !== 'gymdraft') pushWidget(); },
+  // Returns false when the phone couldn't save, so screens never claim success after a failed write.
+  set(k, v) { try { localStorage.setItem('kw_' + k, JSON.stringify(v)); } catch (e) { DB.failAt = Date.now(); toast('Could not save. Phone storage may be full. Free some space and try again.'); return false; } if (k !== 'gymdraft') pushWidget(); return true; },
+  failAt: 0,
   del(k) { try { localStorage.removeItem('kw_' + k); } catch (e) { /* ignore */ } },
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#2F6BFF', unit: 'kg', lastBackup: 0,
+  background: true, suggest: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
+// Problems are kept in a small local log (message and place only, never your data) and shown in Settings.
+const SCHEMA = 6;
+if ((DB.get('schema', 0) || 0) < SCHEMA) DB.set('schema', SCHEMA);
+let lastErrToast = 0;
+function logProblem(msg, where) {
+  try {
+    const l = DB.get('errlog', []); l.push({ at: Date.now(), msg: String(msg || 'Error').slice(0, 160), where: String(where || '').replace(/^.*\//, '').slice(0, 60) });
+    DB.set('errlog', l.slice(-20));
+    if (Date.now() - lastErrToast > 15000 && typeof toast === 'function') { lastErrToast = Date.now(); toast('Something went wrong on this screen. Your data is safe.'); }
+  } catch (e) { /* ignore */ }
+}
+window.addEventListener('error', e => { if (e.target && e.target.tagName === 'IMG') return; logProblem(e.message, `${e.filename || ''}:${e.lineno || ''}`); });
+window.addEventListener('unhandledrejection', e => { const m = String(e.reason && e.reason.message || e.reason || ''); if (/cancel/i.test(m)) return; logProblem(m, 'async'); });
 // 5.5: new light, colourful look for everyone once (dark mode is still in Settings).
 if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() === '#00E5FF') S.accent = '#2F6BFF'; saveSettings(); }
-// Each section has its own colour: Muscle uses your chosen colour, Money is green, Life is orange.
-const SECTION_COLORS = { money: '#12A150', life: '#F26B1D' };
+// Each section has its own colour on active tabs and main buttons (plus its label and dot, never colour alone):
+// Fitness uses your accent (cyan by default), Money green, Life orange.
+const SECTION_COLORS = { money: '#059669', life: '#EA580C' };
 const curAccent = () => SECTION_COLORS[S.mode] || S.accent;
+if (!S.v61) { S.v61 = 1; if (['#2F6BFF', '#00E5FF'].includes(String(S.accent).toUpperCase())) S.accent = '#0891B2'; saveSettings(); }
+// 6.0: Vyora look, cleaner Today (money moves to the Money side), remember where you were in each section.
+if (!S.v6) {
+  S.v6 = 1; S.theme = S.theme || 'light'; S.landing = S.landing || 'last'; S.backSafe = S.backSafe !== false;
+  S.todayOrder = ['plan', 'adherence', 'ready', 'strength', 'fuel', 'checkin', 'program', 'quick', 'steps', 'last', 'quote', 'money'];
+  S.todayHidden = [...new Set([...(S.todayHidden || []), 'money'])];
+  saveSettings();
+}
 
 const COLORS = ['#00E5FF', '#22D46A', '#FFD43B', '#FF9F1C', '#FF4057', '#B26BFF', '#FF5FC8', '#4D8DFF'];
-const ACCENTS = [['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
+const ACCENTS = [['Vyora cyan', '#0891B2'], ['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
 const PHASE = { prepare: '#FFD43B', work: '#22D46A', rest: '#FF4057', cyclerest: '#FF9F1C', cooldown: '#4D8DFF', stopwatch: '#00E5FF', done: '#00E5FF', flow: '#9D8CFF', ease: '#C9D2DC' };
 
 const iv = (name, kind, dur) => ({ id: uid(), name, kind, dur });
@@ -351,6 +375,8 @@ const BG = {
     try {
       await P.LocalNotifications.createChannel({ id: 'kw_phase', name: 'Timer phase alerts', description: 'Sound when a work/rest phase changes while the app is in the background', importance: 5, visibility: 1, vibration: true });
       await P.LocalNotifications.createChannel({ id: 'kw_status', name: 'Workout running', description: 'Shows that a timer is running', importance: 2, visibility: 1, vibration: false });
+      // Bills, medicines and documents: content hidden on the lock screen.
+      await P.LocalNotifications.createChannel({ id: 'kw_private', name: 'Private reminders', description: 'Bills, medicines and documents. Details are hidden on the lock screen.', importance: 4, visibility: 0, vibration: true });
       await P.LocalNotifications.createChannel({ id: 'kw_remind', name: 'Reminders', description: 'Workout plan, reminders, tasks, medicine and water', importance: 4, visibility: 1, vibration: true });
       P.LocalNotifications.addListener('localNotificationActionPerformed', a => { if (a && a.notification && a.notification.id >= 500) go('today'); });
     } catch (e) { /* ignore */ }
@@ -502,7 +528,7 @@ async function enableSteps() {
   if (!STP.avail) { toast('This phone has no step sensor, so steps can\'t be counted'); return; }
   try {
     const p = await P.Steps.requestPermission();
-    if (!p.granted) { toast('Allow "Physical activity" for Muscle & Money in phone settings to count steps'); return; }
+    if (!p.granted) { toast('Allow "Physical activity" for Vyora in phone settings to count steps'); return; }
     await BG.ensurePermission(true);
     if (!S.height) await askHeight();
     STP.granted = true; STP.enabled = true;
@@ -622,11 +648,14 @@ function handleBack() {
   if (P.App) P.App.minimizeApp ? P.App.minimizeApp().catch(() => P.App.exitApp()) : P.App.exitApp();
 }
 
-function toast(msg) {
+function toast(msg, { undo } = {}) {
+  // A success message right after a failed save would be misleading, so it is dropped.
+  if (Date.now() - (DB.failAt || 0) < 1500 && !/could not|couldn|fail|full|wrong|error/i.test(msg)) return;
   $$('.toast').forEach(t => t.remove());
-  const t = el(`<div class="toast">${esc(msg)}</div>`);
+  const t = el(`<div class="toast ${undo ? 'has-undo' : ''}" role="status">${esc(msg)}${undo ? '<button class="tundo">Undo</button>' : ''}</div>`);
+  if (undo) $('.tundo', t).onclick = () => { t.remove(); undo(); };
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), 2400);
+  setTimeout(() => t.remove(), undo ? 5000 : 2400);
 }
 
 function sheet(inner, { center = false, onClose } = {}) {
@@ -663,15 +692,15 @@ function confirmBox(title, msg, buttons) {
   });
 }
 
-function promptText(title, { value = '', placeholder = '', suggestions = [], ok = 'Add' } = {}) {
+function promptText(title, { value = '', placeholder = '', suggestions = [], ok = 'Add', type = 'text', max = 40 } = {}) {
   return new Promise(res => {
     let done = false;
     const s = sheet(`<h2>${esc(title)}</h2>
-      <input class="field" id="ptx" maxlength="40" placeholder="${esc(placeholder)}" value="${esc(value)}" style="margin:8px 0 12px">
+      <input class="field ${type === 'password' || max > 40 ? 'body' : ''}" id="ptx" type="${type}" maxlength="${type === 'password' ? 64 : max}" placeholder="${esc(placeholder)}" value="${esc(value)}" style="margin:8px 0 12px" ${type === 'password' ? 'autocomplete="off"' : ''}>
       ${suggestions.length ? `<div class="presets" style="justify-content:flex-start">${suggestions.map(x => `<button class="chip small" data-s="${esc(x)}">${esc(x)}</button>`).join('')}</div>` : ''}
       <div class="btns two"><button class="btn" data-a="c">Cancel</button><button class="btn primary" data-a="ok">${esc(ok)}</button></div>`, { onClose: () => { if (!done) res(null); } });
     const inp = $('#ptx', s.el);
-    const finish = () => { const v = inp.value.trim(); if (!v) { toast('Type a name first'); return; } done = true; s.close(); res(v); };
+    const finish = () => { const v = type === 'password' ? inp.value : inp.value.trim(); if (!v) { toast(type === 'password' ? 'Type the password' : 'Type a name first'); return; } done = true; s.close(); res(v); };
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') finish(); });
     s.el.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b) return;
@@ -869,20 +898,20 @@ let timersSeg = 'wk';
 const view = $('#view');
 const TABS = [
   { id: 'today', label: 'Today', icon: 'home' },
-  { id: 'timers', label: 'Train', icon: 'dumbbell' },
+  { id: 'timers', label: 'Workout', icon: 'dumbbell' },
   { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'progress', label: 'Progress', icon: 'chart' },
   { id: 'settings', label: 'Settings', icon: 'gear' },
 ];
 const MTABS = [
   { id: 'm-home', label: 'Overview', icon: 'wallet' },
-  { id: 'm-txns', label: 'Entries', icon: 'list2' },
-  { id: 'm-budget', label: 'Budget', icon: 'target' },
+  { id: 'm-txns', label: 'Transactions', icon: 'list2' },
+  { id: 'm-budget', label: 'Budget & bills', icon: 'target' },
   { id: 'm-insights', label: 'Insights', icon: 'pie' },
   { id: 'm-settings', label: 'Settings', icon: 'gear' },
 ];
 const LTABS = [
-  { id: 'l-home', label: 'Home', icon: 'leaf' },
+  { id: 'l-home', label: 'Today', icon: 'leaf' },
   { id: 'l-notes', label: 'Notes', icon: 'note' },
   { id: 'l-tasks', label: 'Tasks', icon: 'check' },
   { id: 'l-clock', label: 'Clock', icon: 'clock' },
@@ -903,21 +932,25 @@ $('#tabs').addEventListener('click', e => {
 });
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.btn.primary, .nu-go, .cplay, .qopt, .tring, .sgrid button')) tap(); }, true);
 function tap(style = 'LIGHT') { if (!S.vibrate) return; try { if (P.Haptics) P.Haptics.impact({ style }); } catch (e) { /* ignore */ } }
-function go(tab) { currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
+const modeOfTab = t => (t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : 'muscle');
+function go(tab) { if (!/settings/.test(tab)) { S.lastTabs = Object.assign({}, S.lastTabs, { [modeOfTab(tab)]: tab }); saveSettings(); } currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
 function render() {
   if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
   if (currentTab.startsWith('l-')) return Life.renderTab(currentTab.slice(2));
   ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab]();
 }
 // The Muscle | Money switch at the top of every main screen.
-const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab">${ic('dumbbell')}Muscle</button><button data-mode="money" role="tab"><span class="rs">₹</span>Money</button><button data-mode="life" role="tab">${ic('leaf')}Life</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
+const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab" aria-label="Fitness"><i class="mdot"></i>Fitness</button><button data-mode="money" role="tab" aria-label="Money"><i class="mdot"></i>Money</button><button data-mode="life" role="tab" aria-label="Life"><i class="mdot"></i>Life</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
 $('#app').insertBefore(modebar, $('#view'));
-function paintModebar() { applyTheme(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
+// Private screens (locked Money, journal, documents) are hidden in recent apps and can't be screenshotted.
+function updateSecure() { try { const on = (S.mode === 'money' && Money.lockOn()) || !!document.querySelector('#layer .secure-screen'); if (P.AppLock && P.AppLock.setSecure) P.AppLock.setSecure({ on }); } catch (e) { /* ignore */ } }
+function paintModebar() { applyTheme(); updateSecure(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
 async function setMode(mode, quiet) {
-  if (mode === 'money') return Money.openMoney();
-  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; } return; }
+  const lt = S.lastTabs || {};
+  if (mode === 'money') return Money.openMoney(lt.money ? lt.money.slice(2) : undefined);
+  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = lt.life || 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; } return; }
   S.mode = 'muscle'; saveSettings();
-  currentTab = 'today'; renderTabs(); paintModebar();
+  currentTab = quiet ? 'today' : (lt.muscle || 'today'); renderTabs(); paintModebar();
   if (!quiet) { render(); view.scrollTop = 0; }
 }
 modebar.addEventListener('click', e => {
@@ -958,7 +991,7 @@ function openStartSheet() {
 
 /* ---------- search everything ---------- */
 const SETTINGS_INDEX = [
-  ['Step goal', 'settings', 'goal'], ['Height', 'settings', 'height'], ['Units (kg / lb)', 'settings'], ['Theme & accent colour', 'settings'], ['Sounds & voice', 'settings'],
+  ['Step goal', 'settings', 'goal'], ['Back-friendly mode & painful moves', 'settings'], ['Open the app on (landing)', 'settings'], ['Height', 'settings', 'height'], ['Units (kg / lb)', 'settings'], ['Theme & accent colour', 'settings'], ['Sounds & voice', 'settings'],
   ['Back up data', 'backup'], ['Restore backup', 'settings'], ['Customise Today screen', 'customise'], ['Weekly plan & reminders', 'plan'], ['My program', 'prog'],
   ['Salary day', 'm-settings'], ['Monthly budget', 'm-settings'], ['Money lock', 'm-settings'], ['Accounts', 'm-settings'], ['Savings goals', 'm-settings'], ['Friends & splits', 'm-settings'], ['Import PhonePe statement', 'm-settings'], ['Export spreadsheet', 'm-settings'],
 ];
@@ -1032,7 +1065,7 @@ function openOnboarding() {
     $('[data-a="back"]', scr).style.visibility = step ? 'visible' : 'hidden';
     $('#onext', scr).textContent = step === N - 1 ? 'Start using the app' : 'Next';
     const ob = $('#ob', scr);
-    if (step === 0) ob.innerHTML = `<div class="onb-hero">${Moves.svgFor('Jumping Jacks', { cls: 'big' })}</div><h1 class="onb-h">Welcome to Muscle &amp; Money</h1><p class="sub" style="text-align:left">Workouts, steps, sleep and food on one side. Your spending on the other. Everything stays on this phone.</p>
+    if (step === 0) ob.innerHTML = `<div class="onb-brand"><img src="brand/vyora-logo.png" alt="Vyora"></div><h1 class="onb-h">Welcome to Vyora</h1><p class="sub" style="text-align:left">Fitness, money and your day in one place: workouts and health, spending and budgets, notes, tasks and alarms. Everything stays on this phone.</p>
       <div class="sect">What should we call you?</div><input class="field body" id="on" placeholder="Your first name" maxlength="20" value="${esc(a.name)}">`;
     if (step === 1) ob.innerHTML = `<h1 class="onb-h">About you</h1><p class="sub" style="text-align:left">Used for protein and water targets, step distance and calories.</p>
       <div class="seg" style="background:var(--surface-2)"><button class="${a.unit === 'kg' ? 'on' : ''}" data-u="kg">kg · cm</button><button class="${a.unit === 'lb' ? 'on' : ''}" data-u="lb">lb · in</button></div>
@@ -1119,7 +1152,7 @@ const itemIcon = t => t === 'timer' ? 'timer' : t === 'gym' || t === 'prog' ? 'd
 
 /* Today: greeting, Next up, rings, then cards in your own order. */
 const TODAY_CARDS = [
-  ['money', 'Money left & safe to spend'], ['ready', 'Sleep & readiness'], ['plan', "Today's plan"], ['checkin', 'Daily check-in'],
+  ['plan', "Today's plan"], ['adherence', 'This week: sessions & sets'], ['ready', 'Sleep & readiness'], ['strength', 'Strength progress'], ['checkin', 'Daily check-in'], ['money', 'Money left (also on the Money side)'],
   ['fuel', 'Protein & water buttons'], ['program', 'My program'], ['steps', 'Steps details'], ['quick', 'Quick start'], ['quote', 'Quote of the day'], ['last', 'Last workout'],
 ];
 function todayOrder() {
@@ -1145,6 +1178,8 @@ function ringsHtml() {
 }
 function nextUp(st, day, draft) {
   const dow = new Date().getDay();
+  const cs = Coach.pendingSession();
+  if (cs) { const n = Object.values(cs.done || {}).reduce((a, x) => a + (x || []).filter(y => y && !y.skipped && (y.r > 0 || y.t > 0)).length, 0); return { tag: 'Unfinished workout', title: cs.w.name, sub: `${n} set${n === 1 ? '' : 's'} done so far`, btn: 'Resume', act: 'coachresume', icon: 'play' }; }
   if (draft) return { tag: 'In progress', title: draft.title || 'Gym workout', sub: `${draft.exercises.length} exercises logged so far`, btn: 'Resume', act: 'resume', icon: 'dumbbell' };
   if (hasPlan() && day && !day.rest && day.items.length) {
     const i = day.items.findIndex(it => !itemDoneToday(it));
@@ -1158,6 +1193,32 @@ function nextUp(st, day, draft) {
   if (hasPlan() && (!day || day.rest)) return { tag: 'Rest day', title: 'Recover and recharge', sub: 'A gentle yoga flow helps you bounce back faster.', btn: 'Yoga', act: 'yoga', icon: 'lotus', calm: true };
   return { tag: 'Ready when you are', title: 'Pick a guided workout', sub: 'Dumbbells, barbell or no equipment. The voice counts every rep.', btn: 'Browse', act: 'workouts', icon: 'play', alt: 'Plan my week', altAct: 'plan' };
 }
+// This week at a glance: training days done vs planned, and hard sets per muscle.
+function adherenceHtml() {
+  const t0 = today0(); const ws = S.weekStart ?? 1; const start = addDays(t0, -((t0.getDay() - ws + 7) % 7));
+  let planned = 0, done = 0; const doneDays = new Set(log.filter(x => x.kind !== 'note' && parseKey(x.date) >= start).map(x => x.date));
+  for (let i = 0; i < 7; i++) { const d = addDays(start, i); const p = plan && plan[d.getDay()]; if (p && !p.rest && p.items.length) planned++; }
+  done = doneDays.size;
+  const sets = Health.muscleSets(7); const top = Object.entries(sets).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  if (!planned && !done) return '';
+  const pct = planned ? Math.min(1, done / planned) : (done ? 1 : 0);
+  return `<div><div class="sect"><span>This week</span><button class="linkbtn" data-a="cal">Calendar</button></div><div class="block adh">
+    <div class="adh-top"><b>${done}${planned ? ` of ${planned}` : ''}</b><span>training day${(planned || done) === 1 ? '' : 's'} ${planned ? 'done' : 'logged'}</span></div>
+    <div class="adh-bar" role="progressbar" aria-valuenow="${Math.round(pct * 100)}" aria-valuemin="0" aria-valuemax="100"><i style="width:${Math.round(pct * 100)}%"></i></div>
+    ${top.length ? `<div class="adh-sets">${top.map(([m, v]) => `<span><b>${v}</b> ${esc(m)} sets</span>`).join('')}</div>` : '<p class="hint" style="margin:8px 0 0">Log sets in a workout to see weekly sets per muscle.</p>'}
+  </div></div>`;
+}
+// Strength trend: best estimated 1-rep max in the last 4 weeks vs the 4 weeks before.
+function strengthHtml() {
+  const now = today0(), a = addDays(now, -27), b = addDays(now, -55);
+  const best = {};
+  log.forEach(x => { if (!x.exercises) return; const d = parseKey(x.date); if (d < b) return; const win = d >= a ? 'cur' : 'prev';
+    x.exercises.forEach(ex => (ex.sets || []).forEach(st => { if (!(st.w > 0 && st.r > 0)) return; const v = e1rm(st.w, st.r); const o = best[ex.name] = best[ex.name] || { cur: 0, prev: 0, n: 0 }; o[win] = Math.max(o[win], v); o.n++; })); });
+  const rows = Object.entries(best).filter(([, o]) => o.cur).sort((x, y) => y[1].n - x[1].n).slice(0, 3);
+  if (!rows.length) return '';
+  return `<div><div class="sect"><span>Strength</span><button class="linkbtn" data-a="progress">Progress</button></div><div class="block" style="padding:0">${rows.map(([n, o]) => { const ch = o.prev ? Math.round((o.cur - o.prev) / o.prev * 100) : null;
+    return `<button class="srow" data-hist="${esc(n)}"><span class="wkth">${Moves.thumb(n)}</span><span class="wkt"><b>${esc(n)}</b><span>Best est. 1-rep max ${wOut(o.cur)} ${wUnit()} · last 4 weeks</span></span><span class="sr ${ch > 0 ? 'up' : ch < 0 ? 'down' : ''}">${ch == null ? 'New' : ch > 0 ? `▲ ${ch}%` : ch < 0 ? `▼ ${-ch}%` : '= same'}</span></button>`; }).join('')}</div></div>`;
+}
 function viewToday() {
   const st = computeStats();
   const now = new Date();
@@ -1168,7 +1229,7 @@ function viewToday() {
   const draft = DB.get('gymdraft', null);
   const last = log.slice().sort((a, b) => b.at - a.at)[0];
   const daysSinceBackup = S.lastBackup ? Math.floor((Date.now() - S.lastBackup) / 864e5) : null;
-  const needBackup = log.length >= 5 && (daysSinceBackup === null || daysSinceBackup >= 14);
+  const needBackup = (log.length >= 5 || Life.rawData.notes.length >= 5) && (daysSinceBackup === null || daysSinceBackup >= 14);
   const nu = nextUp(st, day, draft);
   let planHtml;
   if (!hasPlan()) {
@@ -1195,6 +1256,8 @@ function viewToday() {
     ready: () => Health.sleepCardHtml(),
     plan: () => `<div><div class="sect">Today's plan</div><div class="plan-card"><div class="ph"><span class="t">${WDL[dow].toUpperCase()}</span>${hasPlan() ? '<button data-a="plan">Edit plan</button>' : ''}</div>${planHtml}</div></div>`,
     checkin: () => Health.checkinHtml(),
+    adherence: () => adherenceHtml(),
+    strength: () => strengthHtml(),
     fuel: () => Health.fuelHtml(),
     program: () => (Program.programCardHtml() || Program.levelNudge() ? `<div>${Program.programCardHtml()}${Program.levelNudge()}</div>` : ''),
     steps: () => stepsCardHtml(),
@@ -1238,11 +1301,15 @@ function viewToday() {
     if (pi) return startPlanItem(day.items[+pi.dataset.pi]);
     const eid = e.target.closest('[data-eid]');
     if (eid) return openEntry(log.find(x => x.id === eid.dataset.eid));
+    const hs = e.target.closest('[data-hist]'); if (hs) return Coach.history(hs.dataset.hist);
     const b = e.target.closest('[data-a]'); if (!b) return;
     switch (b.dataset.a) {
+      case 'progress': return go('progress');
+      case 'coachresume': return Coach.offerResume();
       case 'nu':
         if (nu.act === 'pi') return startPlanItem(day.items[nu.idx]);
         if (nu.act === 'resume') return openGym({});
+        if (nu.act === 'coachresume') return Coach.offerResume();
         if (nu.act === 'yoga') return Yoga.openPicker();
         if (nu.act === 'workouts') { timersSeg = 'wk'; return go('timers'); }
         return;
@@ -1293,7 +1360,7 @@ function startPlanItem(it) {
 /* ---------- Timers ---------- */
 const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Program'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
 function viewWorkouts() {
-  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
+  view.innerHTML = topbar('Workout') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
     Coach.handleList(e);
@@ -1303,7 +1370,7 @@ function viewTimers() {
   if (timersSeg === 'prog') return viewProgramTab();
   if (timersSeg === 'wk') return viewWorkouts();
   const mine = timersSeg === 'mine';
-  view.innerHTML = topbar('Train') + `<div class="page">
+  view.innerHTML = topbar('Workout') + `<div class="page">
     ${trainSeg(timersSeg)}
     ${mine ? `
     <div class="sect">Quick rest</div>
@@ -1351,7 +1418,7 @@ function viewTimers() {
 }
 
 function viewProgramTab() {
-  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('prog')}<div id="progbox"></div></div>`;
+  view.innerHTML = topbar('Workout') + `<div class="page">${trainSeg('prog')}<div id="progbox"></div></div>`;
   Program.viewTab($('#progbox'));
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
@@ -1822,6 +1889,8 @@ function exerciseStats(name, excludeId) {
 }
 const setStr = s => (s.w ? `${wOut(s.w)} ${wUnit()} × ${s.r}` : `${s.r} reps`);
 function summarizeSets(sets) {
+  const timed = (sets || []).filter(s => s.t > 0);
+  if (timed.length && !(sets || []).some(s => s.r > 0)) return timed.map(s => fmt(s.t)).join(', ');
   const done = sets.filter(s => s.r > 0); if (!done.length) return '';
   const same = done.every(s => s.r === done[0].r && (s.w || 0) === (done[0].w || 0));
   if (same) return `${done.length}×${done[0].r}${done[0].w ? ` @ ${wOut(done[0].w)} ${wUnit()}` : ''}`;
@@ -2011,8 +2080,9 @@ function pickExercise(cb) {
 }
 
 async function finishGym(d, { editing, live, close }) {
-  const exercises = d.exercises.map(ex => ({ name: ex.name, sets: ex.sets.filter(s => s.r > 0).map(s => ({ w: s.w || 0, r: s.r })) })).filter(ex => ex.sets.length);
-  if (!exercises.length) { toast('Log at least one set (reps) first'); return; }
+  // Same record shape as guided workouts: weight + reps, or seconds for timed sets, plus effort and skipped counts.
+  const exercises = d.exercises.map(ex => Object.assign({ name: ex.name, sets: ex.sets.filter(s => s.r > 0 || s.t > 0).map(s => Object.assign(s.r > 0 ? { w: s.w || 0, r: s.r } : { t: s.t }, s.e != null ? { e: s.e } : {})) }, ex.timed ? { timed: true } : {}, ex.skipped ? { skipped: ex.skipped } : {})).filter(ex => ex.sets.length || ex.skipped);
+  if (!exercises.some(ex => ex.sets.length)) { toast('Log at least one set first'); return; }
   // Personal records compared with every earlier workout.
   const prs = [];
   exercises.forEach(ex => {
@@ -2022,7 +2092,7 @@ async function finishGym(d, { editing, live, close }) {
     if (!b) return;
     if ((b.w || 0) > st.maxW && b.w > 0) prs.push(`${ex.name}: ${setStr(b)} (heaviest)`);
     else if (!(b.w > 0) && st.maxW === 0 && b.r > st.maxR) prs.push(`${ex.name}: ${b.r} reps (most reps)`);
-    else { const e = Math.max(...ex.sets.map(s => e1rm(s.w || 0, s.r))); if (e > st.maxE + 0.01 && b.w > 0) prs.push(`${ex.name}: est. 1RM ${wOut(e)} ${wUnit()}`); }
+    else { const e = Math.max(0, ...ex.sets.map(s => (s.r > 0 ? e1rm(s.w || 0, s.r) : 0))); if (e > st.maxE + 0.01 && b.w > 0) prs.push(`${ex.name}: est. 1RM ${wOut(e)} ${wUnit()}`); }
   });
   let dur = live ? Math.round((Date.now() - d.start) / 1000) : (d.dur || 3600);
   const existing = log.find(x => x.id === d.id);
@@ -2118,9 +2188,9 @@ function entryCard(x) {
   const icon = x.cat === 'Yoga' || x.cat === 'Mobility' ? 'lotus' : x.kind === 'stopwatch' ? 'stopwatch' : x.kind === 'timer' ? 'bolt' : 'dumbbell';
   const time = new Date(x.at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   const label = x.kind === 'gym' ? 'Gym' : x.cat || (x.kind === 'stopwatch' ? 'Stopwatch' : 'Timer');
-  const meta = [x.kind === 'timer' || x.kind === 'stopwatch' ? fmt(x.dur) : fmtMins(x.dur), label, x.partial ? 'Stopped early' : '', x.auto || x.kind === 'gym' ? time : ''].filter(Boolean).join(' · ');
+  const meta = [x.kind === 'timer' || x.kind === 'stopwatch' ? fmt(x.dur) : fmtMins(x.dur), label, x.partial ? 'Stopped early' : '', x.dist ? `${trim1(S.unit === 'lb' ? x.dist / 1.609 : x.dist)} ${S.unit === 'lb' ? 'mi' : 'km'} · ${fmt(Math.round(x.dur / (S.unit === 'lb' ? x.dist / 1.609 : x.dist)))}/${S.unit === 'lb' ? 'mi' : 'km'}` : '', x.hr ? `${x.hr} bpm` : '', x.auto || x.kind === 'gym' ? time : ''].filter(Boolean).join(' · ');
   let extra = '';
-  if (x.kind === 'gym' && x.exercises) extra = x.exercises.map(e => `${e.name} ${summarizeSets(e.sets)}`).join('\n');
+  if (x.kind === 'gym' && x.exercises) extra = x.exercises.map(e => `${e.name} ${summarizeSets(e.sets)}${e.skipped ? ` (${e.skipped} skipped)` : ''}`).join('\n');
   const notes = [extra, x.notes].filter(Boolean).join('\n');
   return `<button class="entry" data-eid="${x.id}"><span class="ei" style="color:${x.color || 'var(--accent-text)'}">${ic(icon)}</span>
     <span class="eb"><div class="et">${esc(x.title)}${x.prs && x.prs.length ? ' 🏆' : ''}</div><div class="em">${esc(meta)}</div>${notes ? `<div class="en">${esc(notes)}</div>` : ''}</span>
@@ -2136,13 +2206,18 @@ function openEntry(x, preset = {}) {
     ${d.auto ? `<div class="field" style="margin-bottom:12px">${esc(d.title)}</div>` : `<input class="field" id="et" placeholder="WHAT DID YOU DO?" maxlength="40" value="${esc(d.title)}" style="margin-bottom:12px">
     <div class="chips" id="ecat" style="flex-wrap:wrap;margin-bottom:12px">${CATS.map(c => `<button class="chip small ${c === d.cat ? 'on' : ''}" data-c="${c}">${c}</button>`).join('')}</div>
     <div class="block"><button class="row tap" data-a="dur"><span class="ri" style="color:var(--accent-text)">${ic('stopwatch')}</span><span class="rt"><div class="t">Duration</div></span><span class="rv" id="edur" style="font-size:36px">${fmtMins(d.dur)}</span>${ic('chevR', 'chev')}</button></div>`}
+    ${d.auto ? '' : `<div class="cardio" id="ecardio" ${/run|walk|cycl|swim|cardio|hiit/i.test(d.cat + ' ' + d.title) ? '' : 'hidden'}><div class="sect">Cardio details (optional)</div>
+      <div class="mrow2 eq"><label class="tlab"><span>Distance (${S.unit === 'lb' ? 'mi' : 'km'})</span><input class="field body" id="edist" inputmode="decimal" value="${d.dist ? trim1(S.unit === 'lb' ? d.dist / 1.609 : d.dist) : ''}"></label><label class="tlab"><span>Avg heart rate</span><input class="field body" id="ehr" inputmode="numeric" value="${d.hr || ''}" placeholder="bpm"></label></div>
+      <p class="hint" id="epace"></p></div>`}
     <div class="sect" style="justify-content:center;margin-top:8px">How did it feel?</div>
     <div class="feel" id="efeel">${FEEL.map((f, i) => `<button data-f="${i + 1}" class="${d.feel === i + 1 ? 'on' : ''}" aria-label="${f.t}">${f.e}</button>`).join('')}</div>
     <textarea class="field body" id="en" placeholder="Notes: distance, pace, how it went…">${esc(d.notes)}</textarea>
     <div class="btns ${isNew ? '' : 'two'}">${isNew ? '' : '<button class="btn danger" data-a="del">Delete</button>'}<button class="btn primary" data-a="save">Save</button></div>`);
+  const paintPace = () => { const di = $('#edist', s.el), pe = $('#epace', s.el); if (!di || !pe) return; const v = parseFloat(di.value); pe.textContent = v > 0 && d.dur ? `Pace ${fmt(Math.round(d.dur / v))} per ${S.unit === 'lb' ? 'mile' : 'km'} · counted as conditioning, separate from lifting volume` : ''; };
+  paintPace(); s.el.addEventListener('input', paintPace);
   s.el.addEventListener('click', async e => {
     const c = e.target.closest('[data-c]');
-    if (c) { d.cat = c.dataset.c; $$('[data-c]', s.el).forEach(b => b.classList.toggle('on', b === c)); return; }
+    if (c) { d.cat = c.dataset.c; $$('[data-c]', s.el).forEach(b => b.classList.toggle('on', b === c)); const cd = $('#ecardio', s.el); if (cd) cd.hidden = !/run|walk|cycl|swim|cardio|hiit/i.test(d.cat); return; }
     const f = e.target.closest('[data-f]');
     if (f) { d.feel = d.feel === +f.dataset.f ? 0 : +f.dataset.f; $$('[data-f]', s.el).forEach(b => b.classList.toggle('on', +b.dataset.f === d.feel)); return; }
     const b = e.target.closest('[data-a]'); if (!b) return;
@@ -2155,6 +2230,7 @@ function openEntry(x, preset = {}) {
     if (b.dataset.a === 'save') {
       if (!d.auto) { d.title = ($('#et', s.el).value || '').trim() || d.cat; }
       d.notes = $('#en', s.el).value.trim();
+      const di = $('#edist', s.el); if (di) { const v = parseFloat(di.value); d.dist = v > 0 ? (S.unit === 'lb' ? v * 1.609 : v) : undefined; const hr = parseInt($('#ehr', s.el).value, 10); d.hr = hr > 30 && hr < 230 ? hr : undefined; }
       if (isNew) {
         const now = new Date(); const base = parseKey(d.date); base.setHours(now.getHours(), now.getMinutes()); d.at = base.getTime();
         log.push(d);
@@ -2397,28 +2473,148 @@ function pickTimerFor(cb) {
   s.el.addEventListener('click', e => { const c = e.target.closest('.tcard'); if (!c) return; const t = findTimer(c.dataset.id); s.close(); cb(t); });
 }
 
+/* ---------- phone features check ---------- */
+// Shows, for this phone and build, which native features are connected and working, with a fix for each one that isn't.
+async function featureCheck() {
+  const row = (ok, name, okTxt, fix) => !isNative ? `<div class="fcrow na"><span class="fci">–</span><span class="fct"><b>${esc(name)}</b><small>Works in the installed app</small></span></div>` : `<div class="fcrow ${ok ? 'ok' : ok === null ? 'na' : 'bad'}"><span class="fci">${ok ? '✓' : ok === null ? '–' : '!'}</span><span class="fct"><b>${esc(name)}</b><small>${esc(ok ? okTxt : fix)}</small></span></div>`;
+  const s = sheet(`<h2>Phone features</h2><p class="sub">${isNative ? 'Checked just now on this phone.' : 'This is a web preview: phone features only work in the installed app.'}</p><div class="block" style="padding:0" id="fcl"><div class="empty" style="padding:16px">Checking…</div></div>
+    <div class="btns"><button class="btn" data-a="ntest">${ic('bell')}Send a test notification</button></div>`);
+  const out = [];
+  const safe = async f => { try { return await f(); } catch (e) { return false; } };
+  const notif = P.LocalNotifications ? await safe(async () => (await P.LocalNotifications.checkPermissions()).display === 'granted') : null;
+  out.push(row(notif, 'Notifications', 'Allowed', P.LocalNotifications ? 'Off. Allow notifications for Vyora in phone Settings → Apps → Vyora.' : 'Not available here.'));
+  const lock = P.AppLock ? await safe(async () => !!(await P.AppLock.available()).available) : null;
+  out.push(row(lock, 'Fingerprint / screen lock', 'Ready for Money, Journal and Documents', P.AppLock ? 'Your phone has no screen lock. Set one in phone Settings → Security.' : 'Missing from this build.'));
+  const vault = P.Vault ? await safe(async () => !!(await P.Vault.available()).available) : null;
+  out.push(row(vault, 'Secure storage (encryption)', 'Money, journal and document details are encrypted', P.Vault ? 'The phone\'s secure keystore isn\'t working.' : 'Missing from this build.'));
+  let alarm = null, alarmFix = 'Missing from this build.';
+  if (P.Alarm) { const p = await safe(() => P.Alarm.permissions()); alarm = !!(p && p.exact && p.fullScreen); alarmFix = !p ? 'Alarm part didn\'t respond.' : !p.exact ? 'Allow "Alarms & reminders" for Vyora (Clock tab shows a button).' : 'Allow full-screen alerts so alarms show over the lock screen.'; }
+  out.push(row(alarm, 'Alarm clock', 'Can ring on time over the lock screen', alarmFix));
+  out.push(row(P.Ocr ? true : null, 'Screenshot reader', 'Connected. The first scan may wait while Google Play services downloads it', 'Missing from this build.'));
+  out.push(row(P.Steps ? !!STP.avail : null, 'Step counter', STP.enabled ? 'Counting' : 'Available. Turn it on from Today', 'No step sensor or the step part is missing.'));
+  out.push(row(P.Speech ? true : null, 'Voice add', 'Uses your phone\'s speech-to-text', 'Missing from this build.'));
+  out.push(row(P.TextToSpeech ? true : null, 'Voice coaching', 'Counts reps and reads your briefing', 'Missing from this build.'));
+  out.push(row(P.Widget ? true : null, 'Home-screen widgets', 'Long-press the home screen → Widgets → Vyora', 'Missing from this build.'));
+  out.push(row(P.Filesystem ? true : null, 'Photo storage', 'Progress, journal and document photos are saved on the phone', 'Missing from this build.'));
+  const box = $('#fcl', s.el); if (box) box.innerHTML = out.join('');
+  s.el.addEventListener('click', async e => {
+    if (!e.target.closest('[data-a="ntest"]')) return;
+    if (!P.LocalNotifications) { toast('Notifications work in the installed app'); return; }
+    try { await BG.ensurePermission(true); await P.LocalNotifications.schedule({ notifications: [{ id: 9991, title: '✅ Vyora test', body: 'Notifications are working.', channelId: 'kw_remind', schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true }, smallIcon: 'ic_stat_kw', iconColor: S.accent }] }); toast('A test notification will appear in 5 seconds'); } catch (err) { toast('Could not send a test notification'); }
+  });
+}
+
 /* ---------- backup & restore ---------- */
-function backupData() {
-  return { app: 'muscle-money', version: 4, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current, money: Money.data, health: Object.assign(Health.data, { photos: [] }), workouts: Coach.mine, life: Life.data, settings: S };
+// One file with everything (optionally photos, optionally password-protected), a clear list of what's in it,
+// and a restore that shows a preview, checks the file and reports exactly what was restored.
+const BACKUP_VERSION = 6;
+const b64e = buf => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); };
+const b64d = str => Uint8Array.from(atob(str), c => c.charCodeAt(0));
+async function passKey(pass, salt) {
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 210000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptText(text, pass) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await passKey(pass, salt), new TextEncoder().encode(text));
+  return { app: 'vyora', enc: 'aes-gcm-pbkdf2', salt: b64e(salt), iv: b64e(iv), data: b64e(ct) };
+}
+async function decryptText(o, pass) {
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(o.iv) }, await passKey(pass, b64d(o.salt)), b64d(o.data));
+  return new TextDecoder().decode(pt);
+}
+function backupInventory(withMoney) {
+  const H = Health.data, Ld = Life.data, M = withMoney ? Money.data : null;
+  return [
+    ['Workouts & calendar', `${log.length} workouts`], ['Timers', `${timers.length} timers`], ['Weekly plan & program', hasPlan() || Program.current ? 'Yes' : 'None yet'],
+    ['My workouts', `${Coach.mine.length} saved`], ['Body weight', `${body.length} weigh-ins`], ['Steps', `${Object.keys(STP.days).length} days`],
+    ['Health (food, sleep, check-ins)', `${Object.keys(H.nut || {}).length + Object.keys(H.sleep || {}).length} days`],
+    ['Money', withMoney ? `${M.txns.length} entr${M.txns.length === 1 ? 'y' : 'ies'} · ${M.bills.length} bill${M.bills.length === 1 ? '' : 's'}` : 'Not included (locked)'],
+    ['Life', Life.isSealed() ? 'Journal and document details can\'t be read on this phone' : `${Ld.notes.length} notes · ${Ld.tasks.length} tasks · ${Ld.reminders.length} reminders · ${Ld.alarms.length} alarms · ${Ld.journal.length} journal · ${(Ld.docs || []).length} documents`],
+    ['Settings', 'Yes'],
+  ];
+}
+function photoCounts() {
+  const H = Health.data, Lr = Life.rawData;
+  const prog = (H.photos || []).length, jr = Lr.journal.reduce((a, j) => a + (j.photos || []).length, 0), dc = (Lr.docs || []).reduce((a, d) => a + (d.photos || []).length, 0);
+  return { total: prog + jr + dc, desc: [prog ? `${prog} progress` : '', jr ? `${jr} journal` : '', dc ? `${dc} document` : ''].filter(Boolean).join(', ') };
+}
+async function collectPhotos() {
+  const files = {}; const H = Health.data; const Lr = Life.rawData;
+  for (const path of [...new Set((H.photos || []).map(p => p.path).filter(Boolean))]) { try { const r = await P.Filesystem.readFile({ path, directory: 'DATA' }); files[path] = r.data; } catch (e) { /* missing file */ } }
+  // Journal and document photos may be encrypted on the phone; the backup stores them readable (protect it with a password).
+  for (const p of [...Lr.journal.flatMap(j => j.photos || []), ...(Lr.docs || []).flatMap(d => d.photos || [])]) { if (!p || !p.path || files[p.path]) continue; const b = await Life.photoB64(p); if (b) files[p.path] = b; }
+  (H.photos || []).filter(p => !p.path).forEach(p => { const d = DB.get('ph_' + p.id, null); if (d) files['ph:' + p.id] = d; });
+  return files;
+}
+async function backupData(opts = {}) {
+  const withMoney = opts.money !== false;
+  const out = { app: 'vyora', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), timers, log, body, plan, customEx, steps: STP.days, program: Program.current,
+    money: withMoney ? Money.data : null, health: opts.photos ? Health.data : Object.assign(Health.data, { photos: [] }), workouts: Coach.mine,
+    life: opts.photos ? Life.rawData : Life.data, settings: Object.assign({}, S, { lastBackup: undefined }), includes: { photos: !!opts.photos, money: withMoney } };
+  if (opts.photos) out.files = await collectPhotos();
+  return out;
 }
 async function exportBackup() {
-  const json = JSON.stringify(backupData());
-  const fname = `muscle-money-backup-${dkey(new Date())}.json`;
+  let withMoney = true;
+  if (Money.isLocked() || Money.isSealed()) {
+    const v = await confirmBox('Include Money?', 'Money is locked. Unlock it to include your money data in the backup.', [{ label: 'Unlock & include', cls: 'primary', value: 'unlock' }, { label: 'Back up without Money', cls: 'ghost', value: 'skip' }]);
+    if (!v) return;
+    withMoney = v === 'unlock' ? await Money.ensureOpen() : false;
+    if (v === 'unlock' && !withMoney) return;
+  }
+  const inv = backupInventory(withMoney);
+  let photos = false, pass = true;
+  const pc = photoCounts();
+  const exclText = () => photos ? 'Not included: custom ringtones. Exercise photos come with the app.' : `Not included: ${pc.total ? `${pc.total} photo${pc.total === 1 ? '' : 's'} (${pc.desc}), ` : ''}custom ringtones. Choose Full backup to include photos.`;
+  const s = sheet(`<h2>Back up</h2><p class="sub">Everything below goes into one file you can save to Google Drive, WhatsApp or Files.</p>
+    <div class="seg" style="background:var(--surface-2)"><button class="on" data-bk="data">Data backup</button><button data-bk="full">Full backup${pc.total ? ` · ${pc.total} photos` : ''}</button></div>
+    <div class="block" style="padding:0">${inv.map(([k, v]) => `<div class="mini-row"><span>${esc(k)}</span><b class="${/Not included/.test(v) ? 'badt' : ''}">${esc(v)}</b></div>`).join('')}<div class="mini-row"><span>Photos</span><b id="bphv" class="${pc.total ? 'badt' : ''}">${pc.total ? 'Not included' : 'None'}</b></div></div>
+    <div class="block" style="margin-top:12px">
+      <button class="set-row" data-a="pass"><span class="st"><div class="t">Protect with a password</div><div class="s">Recommended: the file has your money, journal and documents. You'll need the password to restore.</div></span><span class="toggle on" id="bpw"></span></button>
+    </div>
+    <p class="hint" id="bexcl">${esc(exclText())}</p>
+    <div class="btns"><button class="btn primary" data-a="go">${ic('upload')}Create backup</button></div>`);
+  s.el.addEventListener('click', async e => {
+    const bk = e.target.closest('[data-bk]');
+    if (bk) { photos = bk.dataset.bk === 'full'; $$('[data-bk]', s.el).forEach(x => x.classList.toggle('on', x === bk)); const pv = $('#bphv', s.el); pv.textContent = photos ? `${pc.total} included` : pc.total ? 'Not included' : 'None'; pv.classList.toggle('badt', !photos && pc.total > 0); $('#bexcl', s.el).textContent = exclText(); return; }
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'photos') return;
+    if (b.dataset.a === 'pass') { pass = !pass; $('#bpw', s.el).classList.toggle('on', pass); return; }
+    if (b.dataset.a !== 'go') return;
+    let pw = null;
+    if (!pass && !(await confirmBox('Save without a password?', 'Anyone who gets this file could read your workouts, money, journal and document details. Keep it somewhere private.', [{ label: 'Save without password', cls: 'danger', value: 1 }, { label: 'Go back', cls: 'ghost', value: 0 }]))) return;
+    if (pass) {
+      pw = await promptText('Backup password', { placeholder: 'At least 6 characters', ok: 'Next', type: 'password' }); if (!pw) return;
+      if (pw.length < 6) { toast('Use at least 6 characters'); return; }
+      const pw2 = await promptText('Type it again', { placeholder: 'Same password', ok: 'Create backup', type: 'password' }); if (pw2 !== pw) { toast('Passwords did not match'); return; }
+    }
+    s.close();
+    await writeBackup({ photos, money: withMoney }, pw);
+  });
+}
+async function writeBackup(opts, pw) {
+  const fname = `vyora-backup-${dkey(new Date())}${pw ? '-locked' : ''}.json`;
   try {
+    toast('Preparing backup…');
+    const data = await backupData(opts);
+    let json = JSON.stringify(data);
+    if (pw) json = JSON.stringify(await encryptText(json, pw));
     if (P.Filesystem && P.Share) {
       const r = await P.Filesystem.writeFile({ path: fname, data: json, directory: 'CACHE', encoding: 'utf8' });
-      await P.Share.share({ title: 'Muscle & Money backup', text: `Muscle & Money backup · ${log.length} workouts · ${Money.data.txns.length} money entries`, files: [r.uri], dialogTitle: 'Save backup to Drive, WhatsApp, Files…' });
+      await P.Share.share({ title: 'Vyora backup', text: `Vyora backup · ${log.length} workouts${opts.money ? ` · ${Money.data.txns.length} money entries` : ''}`, files: [r.uri], dialogTitle: 'Save backup to Drive, WhatsApp, Files…' });
     } else {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
       a.download = fname; document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     }
-    S.lastBackup = Date.now(); saveSettings();
+    S.lastBackup = Date.now(); S.lastBackupInfo = { at: Date.now(), kb: Math.round(json.length / 1024), photos: !!opts.photos, money: !!opts.money, locked: !!pw }; S.lastBackupError = null; saveSettings();
     toast('Backup ready. Keep it somewhere safe like Google Drive.');
     if (currentTab === 'settings' || currentTab === 'today') rerenderKeepScroll();
   } catch (e) {
     if (String(e && e.message || e).toLowerCase().includes('cancel')) return;
+    S.lastBackupError = { at: Date.now(), msg: String(e && e.message || 'unknown error') }; saveSettings();
     toast('Backup failed: ' + (e && e.message ? e.message : 'unknown error'));
   }
 }
@@ -2428,41 +2624,72 @@ function importBackup() {
   inp.onchange = () => {
     const f = inp.files && inp.files[0]; if (!f) return;
     const rd = new FileReader();
-    rd.onload = async () => {
-      let data;
-      try { data = JSON.parse(rd.result); } catch (e) { toast('That file is not a Muscle & Money backup'); return; }
-      if (!data || !['kranthi-workouts', 'muscle-money'].includes(data.app)) { toast('That file is not a Muscle & Money backup'); return; }
-      const when = data.exportedAt ? new Date(data.exportedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'unknown date';
-      const v = await confirmBox('Restore backup?', `From ${when}: ${(data.timers || []).length} timers, ${(data.log || []).length} workouts, ${(data.body || []).length} weigh-ins.`, [
-        { label: 'Merge with what\'s on this phone', cls: 'primary', value: 'merge' }, { label: 'Replace everything', cls: 'danger', value: 'replace' }, { label: 'Cancel', cls: 'ghost', value: null }]);
-      if (!v) return;
-      const byId = (a, b) => { const m = new Map(); (a || []).forEach(x => m.set(x.id, x)); (b || []).forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; };
-      if (v === 'replace') {
-        timers = data.timers || []; log = data.log || []; body = data.body || []; plan = data.plan || null; customEx = data.customEx || [];
-        Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program');
-        if (data.money) Money.data = data.money;
-        if (data.health) Health.data = data.health;
-        if (data.workouts) Coach.mine = data.workouts;
-        if (data.life) Life.data = data.life;
-        if (data.settings) { const keep = { notifAsked: S.notifAsked }; Object.assign(S, DEFAULTS, data.settings, keep); }
-      } else {
-        timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body);
-        customEx = [...new Set([...customEx, ...(data.customEx || [])])];
-        if (!hasPlan() && data.plan) plan = data.plan;
-        if (!Program.current && data.program) { Program.current = data.program; DB.set('program', data.program); }
-        if (data.money) { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats), accounts: byId(cur.accounts, inc.accounts), goals: byId(cur.goals, inc.goals), people: byId(cur.people, inc.people), transfers: byId(cur.transfers, inc.transfers), settles: byId(cur.settles, inc.settles), limits: Object.assign({}, inc.limits, cur.limits) }); }
-        if (data.health) Health.merge(data.health);
-        if (data.workouts) Coach.mine = byId(Coach.mine, data.workouts);
-        if (data.life) Life.merge(data.life);
-      }
-      Object.entries(data.steps || {}).forEach(([d, v]) => { STP.days[d] = Math.max(STP.days[d] || 0, v || 0); }); DB.set('steps', STP.days);
-      saveTimers(); saveLog(); saveBody(); savePlan(); DB.set('customEx', customEx); saveSettings();
-      applyTheme(); scheduleReminders(true); render();
-      toast(v === 'replace' ? 'Backup restored' : 'Backup merged');
-    };
+    rd.onload = () => restoreFromText(String(rd.result));
+    rd.onerror = () => toast('Could not read that file');
     rd.readAsText(f);
   };
   document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
+}
+const APP_IDS = ['vyora', 'muscle-money', 'kranthi-workouts'];
+async function restoreFromText(text) {
+  if (!text || text.length > 400e6) { toast('That file is too big or empty to be a Vyora backup'); return; }
+  let data;
+  try { data = JSON.parse(text); } catch (e) { toast('That file is not a Vyora backup'); return; }
+  if (data && data.enc) {
+    const pw = await promptText('This backup is password-protected', { placeholder: 'Backup password', ok: 'Open', type: 'password' }); if (!pw) return;
+    try { data = JSON.parse(await decryptText(data, pw)); } catch (e) { toast('Wrong password, or the file is damaged'); return; }
+  }
+  if (!data || !APP_IDS.includes(data.app)) { toast('That file is not a Vyora backup'); return; }
+  if ((data.version || 1) > BACKUP_VERSION) { toast('This backup is from a newer version of Vyora. Update the app first.'); return; }
+  const isArr = x => x == null || Array.isArray(x);
+  const objOk = x => x == null || (typeof x === 'object' && !Array.isArray(x));
+  if (!isArr(data.timers) || !isArr(data.log) || !isArr(data.body) || !objOk(data.money) || !objOk(data.life) || !objOk(data.health) || !objOk(data.steps)
+    || (data.money && !isArr(data.money.txns)) || (data.life && !isArr(data.life.notes))) { toast('This backup looks damaged, so nothing was changed'); return; }
+  const when = data.exportedAt ? new Date(data.exportedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'unknown date';
+  const lines = [`${(data.log || []).length} workouts · ${(data.timers || []).length} timers · ${(data.body || []).length} weigh-ins`,
+    data.money ? `Money: ${(data.money.txns || []).length} entries · ${(data.money.bills || []).length} bills` : 'Money: not in this backup',
+    data.life ? `Life: ${(data.life.notes || []).length} notes · ${(data.life.tasks || []).length} tasks · ${(data.life.reminders || []).length} reminders` : 'Life: not in this backup',
+    data.files ? `${Object.keys(data.files).length} photos` : 'No photos in this backup (photos already on this phone are kept)'];
+  const v = await confirmBox(`Restore backup from ${when}?`, lines.join('\n') + '\n\nMerge keeps what is on this phone and adds what is missing. Replace wipes this phone first.', [
+    { label: 'Merge with this phone', cls: 'primary', value: 'merge' }, { label: 'Replace everything', cls: 'danger', value: 'replace' }, { label: 'Cancel', cls: 'ghost', value: null }]);
+  if (!v) return;
+  if (v === 'replace' && !(await confirmBox('Replace everything?', 'All workouts, money and Life data on this phone will be replaced by the backup. This can\'t be undone.', [{ label: 'Yes, replace', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }]))) return;
+  if (data.money && (Money.isLocked() || Money.isSealed()) && !(await Money.ensureOpen())) { toast('Unlock Money to restore it'); return; }
+  const done = [], failed = [];
+  const step = (name, fn) => { try { fn(); done.push(name); } catch (e) { failed.push(name); console.warn('restore', name, e); } };
+  const byId = (a, b) => { const m = new Map(); (a || []).forEach(x => m.set(x.id, x)); (b || []).forEach(x => { if (!m.has(x.id)) m.set(x.id, x); }); return [...m.values()]; };
+  if (v === 'replace') {
+    step('Workouts', () => { timers = data.timers || []; log = data.log || []; body = data.body || []; plan = data.plan || null; customEx = data.customEx || []; });
+    step('Program', () => { Program.current = data.program || null; if (data.program) DB.set('program', data.program); else DB.del('program'); });
+    if (data.money) step('Money', () => { Money.data = data.money; });
+    if (data.health) step('Health', () => { Health.data = data.health; if (data.files) Health.replacePhotos(data.health.photos || []); });
+    if (data.workouts) step('My workouts', () => { Coach.mine = data.workouts; });
+    if (data.life) step('Life', () => { Life.data = data.life; });
+    if (data.settings) step('Settings', () => { const keep = { notifAsked: S.notifAsked, lastBackup: S.lastBackup, lastBackupInfo: S.lastBackupInfo }; Object.assign(S, DEFAULTS, data.settings, keep, { v55: 1, v6: 1 }); });
+  } else {
+    step('Workouts', () => { timers = byId(timers, data.timers); log = byId(log, data.log); body = byId(body, data.body); customEx = [...new Set([...customEx, ...(data.customEx || [])])]; if (!hasPlan() && data.plan) plan = data.plan; });
+    if (!Program.current && data.program) step('Program', () => { Program.current = data.program; DB.set('program', data.program); });
+    if (data.money) step('Money', () => { const cur = Money.data; const inc = data.money; Money.data = Object.assign({}, inc, cur, { setup: cur.setup || inc.setup, txns: byId(cur.txns, inc.txns), bills: byId(cur.bills, inc.bills), rules: Object.assign({}, inc.rules, cur.rules), cats: byId(cur.cats, inc.cats), accounts: byId(cur.accounts, inc.accounts), goals: byId(cur.goals, inc.goals), people: byId(cur.people, inc.people), transfers: byId(cur.transfers, inc.transfers), settles: byId(cur.settles, inc.settles), limits: Object.assign({}, inc.limits, cur.limits) }); });
+    if (data.health) step('Health', () => { Health.merge(data.health); if (data.health.photos && data.health.photos.length) Health.addPhotos(data.health.photos); });
+    if (data.workouts) step('My workouts', () => { Coach.mine = byId(Coach.mine, data.workouts); });
+    if (data.life) step('Life', () => { Life.merge(data.life); });
+  }
+  // Replace: steps become exactly the backup's. Merge: keep the higher count for each day.
+  step('Steps', () => { if (v === 'replace') { Object.keys(STP.days).forEach(k => delete STP.days[k]); Object.assign(STP.days, data.steps || {}); } else Object.entries(data.steps || {}).forEach(([d, n]) => { STP.days[d] = Math.max(STP.days[d] || 0, n || 0); }); DB.set('steps', STP.days); });
+  if (data.files) {
+    let n = 0;
+    for (const [path, b64] of Object.entries(data.files)) {
+      try { if (path.startsWith('ph:')) DB.set('ph_' + path.slice(3), b64); else if (P.Filesystem) { await P.Filesystem.writeFile({ path, data: b64, directory: 'DATA', recursive: true }); } n++; } catch (e) { /* skip */ }
+    }
+    (n ? done : failed).push(`${n} photos`);
+    // Photos the records point to that weren't in the file.
+    const want = [...((data.health || {}).photos || []).map(p => p.path || ('ph:' + p.id)), ...((data.life || {}).journal || []).flatMap(j => (j.photos || []).map(p => p.path)), ...((data.life || {}).docs || []).flatMap(d => (d.photos || []).map(p => p.path))].filter(Boolean);
+    const missing = want.filter(p => !(p in data.files)).length; if (missing) failed.push(`${missing} photo file${missing === 1 ? '' : 's'} missing from the backup`);
+  }
+  const okWrites = [saveTimers(), saveLog(), saveBody(), savePlan(), DB.set('customEx', customEx), saveSettings()];
+  if (okWrites.some(x => x === false)) failed.push('saving to this phone (storage may be full)');
+  applyTheme(); scheduleReminders(true); render();
+  await confirmBox(failed.length ? 'Restored with some problems' : (v === 'replace' ? 'Backup restored' : 'Backup merged'), `Restored: ${done.join(', ') || 'nothing'}${failed.length ? `\nCould not restore: ${failed.join(', ')}` : ''}`, [{ label: 'OK', cls: 'primary', value: 1 }]);
 }
 
 /* ---------- settings ---------- */
@@ -2474,8 +2701,25 @@ function viewSettings() {
     <div class="block">
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Theme</div></span></div>
       <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0"><button class="${S.theme !== 'light' ? 'on' : ''}" data-theme="dark">Dark</button><button class="${S.theme === 'light' ? 'on' : ''}" data-theme="light">Light</button></div></div>
-      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Muscle colour</div><div class="s">Money is always green and Life orange, so you always know where you are</div></span></div>
+      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Fitness colour</div><div class="s">Money is always green and Life orange, so you can tell where you are</div></span></div>
       <div class="swatches">${ACCENTS.map(([n, c]) => `<button data-acc="${c}" class="${c.toLowerCase() === S.accent.toLowerCase() ? 'on' : ''}" style="background:${c}" aria-label="${n}"></button>`).join('')}</div>
+    </div>
+    <div class="block">
+      <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Open the app on</div><div class="s">Where Vyora starts each time</div></span></div>
+      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['last', 'Last used'], ['muscle', 'Fitness'], ['money', 'Money'], ['life', 'Life']].map(([k, n]) => `<button class="${(S.landing || 'last') === k ? 'on' : ''}" data-landing="${k}">${n}</button>`).join('')}</div></div>
+    </div>
+    <div class="sect">Training safety</div>
+    <div class="block">
+      ${row('suggest', 'Weight suggestions', 'Suggest the next weight from what you actually lifted last time. Turn off to only see your last numbers.')}
+      ${row('backSafe', 'Back-friendly mode', 'Swaps heavy hinges (deadlifts, bent-over rows, swings) and twisting core work for options that load the lower back less')}
+      <div class="set-row"><span class="st"><div class="t">Moves that hurt</div><div class="s">${(S.painMoves || []).length ? esc(S.painMoves.join(', ')) : 'None. Mark a move from its how-to or tap "This hurts" during a workout.'}</div></span>${(S.painMoves || []).length ? '<button class="btn sm" data-a="painclear">Clear</button>' : ''}</div>
+      <p class="hint" style="padding:0 16px 14px;margin:0">This is a cautious default, not medical advice. If back pain lasts, gets worse, or comes with weakness, numbness, bladder or bowel changes, or numbness around the groin, see a doctor or physiotherapist.</p>
+    </div>
+    <div class="sect">Privacy</div>
+    <div class="block">
+      ${row('notifDetails', 'Show details in private reminders', 'Off: medicine, bill and document reminders just say "Medicine reminder" or "A bill is due". On: they show the name and amount (still hidden on the lock screen).')}
+      <button class="set-row" data-a="features"><span class="st"><div class="t">Phone features check</div><div class="s">See which features work on this phone, with fixes</div></span>${ic('chevR', 'chev')}</button>
+      <button class="set-row" data-a="mlock"><span class="st"><div class="t">Money lock & auto-lock</div><div class="s">${Money.lockOn() ? 'On' : 'Off'} · set in Money → Settings</div></span>${ic('chevR', 'chev')}</button>
     </div>
     <div class="sect">Sound & alerts</div>
     <div class="block">
@@ -2515,23 +2759,32 @@ function viewSettings() {
     </div>
     <div class="sect">Your data</div>
     <div class="block">
-      <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}`}</div></span>${ic('upload')}</button>
+      <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}${S.lastBackupInfo ? ` · ${S.lastBackupInfo.kb} KB${S.lastBackupInfo.photos ? ' · with photos' : ''}${S.lastBackupInfo.locked ? ' · password' : ''}${S.lastBackupInfo.money ? '' : ' · without Money'}` : ''}`}${S.lastBackupError ? `<br><span class="badt">Last attempt failed: ${esc(S.lastBackupError.msg)}</span>` : ''}</div></span>${ic('upload')}</button>
+      ${DB.get('errlog', []).length ? `<button class="set-row" data-a="errlog"><span class="st"><div class="t">Problem log</div><div class="s">${DB.get('errlog', []).length} problem${DB.get('errlog', []).length === 1 ? '' : 's'} recorded. Tap to view or copy for support.</div></span>${ic('info')}</button>` : ''}
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><b>MUSCLE &amp; MONEY</b><br>Version 5.5 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><img class="brandlogo" alt="Vyora" src="brand/vyora-logo-dark.png"><br>Version 6.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
     if (b.dataset.k) {
       const k = b.dataset.k; S[k] = !S[k]; saveSettings(); $('.toggle', b).classList.toggle('on', S[k]);
       if (k === 'background' && S[k]) BG.ensurePermission(true);
+      if (k === 'notifDetails') { Life.refresh && Life.reschedule && Life.reschedule(); Money.rescheduleBills && Money.rescheduleBills(); }
       return;
     }
+    if (b.dataset.landing) { S.landing = b.dataset.landing; saveSettings(); return rerenderKeepScroll(); }
     if (b.dataset.acc) { S.accent = b.dataset.acc; saveSettings(); applyTheme(); return rerenderKeepScroll(); }
     if (b.dataset.theme) { S.theme = b.dataset.theme; saveSettings(); applyTheme(); return rerenderKeepScroll(); }
     if (b.dataset.unit) { S.unit = b.dataset.unit; saveSettings(); return rerenderKeepScroll(); }
     if (b.dataset.snd) { S.sound = b.dataset.snd; saveSettings(); Snd.unlock(); Snd.play('tick', true); setTimeout(() => Snd.play('go', true), 600); $$('[data-snd]').forEach(x => x.classList.toggle('on', x === b)); return; }
     switch (b.dataset.a) {
+      case 'painclear': S.painMoves = []; saveSettings(); return rerenderKeepScroll();
+      case 'mlock': return Money.openMoney('settings');
+      case 'features': return featureCheck();
+      case 'errlog': { const l = DB.get('errlog', []); const text = l.map(x => `${new Date(x.at).toLocaleString()} · ${x.msg} · ${x.where}`).join('\n');
+        const v = await confirmBox('Problem log', text || 'Nothing recorded.', [{ label: 'Copy', cls: 'primary', value: 'copy' }, { label: 'Clear', cls: 'ghost', value: 'clear' }]);
+        if (v === 'copy') { try { await navigator.clipboard.writeText(text); toast('Copied'); } catch (e) { /* ignore */ } } if (v === 'clear') { DB.set('errlog', []); rerenderKeepScroll(); } return; }
       case 'test': {
         Snd.unlock();
         const cnt = n => (S.voiceCount ? say(String(n), true) : Snd.play('tick', true));
@@ -2560,7 +2813,8 @@ function viewSettings() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
 // program.js loads after this file, so draw the first screen once every script has run.
 window.addEventListener('DOMContentLoaded', () => {
-  const wantMoney = S.mode === 'money', wantLife = S.mode === 'life';
+  const start = S.landing && S.landing !== 'last' ? S.landing : S.mode;
+  const wantMoney = start === 'money', wantLife = start === 'life';
   S.mode = 'muscle'; currentTab = 'today';
   if (wantLife) { S.mode = 'life'; currentTab = 'l-home'; }
   renderTabs(); paintModebar(); render();
@@ -2569,6 +2823,7 @@ window.addEventListener('DOMContentLoaded', () => {
   Life.boot();
   Health.scheduleScorecard();
   setTimeout(maybeOnboard, 300);
+  setTimeout(() => { if (S.onboarded && !$('#layer > .screen')) Coach.offerResume(); }, 900);
   pushWidget();
 });
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });
