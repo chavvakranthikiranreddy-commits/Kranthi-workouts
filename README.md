@@ -52,7 +52,7 @@ Note: your data lives on the phone. Uninstalling the app deletes it.
 
 ## Privacy, data and safety
 
-**Where your data lives.** Everything is stored on your phone only (in the app's private storage). Nothing is sent to a server. Android's automatic cloud backup is turned off for this app, so use **Settings → Back up now** to keep a copy.
+**Where your data lives.** Everything is stored on your phone only (in the app's private storage). Nothing you enter is sent to a server. The only things the app downloads are the weather (when you add a city) and the free Unsplash photos on quote cards; these requests carry none of your data, and photos can be turned off in **Settings → Privacy → Photos on quote cards**. Android's automatic cloud backup is turned off for this app, so use **Settings → Back up now** to keep a copy.
 
 **Money.** With Money lock on, your money data is encrypted on the phone with a key kept in Android's secure keystore, and opening Money needs your fingerprint, screen lock or PIN. Money locks again one minute after you leave the app. Five wrong PINs start a short wait that doubles each time (up to 15 minutes). Because the key never leaves the phone, moving to a new phone works through a Vyora backup file, not by copying app data.
 

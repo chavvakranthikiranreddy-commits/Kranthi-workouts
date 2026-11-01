@@ -177,10 +177,11 @@ const Life = (() => {
     const list = L.notes.filter(n => !q || (n.title + ' ' + n.body + ' ' + (n.items || []).map(i => i.t).join(' ')).toLowerCase().includes(q)).sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.at - a.at);
     view.innerHTML = topbar('Notes') + `<div class="page">
       <input class="search" id="nq" placeholder="Search notes" value="${esc(noteQuery)}">
+      <div class="qrow"><button class="btn sm" data-add="note">${ic('note')}New note</button><button class="btn sm" data-add="list">${ic('list')}Checklist</button></div>
       <div class="ngrid">${list.map(n => { const items = n.items || []; const done = items.filter(i => i.d).length; return `<button class="ncard" data-note="${n.id}" style="${n.color ? `--nc:${n.color}` : ''}">${n.pin ? `<span class="npin">${ic('pin')}</span>` : ''}${n.title ? `<b>${esc(n.title)}</b>` : ''}
         ${n.type === 'list' ? `<span class="nitems">${items.slice(0, 5).map(i => `<span class="${i.d ? 'd' : ''}">${i.d ? '☑' : '☐'} ${esc(i.t)}</span>`).join('')}</span><small>${done}/${items.length} done</small>` : `<span class="nbody">${esc((n.body || '').slice(0, 160))}</span>`}
-        ${n.remind ? `<small class="nrem">🔔 ${esc(dayName(n.remind.date))} ${t12(n.remind.time)}</small>` : ''}</button>`; }).join('') || `<div class="empty" style="grid-column:1/-1"><b>${q ? 'No matching notes' : 'No notes yet'}</b>${q ? '' : 'Tap + to write a note or a checklist.'}</div>`}</div>
-    </div><button class="fab" data-add="note" aria-label="New note">${ic('plus')}</button>`;
+        ${n.remind ? `<small class="nrem">🔔 ${esc(dayName(n.remind.date))} ${t12(n.remind.time)}</small>` : ''}</button>`; }).join('') || `<div class="empty" style="grid-column:1/-1"><b>${q ? 'No matching notes' : 'No notes yet'}</b>${q ? '' : 'Write your first note or checklist above.'}</div>`}</div>
+    </div>`;
     const nq = $('#nq', view); nq.addEventListener('input', () => { noteQuery = nq.value; const p = nq.selectionStart; notesView(); const n2 = $('#nq', view); n2.focus(); n2.setSelectionRange(p, p); });
   }
   function noteEditor(note, type) {
@@ -390,7 +391,10 @@ const Life = (() => {
   }
 
   /* ---------- Clock: alarms, world clock, bedtime ---------- */
-  const BUILTIN_TONES = [['', 'Phone default'], ['b:rise', 'Gentle rise'], ['b:chime', 'Morning chimes'], ['b:beep', 'Classic beep'], ['b:digital', 'Digital'], ['b:bell', 'Temple bell']];
+  // Built-in tones are made on the phone (no downloads). The melodies are original tunes written for Vyora, so they are free to use.
+  const BUILTIN_TONES = [['', 'Phone default'],
+    ['b:m_musicbox', 'Music box', 'mel'], ['b:m_sunrise', 'Sunrise piano', 'mel'], ['b:m_marimba', 'Marimba morning', 'mel'], ['b:m_harp', 'Harp breeze', 'mel'], ['b:m_flute', 'Bamboo flute', 'mel'], ['b:m_kalimba', 'Kalimba', 'mel'], ['b:m_lullaby', 'Soft lullaby', 'mel'], ['b:m_bells', 'Soft bells', 'mel'], ['b:m_guitar', 'Acoustic guitar', 'mel'], ['b:m_birds', 'Birdsong garden', 'mel'],
+    ['b:rise', 'Gentle rise'], ['b:chime', 'Morning chimes'], ['b:beep', 'Classic beep'], ['b:digital', 'Digital'], ['b:bell', 'Temple bell']];
   function nextAlarm() {
     const now = new Date(); let best = null;
     L.alarms.filter(a => a.on).forEach(a => {
@@ -409,8 +413,8 @@ const Life = (() => {
         ${!P.Alarm && isNative ? '<div class="mwarn">' + ic('info') + '<span>This build is missing the alarm part. Upload the <b>android</b> folder from the update.</span></div>' : ''}
         ${!isNative ? `<div class="mwarn">${ic('info')}<span>Alarms ring in the installed app, even when it is closed.</span></div>` : ''}
         <div id="alperm"></div>
-        ${L.alarms.map(a => `<div class="alarm ${a.on ? '' : 'off'}"><button class="alm" data-alarm="${a.id}"><b>${t12(a.hm).replace(/ (AM|PM)/, '<small> $1</small>')}</b><span>${esc(a.label || 'Alarm')} · ${a.days.some(Boolean) ? (a.days.every(Boolean) ? 'Every day' : a.days.map((on, i) => on ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] : '').filter(Boolean).join(' ')) : 'Once'}${a.smart ? ' · logs sleep' : ''}</span></button><button class="toggle ${a.on ? 'on' : ''}" data-altog="${a.id}" aria-label="On or off"></button></div>`).join('') || '<div class="empty"><b>No alarms</b>Tap + to add one. Pick your own ringtone from your phone too.</div>'}
-        <button class="fab" data-add="alarm" aria-label="New alarm">${ic('plus')}</button>`;
+        ${L.alarms.map(a => `<div class="alarm ${a.on ? '' : 'off'}"><button class="alm" data-alarm="${a.id}"><b>${t12(a.hm).replace(/ (AM|PM)/, '<small> $1</small>')}</b><span>${esc(a.label || 'Alarm')} · ${a.days.some(Boolean) ? (a.days.every(Boolean) ? 'Every day' : a.days.map((on, i) => on ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] : '').filter(Boolean).join(' ')) : 'Once'}${a.smart ? ' · logs sleep' : ''}</span></button><button class="toggle ${a.on ? 'on' : ''}" data-altog="${a.id}" aria-label="On or off"></button></div>`).join('') || '<div class="empty"><b>No alarms</b>Tap New alarm below. Pick a built-in melody or your own ringtone.</div>'}
+        <button class="btn" data-add="alarm" style="margin-top:10px">${ic('plus')}New alarm</button>`;
     } else if (clockSeg === 'world') {
       body = `<div class="block" style="padding:0">${L.cities.map(z => { const t = new Date().toLocaleTimeString(undefined, { timeZone: z, hour: 'numeric', minute: '2-digit' }); const dd = new Date().toLocaleDateString(undefined, { timeZone: z, weekday: 'short' }); return `<div class="lrow"><span class="lrm"><b>${esc(cityName(z))}</b><span>${dd} · ${offsetTxt(z)}</span></span><span class="wctime">${t}</span><button class="round-btn sm" data-czdel="${esc(z)}" aria-label="Remove">${ic('close')}</button></div>`; }).join('')}</div>
         <button class="btn" data-a="cityadd" style="margin-top:10px">${ic('plus')}Add city</button>`;
@@ -462,7 +466,7 @@ const Life = (() => {
   }
   function alarmSheet(a0) {
     const isNew = !a0;
-    const a = a0 ? clone(a0) : { id: Date.now() % 1e9, hm: '06:30', days: [0, 1, 1, 1, 1, 1, 0], label: '', tone: 'b:rise', vibrate: true, snooze: 10, on: true, smart: false };
+    const a = a0 ? clone(a0) : { id: Date.now() % 1e9, hm: '06:30', days: [0, 1, 1, 1, 1, 1, 0], label: '', tone: 'b:m_musicbox', vibrate: true, snooze: 10, on: true, smart: false };
     const toneName = id => (BUILTIN_TONES.find(t => t[0] === id) || (L.tones.find(t => t.id === id) ? [id, L.tones.find(t => t.id === id).name] : ['', 'Phone default']))[1];
     const s = sheet(`<h2>${isNew ? 'New alarm' : 'Edit alarm'}</h2>
       <input type="time" id="ahm" class="field bigtime" value="${a.hm}">
@@ -508,11 +512,11 @@ const Life = (() => {
     const s = sheet(`<h2>Ringtone</h2><div class="block" style="padding:0" id="tl"></div>
       <div class="btns"><button class="btn" data-a="upload">${ic('upload')}Add a ringtone from your phone</button></div>
       <p class="hint">Any audio file works: MP3, M4A, WAV, OGG. Download songs or tones in your browser first, then pick them here. They are copied into the app.</p>`, { onClose: stopPreview });
-    const paint = () => { $('#tl', s.el).innerHTML = [...BUILTIN_TONES.map(t => ({ id: t[0], name: t[1], b: true })), ...L.tones.map(t => ({ id: t.id, name: t.name }))].map(t => `<div class="lrow"><button class="lrm" data-tn="${t.id}"><b>${esc(t.name)}</b><span>${t.b ? (t.id ? 'Built in' : 'Your phone’s alarm sound') : 'From your phone'}</span></button>${t.id ? `<button class="round-btn sm" data-play="${t.id}" aria-label="Play">${ic('play')}</button>` : ''}${!t.b ? `<button class="round-btn sm" data-tdel="${t.id}" aria-label="Remove">${ic('trash')}</button>` : ''}<span class="tsel ${sel === t.id ? 'on' : ''}">${ic('check')}</span></div>`).join(''); };
+    const paint = () => { let lastG = null; $('#tl', s.el).innerHTML = [...BUILTIN_TONES.map(t => ({ id: t[0], name: t[1], b: true, g: t[2] ? 'Melodies' : t[0] ? 'Classic' : '' })), ...L.tones.map(t => ({ id: t.id, name: t.name, g: 'Yours' }))].map(t => `${t.g && t.g !== lastG ? `<div class="tgrp">${(lastG = t.g)}</div>` : ''}<div class="lrow"><button class="lrm" data-tn="${t.id}"><b>${esc(t.name)}</b><span>${t.b ? (t.id ? (t.g === 'Melodies' ? 'Melody · built in' : 'Built in') : 'Your phone’s alarm sound') : 'From your phone'}</span></button>${t.id ? `<button class="round-btn sm" data-play="${t.id}" aria-label="Play">${ic('play')}</button>` : ''}${!t.b ? `<button class="round-btn sm" data-tdel="${t.id}" aria-label="Remove">${ic('trash')}</button>` : ''}<span class="tsel ${sel === t.id ? 'on' : ''}">${ic('check')}</span></div>`).join(''); };
     paint();
     s.el.addEventListener('click', async e => {
       const tn = e.target.closest('[data-tn]'); if (tn) { sel = tn.dataset.tn; paint(); stopPreview(); s.close(); return cb(sel); }
-      const pl = e.target.closest('[data-play]'); if (pl) { stopPreview(); const src = await toneSrc(pl.dataset.play); if (!src) { toast('Could not play this tone'); return; } previewAudio = new Audio(src); previewAudio.play().catch(() => toast('Could not play this tone')); setTimeout(stopPreview, 8000); return; }
+      const pl = e.target.closest('[data-play]'); if (pl) { stopPreview(); const src = await toneSrc(pl.dataset.play); if (!src) { toast('Could not play this tone'); return; } previewAudio = new Audio(src); previewAudio.play().catch(() => toast('Could not play this tone')); setTimeout(stopPreview, 15000); return; }
       const td = e.target.closest('[data-tdel]'); if (td) { const t = L.tones.find(x => x.id === td.dataset.tdel); L.tones = L.tones.filter(x => x !== t); try { if (P.Filesystem && t.path) await P.Filesystem.deleteFile({ path: t.path, directory: 'DATA' }); } catch (err) { /* ignore */ } L.alarms.forEach(a => { if (a.tone === t.id) a.tone = ''; }); save(); syncAlarms(); return paint(); }
       if (e.target.closest('[data-a="upload"]')) {
         const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*';
@@ -532,7 +536,70 @@ const Life = (() => {
     });
   }
   // Small built-in tones made on the phone as WAV files, so no audio needs to be bundled.
+  /* Melody synth: original tunes played by small additive instruments, with a light room echo. Returns a 16-bit mono WAV. */
+  const MELODIES = {
+    // name: [bpm, instrument, 'note:beats ...' (r = rest, + joins a chord), build-up (louder over time)]
+    musicbox: [104, 'musicbox', 'E5:1 G5:1 C6:1 B5:1 G5:1 E5:1 F5:1 A5:1 D6:1 C6:1 A5:1 F5:1 G5:1 B5:1 D6:1 E6:1.5 D6:.5 C6:1 B5:1 G5:1 A5:1 B5:1 C6:3 r:1'],
+    sunrise: [84, 'piano', 'C4+G4:.5 E5:.5 G5:.5 C6:.5 A3+E4:.5 C5:.5 E5:.5 A5:.5 F3+C4:.5 A4:.5 C5:.5 F5:.5 G3+D4:.5 B4:.5 D5:.5 G5:.5 C4+G4:.5 E5:.5 G5:.5 C6:.5 E6:1 D6:.5 C6:.5 G5+C6+E6:3 r:1', 1],
+    marimba: [120, 'marimba', 'G4:.5 B4:.5 D5:.5 G5:.5 F#5:.5 D5:.5 E5:1 C5:.5 E5:.5 G5:.5 C6:.5 B5:.5 G5:.5 A5:1 D5:.5 F#5:.5 A5:.5 D6:.5 C6:.5 A5:.5 B5:.5 G5:.5 E5:.5 D5:.5 G5:2 r:1'],
+    harp: [76, 'harp', 'D4:.25 A4:.25 D5:.25 F#5:.25 A5:.5 F#5:.5 G3:.25 D4:.25 G4:.25 B4:.25 D5:.5 B4:.5 A3:.25 E4:.25 A4:.25 C#5:.25 E5:.5 A5:.5 D4:.25 A4:.25 D5:.25 F#5:.25 A5:.25 D6:1.75 r:1'],
+    flute: [72, 'flute', 'A4:1 C5:.5 D5:.5 E5:1.5 G5:.5 E5:1 D5:1 C5:.5 D5:.5 E5:1 A4:2 r:.5 G4:.5 A4:.5 C5:.5 D5:1 E5:.5 D5:.5 C5:1 A4:2.5 r:1'],
+    kalimba: [96, 'kalimba', 'C5:.5 E5:.5 G5:.5 E5:.5 D5:.5 F5:.5 A5:.5 F5:.5 E5:.5 G5:.5 C6:.5 G5:.5 B4:.5 D5:.5 G5:1 C5:.5 E5:.5 G5:.5 C6:.5 A5:.5 F5:.5 D5:.5 G5:.5 C5+E5+G5:2 r:1'],
+    lullaby: [66, 'musicbox', 'G5:1 E5:.5 F5:.5 G5:1 C6:1 B5:.5 A5:.5 G5:2 F5:1 D5:.5 E5:.5 F5:1 B5:1 A5:.5 G5:.5 E5:2 r:1'],
+    bells: [60, 'bells', 'C5:1 G5:1 E5:1 C6:2 G5:1 A5:1 E5:1 D5:1 G5:2 r:1'],
+    guitar: [92, 'guitar', 'E3:.5 B3:.5 E4:.5 G#4:.5 B4:.5 G#4:.5 A3:.5 E4:.5 A4:.5 C#5:.5 E5:.5 C#5:.5 B3:.5 F#4:.5 B4:.5 D#5:.5 F#5:.5 D#5:.5 E3:.5 B3:.5 E4:.5 G#4:.5 E4+G#4+B4+E5:2.5 r:1'],
+    birds: [100, 'flute', 'E6:.25 G6:.25 E6:.25 r:.75 C6:.25 D6:.25 E6:.5 r:1 G6:.25 A6:.25 G6:.25 E6:.25 r:1 D6:.25 E6:.25 G6:.25 C7:.5 r:1.5 E6:.25 D6:.25 C6:.5 r:1'],
+  };
+  const NOTE_I = { C: 0, 'C#': 1, D: 2, 'D#': 3, E: 4, F: 5, 'F#': 6, G: 7, 'G#': 8, A: 9, 'A#': 10, B: 11 };
+  const noteHz = n => { const m = /^([A-G]#?)(\d)$/.exec(n); return m ? 440 * Math.pow(2, (NOTE_I[m[1]] + (+m[2] + 1) * 12 - 69) / 12) : 0; };
+  // Each instrument: partials [ratio, level, decay per second], attack, length of ring after the note, and vibrato.
+  const INSTR = {
+    musicbox: { p: [[1, 1, 3.2], [2, .32, 5], [3.01, .18, 7], [4.2, .12, 9], [6.8, .05, 12]], a: .002, ring: 1.6 },
+    piano: { p: [[1, 1, 1.4], [2, .45, 2.2], [3, .22, 3], [4, .12, 4], [5, .07, 5], [6, .04, 6]], a: .004, ring: 2.2 },
+    marimba: { p: [[1, 1, 4.5], [4, .35, 14], [9.9, .08, 24]], a: .002, ring: 1.1 },
+    harp: { p: [[1, 1, 1.6], [2, .5, 2.6], [3, .25, 3.6], [4, .14, 5], [5, .08, 6]], a: .003, ring: 2.4 },
+    kalimba: { p: [[1, 1, 2.8], [5.9, .2, 18], [2, .1, 6]], a: .002, ring: 1.5 },
+    bells: { p: [[1, 1, .9], [2.76, .5, 1.4], [5.4, .25, 2.2], [8.93, .12, 3]], a: .003, ring: 3.2 },
+    guitar: { p: [[1, 1, 2], [2, .6, 2.8], [3, .35, 3.6], [4, .2, 4.5], [5, .12, 5.5], [6, .06, 7]], a: .003, ring: 1.9 },
+    flute: { p: [[1, 1, 0], [2, .18, 0], [3, .06, 0]], a: .06, ring: .18, sustain: true, vib: [5.2, .006], breath: .015 },
+  };
+  function synthMelody(name, rate) {
+    const [bpm, ins, score, build] = MELODIES[name], I = INSTR[ins], beat = 60 / bpm;
+    const notes = []; let t = 0.05;
+    score.trim().split(/\s+/).forEach(tok => { const [nn, b] = tok.split(':'); const d = (+b || 1) * beat; if (nn !== 'r') nn.split('+').forEach(n => notes.push([noteHz(n), t, d])); t += d; });
+    const total = t + 0.4, n = Math.ceil(rate * total), out = new Float32Array(n);
+    let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    notes.forEach(([f, st, d]) => {
+      if (!f) return;
+      const len = I.sustain ? d + I.ring : Math.max(d, 0.2) + I.ring, s0 = Math.floor(st * rate), s1 = Math.min(n, s0 + Math.floor(len * rate));
+      const vel = 0.75 + 0.25 * (f < 300 ? 1.1 : 1) * (0.9 + 0.1 * Math.sin(st * 3));
+      for (let i = s0; i < s1; i++) {
+        const dt = (i - s0) / rate; let env = Math.min(1, dt / I.a);
+        if (I.sustain) env *= dt < d ? 1 : Math.max(0, 1 - (dt - d) / I.ring);
+        const fv = I.vib ? f * (1 + I.vib[1] * Math.sin(2 * Math.PI * I.vib[0] * dt) * Math.min(1, dt / .3)) : f;
+        let x = 0;
+        for (const [r, l, k] of I.p) { if (fv * r > rate / 2.2) continue; x += Math.sin(2 * Math.PI * fv * r * dt) * l * (k ? Math.exp(-k * dt) : 1); }
+        if (I.breath) x += rnd() * I.breath * env;
+        out[i] += x * env * vel;
+      }
+    });
+    // Light room echo so it sounds warm instead of dry.
+    const taps = [[0.043, .28], [0.071, .2], [0.113, .14], [0.167, .09]];
+    for (let i = n - 1; i >= 0; i--) for (const [dl, g] of taps) { const j = i - Math.floor(dl * rate); if (j >= 0) out[i] += out[j] * g; }
+    let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(out[i]));
+    const norm = peak ? 0.85 / peak : 1;
+    for (let i = 0; i < n; i++) { let g = norm; if (build) g *= 0.45 + 0.55 * (i / n); if (i > n - rate * 0.3) g *= (n - i) / (rate * 0.3); out[i] = Math.tanh(1.8 * out[i] * g) / Math.tanh(1.8); } // gentle loudness boost so it can wake you
+    return out;
+  }
+  function wavFrom(samples, rate) {
+    const n = samples.length, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    const w = (o, s2) => { for (let i = 0; i < s2.length; i++) v.setUint8(o + i, s2.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, samples[i])) * 32000, true);
+    return buf;
+  }
   function synthTone(kind) {
+    if (kind.startsWith('m_') && MELODIES[kind.slice(2)]) return wavFrom(synthMelody(kind.slice(2), 22050), 22050);
     const rate = 22050, secs = kind === 'bell' ? 6 : 4, n = rate * secs, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
     const w = (o, s2) => { for (let i = 0; i < s2.length; i++) v.setUint8(o + i, s2.charCodeAt(i)); };
     w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
@@ -597,7 +664,7 @@ const Life = (() => {
   function syncBedAlarm() {
     let a = L.alarms.find(x => x.bed);
     if (!L.bed.on) { if (a) { a.on = false; save(); syncAlarms(); } return; }
-    if (!a) { a = { id: 777000 + Math.floor(Math.random() * 999), hm: L.bed.wake, days: L.bed.days.slice(), label: 'Wake up', tone: 'b:rise', vibrate: true, snooze: 10, on: true, smart: true, brief: true, bed: true }; L.alarms.push(a); }
+    if (!a) { a = { id: 777000 + Math.floor(Math.random() * 999), hm: L.bed.wake, days: L.bed.days.slice(), label: 'Wake up', tone: 'b:m_sunrise', vibrate: true, snooze: 10, on: true, smart: true, brief: true, bed: true }; L.alarms.push(a); }
     Object.assign(a, { hm: L.bed.wake, days: L.bed.days.slice(), on: true, smart: true });
     L.alarms.sort((x, y) => x.hm.localeCompare(y.hm)); save(); syncAlarms();
   }
@@ -1165,7 +1232,7 @@ const Life = (() => {
     if (v.kind === 'reminder') { L.reminders.push({ id: uid(), nid: nextNid(), title: v.title || 'Reminder', note: '', time: v.time, date: v.date || dkey(new Date()), repeat: v.repeat, days: v.repeat === 'weekly' ? v.days : [0, 1, 1, 1, 1, 1, 0], on: true }); save(); await askNotif(); reschedule(); toast(`Reminder set · ${t12(v.time)}`); }
     else if (v.kind === 'task') { L.tasks.unshift({ id: uid(), nid: nextNid(), title: v.title || 'Task', due: v.date, time: v.time, done: false, at: Date.now() }); save(); reschedule(); toast('Task added'); }
     else if (v.kind === 'note') { L.notes.unshift({ id: uid(), type: 'text', title: '', body: v.text, items: [], color: '', pin: false, at: Date.now() }); save(); toast('Note saved'); }
-    else if (v.kind === 'alarm') { const a = { id: Date.now() % 1e9, hm: v.time, days: v.days, label: v.label || '', tone: 'b:rise', vibrate: true, snooze: 10, on: true, smart: false, brief: true }; L.alarms.push(a); L.alarms.sort((x, y) => x.hm.localeCompare(y.hm)); save(); const ok = await syncAlarms(); if (ok || !P.Alarm) alarmToast(a); else toast('Alarm saved, but the phone refused to schedule it.'); }
+    else if (v.kind === 'alarm') { const a = { id: Date.now() % 1e9, hm: v.time, days: v.days, label: v.label || '', tone: 'b:m_musicbox', vibrate: true, snooze: 10, on: true, smart: false, brief: true }; L.alarms.push(a); L.alarms.sort((x, y) => x.hm.localeCompare(y.hm)); save(); const ok = await syncAlarms(); if (ok || !P.Alarm) alarmToast(a); else toast('Alarm saved, but the phone refused to schedule it.'); }
     else if (v.kind === 'shop') { let l = L.lists.find(x => x.name.toLowerCase() === v.list.toLowerCase()); if (!l) { l = { id: uid(), name: v.list, icon: '🛒', items: [] }; L.lists.push(l); } v.items.forEach(t => l.items.unshift({ t: t.charAt(0).toUpperCase() + t.slice(1), q: '', d: false })); save(); toast(`Added to ${l.name}`); }
     else if (v.kind === 'expense') { return Money.quickAddPre({ amount: v.amount, payee: v.payee ? v.payee.charAt(0).toUpperCase() + v.payee.slice(1) : '' }); }
     refresh();

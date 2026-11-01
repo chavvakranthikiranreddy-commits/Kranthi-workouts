@@ -54,6 +54,7 @@ const Money = (() => {
   let LK = Object.assign({ fails: 0, until: 0 }, DB.get('moneylock', {}));
   let sealed = !!(RAW && RAW.enc && RAW.blob);
   let M = sealed ? Object.assign(fresh(), { setup: true, lockOn: true, pin: LK.pin || null, enc: true }) : Object.assign(fresh(), RAW);
+  if (!M.period) M.period = 'month'; // 6.2: every month starts from ₹0 on the 1st
   const saveLock = () => DB.set('moneylock', LK);
   let saving = Promise.resolve();
   const save = () => {
@@ -81,7 +82,7 @@ const Money = (() => {
   let unlocked = false;
   let lastHidden = 0;
   let mTab = 'home';
-  let txFilter = 'all', txQuery = '', txCycleOffset = 0, insCycleOffset = 0;
+  let txFilter = 'all', txQuery = '', mOff = 0; // mOff: which month you're looking at (0 = this month, -1 = last month…)
 
   /* ---------- formatting ---------- */
   const inr = (n, { sign = false, dec = false, raw = false } = {}) => {
@@ -100,17 +101,25 @@ const Money = (() => {
 
   /* ---------- cycles (salary day to the day before the next one) ---------- */
   const dim = (y, m) => new Date(y, m + 1, 0).getDate();
+  // Calendar months (1st to last day) unless you chose salary-day cycles in Money settings.
+  const pDay = () => (M.period === 'salary' ? M.cycleDay : 1);
+  const isMonthly = () => M.period !== 'salary';
+  const periodName = s0 => (isMonthly() ? s0.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : `${short(s0)} – ${short(cycleEnd(s0))}`);
+  const pWord = () => (isMonthly() ? 'month' : 'cycle');
+  function monthBar(st0) {
+    return `<div class="monthbar"><button data-mo="-1" aria-label="Previous ${pWord()}">${ic('chevL')}</button><div class="mbt"><b>${esc(periodName(st0))}</b>${mOff < 0 ? `<button class="linkbtn" data-mo="0">Back to this ${pWord()}</button>` : `<small>This ${pWord()}</small>`}</div><button data-mo="1" aria-label="Next ${pWord()}" ${mOff >= 0 ? 'disabled' : ''}>${ic('chevR')}</button></div>`;
+  }
   function cycleStart(date, offset = 0) {
     const d = new Date(date); d.setHours(0, 0, 0, 0);
     let y = d.getFullYear(), m = d.getMonth();
-    let s = new Date(y, m, Math.min(M.cycleDay, dim(y, m)));
-    if (d < s) { m -= 1; s = new Date(y, m, Math.min(M.cycleDay, dim(y, m))); }
-    if (offset) { const yy = s.getFullYear(), mm = s.getMonth() + offset; s = new Date(yy, mm, Math.min(M.cycleDay, dim(yy + Math.floor(mm / 12), ((mm % 12) + 12) % 12))); }
+    let s = new Date(y, m, Math.min(pDay(), dim(y, m)));
+    if (d < s) { m -= 1; s = new Date(y, m, Math.min(pDay(), dim(y, m))); }
+    if (offset) { const yy = s.getFullYear(), mm = s.getMonth() + offset; s = new Date(yy, mm, Math.min(pDay(), dim(yy + Math.floor(mm / 12), ((mm % 12) + 12) % 12))); }
     return s;
   }
   function cycleEnd(start) {
     const y = start.getFullYear(), m = start.getMonth() + 1;
-    const n = new Date(y, m, Math.min(M.cycleDay, dim(y + Math.floor(m / 12), m % 12)));
+    const n = new Date(y, m, Math.min(pDay(), dim(y + Math.floor(m / 12), m % 12)));
     return addDays(n, -1);
   }
   const budgetFor = start => (M.budgets[dkey(start)] != null ? M.budgets[dkey(start)] : M.budget);
@@ -201,7 +210,7 @@ const Money = (() => {
     });
     if (M.setup) {
       const ns = cycleStart(new Date(), 1); const at = new Date(ns); at.setHours(hh, mi, 0, 0);
-      list.push({ id: 700, title: 'New budget cycle 💼', body: `Your ${short(cycleStart(new Date()))} – ${short(cycleEnd(cycleStart(new Date())))} money report is ready`, channelId: 'kw_remind', schedule: { at, allowWhileIdle: true }, isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
+      list.push({ id: 700, title: isMonthly() ? 'New month, fresh budget 💼' : 'New budget cycle 💼', body: `Starts from ₹0 today. Your ${periodName(cycleStart(new Date()))} report is ready`, channelId: 'kw_remind', schedule: { at, allowWhileIdle: true }, isExactNotification: false, smallIcon: 'ic_stat_kw', iconColor: S.accent });
     }
     if (!list.length) return;
     try {
@@ -429,7 +438,7 @@ const Money = (() => {
     const existing = pre.id ? M.txns.find(t => t.id === pre.id) : null;
     const d = existing ? clone(existing) : {
       id: uid(), type: pre.type || 'expense', amount: pre.amount || null, payee: pre.payee || '', upi: pre.upi || '', note: '',
-      date: pre.date ? dkey(pre.date) : dkey(new Date()), catId: pre.catId || null, src: pre.src || 'manual', ref: pre.ref || '', app: pre.app || '',
+      date: pre.date ? dkey(pre.date) : dkey(S.mode === 'money' && mOff < 0 ? cycleEnd(cycleStart(new Date(), mOff)) : new Date()), catId: pre.catId || null, src: pre.src || 'manual', ref: pre.ref || '', app: pre.app || '',
       acc: pickAcc(pre), goal: pre.goal || null,
     };
     let splitCfg = d.split ? { by: d.split.by, with: d.split.with, incMe: d.split.incMe } : null;
@@ -674,9 +683,10 @@ const Money = (() => {
 
   /* ---------- views ---------- */
   function setupView() {
-    const s = sheet(`<h2>Set up Money</h2><p class="sub">Your budget runs from salary day to the day before the next one. Everything stays on this phone.</p>
-      <div class="sect" style="margin-top:4px">Salary day</div>
-      <div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${M.cycleDay === i + 1 ? 'on' : ''}" data-day="${i + 1}">${i + 1}</button>`).join('')}</div>
+    const s = sheet(`<h2>Set up Money</h2><p class="sub">Each calendar month starts fresh from ₹0 on the 1st, and you can look back at any earlier month. Everything stays on this phone.</p>
+      <div class="seg" id="pseg" style="margin-top:6px"><button data-per="month" class="${isMonthly() ? 'on' : ''}">Calendar month</button><button data-per="salary" class="${isMonthly() ? '' : 'on'}">From salary day</button></div>
+      <div id="dgw" ${isMonthly() ? 'hidden' : ''}><div class="sect" style="margin-top:4px">Salary day</div>
+      <div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${M.cycleDay === i + 1 ? 'on' : ''}" data-day="${i + 1}">${i + 1}</button>`).join('')}</div></div>
       <p class="hint" id="cyc"></p>
       <div class="sect">Monthly budget</div>
       <div class="amt"><span>₹</span><input id="sbud" inputmode="numeric" value="${M.budget}" aria-label="Monthly budget"></div>
@@ -684,9 +694,10 @@ const Money = (() => {
       <div class="presets" style="justify-content:flex-start">${SPLITS.map(([a, b, c]) => `<button class="chip small ${M.split.needs === a && M.split.wants === b ? 'on' : ''}" data-sp="${a},${b},${c}">${a}/${b}/${c}</button>`).join('')}</div>
       <p class="hint">Needs / wants / savings. 50/30/20 is a popular starting rule. You can change it any time.</p>
       <div class="btns"><button class="btn primary" data-a="go">Start tracking</button></div>`);
-    const paintCyc = () => { const st = cycleStart(new Date()); $('#cyc', s.el).textContent = `This cycle: ${short(st)} – ${short(cycleEnd(st))}`; };
+    const paintCyc = () => { const st = cycleStart(new Date()); $('#cyc', s.el).textContent = `This ${pWord()}: ${short(st)} – ${short(cycleEnd(st))}`; };
     paintCyc();
     s.el.addEventListener('click', e => {
+      const pe = e.target.closest('[data-per]'); if (pe) { M.period = pe.dataset.per; $$('[data-per]', s.el).forEach(x => x.classList.toggle('on', x === pe)); $('#dgw', s.el).hidden = isMonthly(); return paintCyc(); }
       const dd = e.target.closest('[data-day]'); if (dd) { M.cycleDay = +dd.dataset.day; $$('[data-day]', s.el).forEach(x => x.classList.toggle('on', x === dd)); return paintCyc(); }
       const sp = e.target.closest('[data-sp]'); if (sp) { const [a, b, c] = sp.dataset.sp.split(',').map(Number); M.split = { needs: a, wants: b, savings: c }; $$('[data-sp]', s.el).forEach(x => x.classList.toggle('on', x === sp)); return; }
       if (e.target.closest('[data-a="go"]')) {
@@ -729,27 +740,28 @@ const Money = (() => {
       $('[data-a="setup"]', view).onclick = setupView;
       return;
     }
-    const st = stats();
-    const recent = M.txns.slice().sort((a, b) => (b.date.localeCompare(a.date)) || (b.at - a.at)).slice(0, 6);
+    const st = stats(mOff);
+    const recent = st.tx.slice().sort((a, b) => (b.date.localeCompare(a.date)) || (b.at - a.at)).slice(0, 8);
     const bills = M.bills.map(b => ({ b, nd: nextDue(b) })).filter(x => x.nd).sort((x, y) => x.nd.due - y.nd.due).slice(0, 3);
     const pct = st.budget ? Math.min(100, st.total / st.budget * 100) : 0;
     view.innerHTML = topbarM('Money', `<button class="round-btn" data-a="hideamt" aria-label="${M.hide ? 'Show amounts' : 'Hide amounts'}">${ic(M.hide ? 'lock' : 'unlock')}</button>`) + `<div class="page">
+      ${monthBar(st.s)}
       <div class="mhero">
-        <div class="k">Budget period ${short(st.s)} – ${short(st.e)} · ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left</div>
-        <div class="mlabel">Budget left${M.accounts && M.accounts.length ? ' (not your bank balance)' : ''}</div>
+        <div class="k">${st.current ? `${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left · starts from ₹0 each ${pWord()}` : `Finished · ${st.tx.length} entr${st.tx.length === 1 ? 'y' : 'ies'}`}</div>
+        <div class="mlabel">${st.current ? 'Budget left' : st.left >= 0 ? 'You stayed under budget by' : 'You went over budget by'}${st.current && M.accounts && M.accounts.length ? ' (not your bank balance)' : ''}</div>
         <div class="big ${st.left < 0 ? 'neg' : ''}">${inr(st.left)}</div>
         <div class="sub2">${st.left >= 0 ? 'left' : 'over'} of ${inr(st.budget)} budget · ${Math.round(pct)}% used</div>
         ${stackBar(st)}
         <div class="mlegend">${GKEYS.map(g => `<span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name} ${inr(st.spent[g])}</span>`).join('')}</div>
-        <div class="mhero-row">
+        ${st.current ? `<div class="mhero-row">
           <div class="safe" data-a="safewhy" role="button" tabindex="0"><span>Safe to spend today ⓘ</span><b>${inr(Math.max(0, st.safe - st.spentToday))}</b><small>${st.spentToday ? `${inr(st.safe)}/day · ${inr(st.spentToday)} spent today` : `${inr(st.safe)} per day for ${st.daysLeft} days`}</small></div>
           ${paceChip(st)}
-        </div>
-        ${st.reserve > 0 ? `<p class="hint" style="margin:8px 0 0">Keeps ${inr(st.reserve)} aside for ${[st.billNW ? 'upcoming bills' : '', st.savingsLeft ? 'your savings goal' : ''].filter(Boolean).join(' and ')}.</p>` : ''}
+        </div>` : `<div class="mhero-row"><div class="safe"><span>Spent</span><b>${inr(st.total)}</b><small>${st.income ? `Income ${inr(st.income)}` : 'No income recorded'}</small></div></div>`}
+        ${st.current && st.reserve > 0 ? `<p class="hint" style="margin:8px 0 0">Keeps ${inr(st.reserve)} aside for ${[st.billNW ? 'upcoming bills' : '', st.savingsLeft ? 'your savings goal' : ''].filter(Boolean).join(' and ')}.</p>` : ''}
       </div>
       <div class="mactions"><button class="btn primary" data-a="add">${ic('plus')}Add expense</button><button class="btn" data-a="scan">${ic('scan')}Scan / PDF</button></div>
-      ${reportCardHtml()}
-      ${alertsHtml(st)}
+      ${st.current ? reportCardHtml() : `<button class="nudge" data-a="report">${ic('pie')}<span><b>${esc(periodName(st.s))} report.</b> Plan vs actual and top categories.</span></button>`}
+      ${st.current ? alertsHtml(st) : ''}
       ${accountsHtml()}
       <div class="sect"><span>${M.split.needs}/${M.split.wants}/${M.split.savings} plan</span><button class="linkbtn" data-go="budget">Edit</button></div>
       <div class="block" style="padding:4px 0">${GKEYS.map(g => { const tg = st.target(g); const v = st.spent[g]; const over = g !== 'savings' && v > tg; return `
@@ -757,13 +769,12 @@ const Money = (() => {
         <div class="gbar"><i style="width:${Math.min(100, tg ? v / tg * 100 : 0).toFixed(1)}%;background:${GROUPS[g].color}"></i></div></div>`; }).join('')}</div>
       ${goalsHtml() || `<button class="nudge" data-a="addgoal">${ic('plus')}<span><b>Save for something.</b> Set a goal like an emergency fund or a bike and watch it fill up.</span></button>`}
       ${friendsHtml()}
-      ${st.income ? `<div class="sect">Income this cycle</div><div class="block inc"><div><span>Income</span><b>${inr(st.income)}</b></div><div><span>Spent</span><b>${inr(st.spent.needs + st.spent.wants)}</b></div><div><span>Saved</span><b>${st.income ? Math.round((st.income - st.spent.needs - st.spent.wants) / st.income * 100) : 0}%</b></div></div>` : ''}
-      ${bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
-      <div class="sect"><span>Recent</span>${M.txns.length ? '<button class="linkbtn" data-go="txns">See all</button>' : ''}</div>
-      <div class="block" style="padding:0">${recent.map(txRow).join('') || `<div class="empty" style="padding:18px">No entries yet. Tap <b style="display:inline;font-family:var(--body);font-size:14px">Add expense</b> or share a payment screenshot to this app.</div>`}</div>
+      ${st.income ? `<div class="sect">Income this ${pWord()}</div><div class="block inc"><div><span>Income</span><b>${inr(st.income)}</b></div><div><span>Spent</span><b>${inr(st.spent.needs + st.spent.wants)}</b></div><div><span>Saved</span><b>${st.income ? Math.round((st.income - st.spent.needs - st.spent.wants) / st.income * 100) : 0}%</b></div></div>` : ''}
+      ${st.current && bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
+      <div class="sect"><span>${st.current ? `This ${pWord()}` : esc(periodName(st.s))}</span>${st.tx.length ? `<button class="linkbtn" data-go="txns">See all ${st.tx.length}</button>` : ''}</div>
+      <div class="block" style="padding:0">${recent.map(txRow).join('') || `<div class="empty" style="padding:18px">${st.current ? `Nothing yet this ${pWord()}. It starts from ₹0. Tap <b style="display:inline;font-family:var(--body);font-size:14px">Add expense</b> or share a payment screenshot.` : `No entries in ${esc(periodName(st.s))}.`}</div>`}</div>
       <p class="hint" style="margin-top:14px">Tip: in PhonePe or Google Pay, open a payment and tap <b>Share</b> → <b>Vyora</b>. You can also share a whole <b>PhonePe statement PDF</b> (History → Download statement) to add a month in one go.</p>
-    </div>
-    <button class="fab" data-a="add" aria-label="Add expense">${ic('plus')}</button>`;
+    </div>`;
   }
   function billRow(b, nd) {
     const c = cat(b.catId);
@@ -774,7 +785,7 @@ const Money = (() => {
   }
 
   function txnsView() {
-    const s = cycleStart(new Date(), txCycleOffset), e = cycleEnd(s);
+    const s = cycleStart(new Date(), mOff), e = cycleEnd(s);
     let tx = M.txns.filter(t => inCycle(t, s, e));
     if (txFilter === 'income') tx = tx.filter(isIncome);
     else if (txFilter !== 'all') tx = tx.filter(t => !isIncome(t) && cat(t.catId).group === txFilter);
@@ -783,29 +794,28 @@ const Money = (() => {
     const byDay = {}; tx.forEach(t => { (byDay[t.date] = byDay[t.date] || []).push(t); });
     const total = tx.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0);
     view.innerHTML = topbarM('Transactions') + `<div class="page">
-      <div class="cal-head" style="padding:0 0 10px"><button data-cy="-1" aria-label="Previous cycle">${ic('chevL')}</button><span class="m" style="font-size:22px">${short(s)} – ${short(e)}</span><button data-cy="1" aria-label="Next cycle" ${txCycleOffset >= 0 ? 'disabled style="opacity:.3"' : ''}>${ic('chevR')}</button></div>
+      ${monthBar(s)}
       <input class="search" id="txq" placeholder="Search payee, category or note" value="${esc(txQuery)}">
       <div class="chips" style="margin-bottom:12px">${[['all', 'All'], ['needs', 'Needs'], ['wants', 'Wants'], ['savings', 'Savings'], ['income', 'Income']].map(([k, n]) => `<button class="chip small ${txFilter === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
       <p class="hint" style="margin:0 2px 10px">${tx.length} entr${tx.length === 1 ? 'y' : 'ies'}${total ? ` · ${inr(total)} spent` : ''}</p>
       ${Object.entries(byDay).map(([k, list]) => `<div class="sect"><span>${esc(dlabel(k))}</span><span style="text-transform:none;letter-spacing:0">${inr(list.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0))}</span></div><div class="block" style="padding:0">${list.map(txRow).join('')}</div>`).join('') || `<div class="empty">Nothing here yet.</div>`}
-    </div>
-    <button class="fab" data-a="add" aria-label="Add expense">${ic('plus')}</button>`;
+    </div>`;
     const q = $('#txq', view);
     q.addEventListener('input', () => { txQuery = q.value; const pos = q.selectionStart; txnsView(); const n = $('#txq', view); n.focus(); n.setSelectionRange(pos, pos); });
   }
 
   function budgetView() {
-    const st = stats();
-    view.innerHTML = topbarM('Budget & bills') + `<div class="page">
+    const st = stats(mOff);
+    view.innerHTML = topbarM('Budget & bills') + `<div class="page">${monthBar(st.s)}
       <div class="block">
-        <button class="set-row" data-a="cbud"><span class="st"><div class="t">This cycle's budget</div><div class="s">${short(st.s)} – ${short(st.e)}</div></span><span class="val">${inr(st.budget)}</span>${ic('chevR', 'chev')}</button>
-        <button class="set-row" data-a="dbud"><span class="st"><div class="t">Default monthly budget</div><div class="s">Used for every new cycle</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
-        <button class="set-row" data-a="day"><span class="st"><div class="t">Salary day</div><div class="s">Cycle starts on this date each month</div></span><span class="val">${M.cycleDay}</span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="cbud"><span class="st"><div class="t">Budget for ${esc(periodName(st.s))}</div><div class="s">${isMonthly() ? 'Only this month' : `${short(st.s)} – ${short(st.e)}`}</div></span><span class="val">${inr(st.budget)}</span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="dbud"><span class="st"><div class="t">Default monthly budget</div><div class="s">Used for every new ${pWord()}</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="day"><span class="st"><div class="t">Budget period</div><div class="s">${isMonthly() ? 'Calendar month (1st to last day)' : `Salary cycle from day ${M.cycleDay}`}</div></span><span class="val">${isMonthly() ? 'Month' : M.cycleDay}</span>${ic('chevR', 'chev')}</button>
       </div>
       <div class="sect">Split</div>
       <div class="block" style="padding:12px 16px">
         <div class="presets" style="justify-content:flex-start;margin:0">${SPLITS.map(([a, b, c]) => `<button class="chip small ${M.split.needs === a && M.split.wants === b && M.split.savings === c ? 'on' : ''}" data-sp="${a},${b},${c}">${a}/${b}/${c}</button>`).join('')}<button class="chip small" data-a="custom">Custom</button></div>
-        <p class="hint">Needs ${inr(st.target('needs'))} · Wants ${inr(st.target('wants'))} · Savings ${inr(st.target('savings'))} this cycle.</p>
+        <p class="hint">Needs ${inr(st.target('needs'))} · Wants ${inr(st.target('wants'))} · Savings ${inr(st.target('savings'))} this ${pWord()}.</p>
       </div>
       ${GKEYS.map(g => { const list = M.cats.filter(c => c.group === g).map(c => ({ c, v: st.tx.filter(t => !isIncome(t) && t.catId === c.id).reduce((a, t) => a + own(t), 0) })).sort((a, b) => b.v - a.v); const max = Math.max(1, ...list.map(x => x.v)); return `
         <div class="sect"><span><i class="gdot" style="background:${GROUPS[g].color}"></i>${GROUPS[g].name}</span><span style="text-transform:none;letter-spacing:0">${inr(st.spent[g])} of ${inr(st.target(g))}</span></div>
@@ -827,7 +837,7 @@ const Money = (() => {
     const pts = cum.slice(0, upto).map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
     const ticks = [0, st.budget / 2, st.budget];
     const lastI = upto - 1;
-    return `<div class="chartwrap" data-chart="cum"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending so far this cycle compared with an even pace">
+    return `<div class="chartwrap" data-chart="cum"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spending so far this period compared with an even pace">
       ${ticks.map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}"/><text class="lbl" x="${L - 6}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end">${v >= 1000 ? Math.round(v / 1000) + 'k' : Math.round(v)}</text>`).join('')}
       <line x1="${X(0)}" y1="${Y(0)}" x2="${X(days - 1)}" y2="${Y(st.budget)}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
       <text class="lbl" x="${L}" y="${H - 4}">${esc(short(st.s))}</text><text class="lbl" x="${W - R}" y="${H - 4}" text-anchor="end">${esc(short(st.e))}</text>
@@ -840,33 +850,33 @@ const Money = (() => {
     if (!M.setup) return homeView();
     if (insMode === 'month') return monthView();
     if (insMode === 'year') return yearView();
-    const st = stats(insCycleOffset);
+    const st = stats(mOff);
     const byCat = {}; st.tx.filter(t => !isIncome(t)).forEach(t => { byCat[t.catId] = (byCat[t.catId] || 0) + own(t); });
     const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
     const top = cats.slice(0, 7); const otherV = cats.slice(7).reduce((a, x) => a + x[1], 0);
     const maxC = Math.max(1, ...top.map(x => x[1]), otherV);
     const payees = {}; st.tx.filter(t => !isIncome(t) && t.payee).forEach(t => { const k = t.payee.trim(); payees[k] = payees[k] || { v: 0, n: 0 }; payees[k].v += own(t); payees[k].n++; });
     const topP = Object.entries(payees).sort((a, b) => b[1].v - a[1].v).slice(0, 5);
-    // Only cycles since your first entry, up to six.
+    // Only periods since your first entry, up to six.
     const first = M.txns.reduce((m, t) => (t.date < m ? t.date : m), dkey(new Date()));
     const firstStart = cycleStart(parseKey(first));
-    const hist = []; for (let o = insCycleOffset - 5; o <= insCycleOffset; o++) { const h = stats(o); if (h.s >= firstStart || o === insCycleOffset) hist.push(h); }
+    const hist = []; for (let o = mOff - 5; o <= mOff; o++) { const h = stats(o); if (h.s >= firstStart || o === mOff) hist.push(h); }
     const maxH = Math.max(1, ...hist.map(h => Math.max(h.total, h.budget)));
     view.innerHTML = topbarM('Insights') + `<div class="page">${insSeg()}
-      <div class="cal-head" style="padding:4px 0 10px"><button data-icy="-1" aria-label="Previous cycle">${ic('chevL')}</button><span class="m" style="font-size:22px">${short(st.s)} – ${short(st.e)}</span><button data-icy="1" aria-label="Next cycle" ${insCycleOffset >= 0 ? 'disabled style="opacity:.3"' : ''}>${ic('chevR')}</button></div>
+      ${monthBar(st.s)}
       <div class="stats">
         <div class="stat"><div class="k">Spent</div><div class="v">${inr(st.total)}</div><div class="s">of ${inr(st.budget)} budget</div></div>
         <div class="stat"><div class="k">Income</div><div class="v">${inr(st.income)}</div><div class="s">${st.income ? `${Math.round((st.income - st.spent.needs - st.spent.wants) / st.income * 100)}% kept after needs & wants` : 'Log salary to see your savings rate'}</div></div>
       </div>
-      <button class="nudge" data-a="report" style="margin:12px 0 0">${ic('pie')}<span><b>${st.current ? 'This cycle so far' : 'Cycle report'}.</b> Plan vs actual, top categories, goals and a tip.</span></button>
+      <button class="nudge" data-a="report" style="margin:12px 0 0">${ic('pie')}<span><b>${st.current ? `This ${pWord()} so far` : `${esc(periodName(st.s))} report`}.</b> Plan vs actual, top categories, goals and a tip.</span></button>
       <div class="sect">Spending pace</div>
       <div class="chart-card">${lineCum(st)}</div>
       <div class="sect">Where it went</div>
       <div class="block" style="padding:6px 0">${top.map(([id, v]) => { const c = cat(id); return `<div class="catrow"><span class="ce">${c.icon}</span><span class="cn">${esc(c.name)}<i style="width:${(v / maxC * 100).toFixed(1)}%;background:${GROUPS[c.group || 'wants'].color}"></i></span><span class="cv">${inr(v)}<small>${st.total ? Math.round(v / st.total * 100) : 0}%</small></span></div>`; }).join('')}
         ${otherV ? `<div class="catrow"><span class="ce">…</span><span class="cn">Everything else<i style="width:${(otherV / maxC * 100).toFixed(1)}%;background:var(--faint)"></i></span><span class="cv">${inr(otherV)}</span></div>` : ''}
-        ${top.length ? '' : '<div class="empty" style="padding:16px">No spending in this cycle.</div>'}</div>
+        ${top.length ? '' : '<div class="empty" style="padding:16px">No spending in this ${pWord()}.</div>'}</div>
       <div class="mlegend">${GKEYS.map(g => `<span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name}</span>`).join('')}</div>
-      <div class="sect">Last 6 cycles</div>
+      <div class="sect">Last 6 ${pWord()}s</div>
       <div class="chart-card"><div class="hbars" style="grid-template-columns:repeat(${hist.length}, 1fr)">${hist.map(h => `<div class="hb" title="${short(h.s)}: ${inr(h.total)} of ${inr(h.budget)}"><em>${h.total >= 1000 ? Math.round(h.total / 1000) + 'k' : Math.round(h.total)}</em><span class="col"><i style="height:${(h.total / maxH * 100).toFixed(1)}%;${h.total > h.budget ? 'background:var(--danger)' : ''}"></i><b style="bottom:${(h.budget / maxH * 100).toFixed(1)}%"></b></span><span class="hl">${esc(short(h.s))}</span></div>`).join('')}</div>
         <div class="mlegend" style="margin-top:8px"><span><i style="background:var(--accent)"></i>Spent</span><span><i style="background:var(--danger)"></i>Over budget</span><span><i class="tick"></i>Budget</span></div></div>
       ${topP.length ? `<div class="sect">Top payees</div><div class="block" style="padding:0">${topP.map(([n, x]) => `<div class="mini-row"><span>${esc(n)}<small>${x.n} payment${x.n > 1 ? 's' : ''}</small></span><b>${inr(x.v)}</b></div>`).join('')}</div>` : ''}
@@ -876,7 +886,7 @@ const Money = (() => {
   function wireChart() {
     const wrap = $('[data-chart="cum"]', view); if (!wrap) return;
     const svg = $('svg', wrap), tip = $('#ctip', wrap), xh = $('#xh', wrap);
-    const st = stats(insCycleOffset);
+    const st = stats(mOff);
     const days = st.totalDays, upto = st.current ? st.elapsed : days;
     const daily = new Array(days).fill(0);
     st.tx.forEach(t => { if (isIncome(t)) return; const i = Math.round((parseKey(t.date) - st.s) / 864e5); if (i >= 0 && i < days) daily[i] += own(t); });
@@ -898,7 +908,7 @@ const Money = (() => {
     view.innerHTML = topbarM('Money Settings') + `<div class="page">
       <div class="sect">Budget</div>
       <div class="block">
-        <button class="set-row" data-a="day"><span class="st"><div class="t">Salary day</div><div class="s">Your budget cycle starts on this date</div></span><span class="val">${M.cycleDay}</span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="day"><span class="st"><div class="t">Budget period</div><div class="s">${isMonthly() ? 'Calendar month: everything starts from ₹0 on the 1st' : `Salary cycle: starts on day ${M.cycleDay} each month`}</div></span><span class="val">${isMonthly() ? 'Month' : M.cycleDay}</span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="dbud"><span class="st"><div class="t">Monthly budget</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-go="budget"><span class="st"><div class="t">Split & bills</div><div class="s">${M.split.needs}/${M.split.wants}/${M.split.savings} · ${M.bills.length} recurring bill${M.bills.length === 1 ? '' : 's'}</div></span>${ic('chevR', 'chev')}</button>
       </div>
@@ -946,8 +956,14 @@ const Money = (() => {
     });
   }
   function dayPicker() {
-    const s = sheet(`<h2>Salary day</h2><p class="sub">If a month is shorter, the cycle starts on its last day.</p><div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${M.cycleDay === i + 1 ? 'on' : ''}" data-day="${i + 1}">${i + 1}</button>`).join('')}</div>`);
-    s.el.addEventListener('click', e => { const d = e.target.closest('[data-day]'); if (!d) return; M.cycleDay = +d.dataset.day; save(); s.close(); refresh(); toast(`Cycle now ${short(cycleStart(new Date()))} – ${short(cycleEnd(cycleStart(new Date())))}`); });
+    const s = sheet(`<h2>Budget period</h2><p class="sub">Calendar month starts everything at ₹0 on the 1st. Salary cycle runs from your pay day to the day before the next one.</p>
+      <div class="seg"><button data-per="month" class="${isMonthly() ? 'on' : ''}">Calendar month</button><button data-per="salary" class="${isMonthly() ? '' : 'on'}">From salary day</button></div>
+      <div id="dgw" ${isMonthly() ? 'hidden' : ''}><div class="sect">Salary day</div><p class="hint" style="margin-top:0">If a month is shorter, the cycle starts on its last day.</p><div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${M.cycleDay === i + 1 ? 'on' : ''}" data-day="${i + 1}">${i + 1}</button>`).join('')}</div></div>`);
+    const done = () => { save(); mOff = 0; refresh(); scheduleBillReminders(); toast(`This ${pWord()}: ${short(cycleStart(new Date()))} – ${short(cycleEnd(cycleStart(new Date())))}`); };
+    s.el.addEventListener('click', e => {
+      const pe = e.target.closest('[data-per]');
+      if (pe) { M.period = pe.dataset.per; $$('[data-per]', s.el).forEach(x => x.classList.toggle('on', x === pe)); $('#dgw', s.el).hidden = isMonthly(); if (isMonthly()) { s.close(); done(); } return; }
+      const d = e.target.closest('[data-day]'); if (!d) return; M.cycleDay = +d.dataset.day; M.period = 'salary'; s.close(); done(); });
   }
   function customSplit() {
     const s = sheet(`<h2>Custom split</h2><p class="sub">Percent of your budget. Must add up to 100.</p>
@@ -1214,7 +1230,7 @@ const Money = (() => {
   }
   function limitSheet(id) {
     const c = cat(id); const cur = (M.limits || {})[id];
-    const s = sheet(`<h2>${c.icon} ${esc(c.name)} limit</h2><p class="sub">Per budget cycle. You get a warning at 80% and when you go over.</p>
+    const s = sheet(`<h2>${c.icon} ${esc(c.name)} limit</h2><p class="sub">Per ${pWord()}. You get a warning at 80% and when you go over.</p>
       <div class="amt"><span>₹</span><input id="lv" inputmode="numeric" placeholder="0" value="${cur || ''}"></div>
       <div class="presets">${[1000, 2000, 3000, 5000, 8000, 10000].map(v => `<button class="chip small" data-v="${v}">${inr(v)}</button>`).join('')}</div>
       <div class="btns ${cur ? 'two' : ''}">${cur ? '<button class="btn" data-a="rm">Remove limit</button>' : ''}<button class="btn primary" data-a="ok">Save</button></div>`);
@@ -1246,8 +1262,8 @@ const Money = (() => {
     const tip = under < 0 ? `You went ${inr(-under)} over. ${topWant ? `${cat(topWant[0]).name} was your biggest want at ${inr(topWant[1])}. A limit on it would warn you at 80% next time.` : ''}`
       : wantsOver > 0 ? `Wants went ${inr(wantsOver)} over plan, but the total stayed inside budget.`
       : st.spent.savings < st.target('savings') ? `You saved ${inr(st.spent.savings)} against a ${inr(st.target('savings'))} plan. Moving savings on salary day makes it automatic.`
-      : 'Every part of your plan stayed on target. Nice cycle!';
-    const s = sheet(`<h2>${st.current ? 'This cycle so far' : 'Cycle report'}</h2><p class="sub">${short(st.s)} – ${short(st.e)}${st.current ? ` · ${st.daysLeft} days left` : ''}</p>
+      : 'Every part of your plan stayed on target. Nice work!';
+    const s = sheet(`<h2>${st.current ? `This ${pWord()} so far` : `${esc(periodName(st.s))} report`}</h2><p class="sub">${short(st.s)} – ${short(st.e)}${st.current ? ` · ${st.daysLeft} days left` : ''}</p>
       <div class="rephero ${under < 0 ? 'bad' : ''}"><b>${inr(st.total)}</b><span>spent of ${inr(st.budget)}</span><em>${Math.abs(under) < 1 ? 'Right on budget' : under > 0 ? `${inr(under)} under budget` : `${inr(-under)} over budget`}</em></div>
       <div class="stats" style="margin-top:10px">
         <div class="stat"><div class="k">Saved</div><div class="v">${rate != null ? rate + '%' : inr(st.spent.savings)}</div><div class="s">${rate != null ? 'of income kept' : 'put into savings'}</div></div>
@@ -1255,7 +1271,7 @@ const Money = (() => {
       </div>
       <div class="sect">Plan vs actual</div>
       <div class="block" style="padding:4px 0">${GKEYS.map(g => { const tg = st.target(g); const v = st.spent[g]; return `<div class="grow"><div class="gl"><span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name}</span><span><b>${inr(v)}</b> / ${inr(tg)}</span></div><div class="gbar"><i style="width:${Math.min(100, tg ? v / tg * 100 : 0).toFixed(1)}%;background:${GROUPS[g].color}"></i></div></div>`; }).join('')}</div>
-      ${top.length ? `<div class="sect">Top categories</div><div class="block" style="padding:0">${top.map(([id, v]) => { const c = cat(id); const p = pbyCat[id]; const ch = hasData(prev) && p ? Math.round((v - p) / p * 100) : null; return `<div class="mini-row"><span>${c.icon} ${esc(c.name)}${ch != null ? `<small class="${ch > 0 ? 'badt' : 'okt'}">${ch > 0 ? '▲' : '▼'} ${Math.abs(ch)}% vs last cycle</small>` : ''}</span><b>${inr(v)}</b></div>`; }).join('')}</div>` : ''}
+      ${top.length ? `<div class="sect">Top categories</div><div class="block" style="padding:0">${top.map(([id, v]) => { const c = cat(id); const p = pbyCat[id]; const ch = hasData(prev) && p ? Math.round((v - p) / p * 100) : null; return `<div class="mini-row"><span>${c.icon} ${esc(c.name)}${ch != null ? `<small class="${ch > 0 ? 'badt' : 'okt'}">${ch > 0 ? '▲' : '▼'} ${Math.abs(ch)}% vs last ${pWord()}</small>` : ''}</span><b>${inr(v)}</b></div>`; }).join('')}</div>` : ''}
       ${biggest ? `<p class="hint">Biggest single payment: <b>${inr(own(biggest))}</b> to ${esc(biggest.payee || cat(biggest.catId).name)} on ${esc(short(parseKey(biggest.date)))}.</p>` : ''}
       ${M.goals.length ? `<div class="sect">Goals</div><div class="block" style="padding:0">${M.goals.map(g => `<div class="mini-row"><span>${g.icon} ${esc(g.name)}<small>${goalLine(g)}</small></span><b>${Math.min(100, Math.round(goalSaved(g) / g.target * 100))}%</b></div>`).join('')}</div>` : ''}
       <div class="mwarn" style="margin-top:12px">${ic('info')}<span>${esc(tip)}</span></div>
@@ -1636,7 +1652,7 @@ const Money = (() => {
         ${top.length ? '' : '<div class="empty" style="padding:16px">No spending in this period.</div>'}</div>
       ${topP.length ? `<div class="sect">Top payees</div><div class="block" style="padding:0">${topP.map(([n, x]) => `<div class="mini-row"><span>${esc(n)}<small>${x.n} payment${x.n > 1 ? 's' : ''}</small></span><b>${inr(x.v)}</b></div>`).join('')}</div>` : ''}`;
   }
-  const insSeg = () => `<div class="seg">${[['cycle', 'Cycle'], ['month', 'Month'], ['year', 'Year']].map(([k, n]) => `<button class="${insMode === k ? 'on' : ''}" data-im="${k}">${n}</button>`).join('')}</div>`;
+  const insSeg = () => `<div class="seg">${(isMonthly() ? [['cycle', 'Month'], ['year', 'Year']] : [['cycle', 'Cycle'], ['month', 'Month'], ['year', 'Year']]).map(([k, n]) => `<button class="${insMode === k ? 'on' : ''}" data-im="${k}">${n}</button>`).join('')}</div>`;
   function monthView() {
     const m0 = insMonth || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
     const y = m0.getFullYear(), mo = m0.getMonth(), days = dim(y, mo);
@@ -1715,13 +1731,13 @@ const Money = (() => {
     const bl = t.closest('[data-bill]'); if (bl) return billSheet(M.bills.find(b => b.id === bl.dataset.bill));
     const gotab = t.closest('[data-go]'); if (gotab) { currentTab = 'm-' + gotab.dataset.go; renderTabs(); render(); view.scrollTop = 0; return; }
     const f = t.closest('[data-f]'); if (f && mTab === 'txns') { txFilter = f.dataset.f; return refresh(); }
-    const cy = t.closest('[data-cy]'); if (cy) { txCycleOffset = Math.min(0, txCycleOffset + +cy.dataset.cy); return refresh(); }
+    const mo = t.closest('[data-mo]'); if (mo) { mOff = +mo.dataset.mo === 0 ? 0 : Math.min(0, mOff + +mo.dataset.mo); tap(); const sc = view.scrollTop; refresh(); view.scrollTop = Math.min(sc, 0); return; }
     const im = t.closest('[data-im]'); if (im) { insMode = im.dataset.im; view.scrollTop = 0; return refresh(); }
     const mm = t.closest('[data-mm]'); if (mm) { const b0 = insMonth || new Date(new Date().getFullYear(), new Date().getMonth(), 1); insMonth = new Date(b0.getFullYear(), b0.getMonth() + +mm.dataset.mm, 1); return refresh(); }
     const yy = t.closest('[data-yy]'); if (yy) { insYear = (insYear || new Date().getFullYear()) + +yy.dataset.yy; return refresh(); }
     const mon = t.closest('[data-mon]'); if (mon) { insMonth = new Date(insYear || new Date().getFullYear(), +mon.dataset.mon, 1); insMode = 'month'; view.scrollTop = 0; return refresh(); }
     const cday = t.closest('[data-cday]'); if (cday) return daySheet(cday.dataset.cday);
-    const icy = t.closest('[data-icy]'); if (icy) { insCycleOffset = Math.min(0, insCycleOffset + +icy.dataset.icy); return refresh(); }
+
     const sp = t.closest('[data-sp]'); if (sp && mTab === 'budget') { const [a, b, c] = sp.dataset.sp.split(',').map(Number); M.split = { needs: a, wants: b, savings: c }; save(); return refresh(); }
     const acct = t.closest('[data-acct]'); if (acct) return accountSheet(accOf(acct.dataset.acct));
     const gl = t.closest('[data-goal]'); if (gl) return goalSheet(M.goals.find(g => g.id === gl.dataset.goal));
@@ -1734,8 +1750,8 @@ const Money = (() => {
       case 'add': return M.setup ? entrySheet({}) : setupView();
       case 'scan': return M.setup ? pickScreenshots() : setupView();
       case 'pdf': return M.setup ? pickScreenshots(true) : setupView();
-      case 'cbud': { const st = stats(); return amountSheet("This cycle's budget", st.budget, v => { M.budgets[dkey(st.s)] = v; save(); refresh(); }, `${short(st.s)} – ${short(st.e)} only`); }
-      case 'dbud': return amountSheet('Monthly budget', M.budget, v => { M.budget = v; save(); refresh(); }, 'Used for each new cycle');
+      case 'cbud': { const st = stats(mOff); return amountSheet(`Budget for ${periodName(st.s)}`, st.budget, v => { M.budgets[dkey(st.s)] = v; save(); refresh(); }, `${short(st.s)} – ${short(st.e)} only`); }
+      case 'dbud': return amountSheet('Monthly budget', M.budget, v => { M.budget = v; save(); refresh(); }, `Used for each new ${pWord()}`);
       case 'day': return dayPicker();
       case 'custom': return customSplit();
       case 'addbill': return billSheet(null);
@@ -1747,7 +1763,7 @@ const Money = (() => {
       case 'transfer': return transferSheet();
       case 'addgoal': return goalSheet(null);
       case 'friends': return friendsSheet();
-      case 'report': return reportSheet(mTab === 'insights' ? insCycleOffset : -1);
+      case 'report': return reportSheet(mTab === 'home' || mTab === 'insights' ? mOff : -1);
       case 'alerts': M.alertsOn = M.alertsOn === false; save(); return refresh();
       case 'wipe':
         if (await confirmBox('Delete all money data?', `${M.txns.length} entries and ${M.bills.length} bills will be removed from this phone. Make a backup first if you might need them.`, [{ label: 'Delete everything', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { M = fresh(); save(); scheduleBillReminders(); refresh(); toast('Money data deleted'); }

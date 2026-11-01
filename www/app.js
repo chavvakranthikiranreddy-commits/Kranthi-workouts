@@ -131,7 +131,7 @@ const DB = {
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, suggest: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
+  background: true, suggest: true, artPhotos: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
@@ -151,8 +151,11 @@ window.addEventListener('unhandledrejection', e => { const m = String(e.reason &
 // 5.5: new light, colourful look for everyone once (dark mode is still in Settings).
 if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() === '#00E5FF') S.accent = '#2F6BFF'; saveSettings(); }
 // Each section has its own colour on active tabs and main buttons (plus its label and dot, never colour alone):
-// Fitness uses your accent (cyan by default), Money green, Life orange.
-const SECTION_COLORS = { money: '#059669', life: '#EA580C' };
+// Fitness uses your accent (cyan by default), Money green, Life soft lavender.
+const SECTION_COLORS = { money: '#059669', life: '#C4B5FD' };
+// Soft lavender for Life: light lilac buttons with dark violet text on top, deeper violet for text links.
+const SECTION_INK = { life: '#2E1065' };
+const SECTION_TEXT = { life: ['#6D28D9', '#C4B5FD'] };
 const curAccent = () => SECTION_COLORS[S.mode] || S.accent;
 if (!S.v61) { S.v61 = 1; if (['#2F6BFF', '#00E5FF'].includes(String(S.accent).toUpperCase())) S.accent = '#0891B2'; saveSettings(); }
 // 6.0: Vyora look, cleaner Today (money moves to the Money side), remember where you were in each section.
@@ -240,14 +243,15 @@ function applyTheme() {
   const acc = curAccent(); root.dataset.mode = S.mode || 'muscle';
   const rgb = hexRgb(acc); const [r, g, b] = rgb;
   const light = S.theme === 'light';
-  const ink = lum(rgb) > 0.4 ? '#071114' : '#FFFFFF';
+  const ink = SECTION_INK[S.mode] || (lum(rgb) > 0.4 ? '#071114' : '#FFFFFF');
   // On a light background, bright accents need darkening to stay readable as text.
   let text = acc;
-  if (light) { let k = 1, c = rgb; while (lum(c) > 0.16 && k > 0.3) { k -= 0.05; c = rgb.map(v => Math.round(v * k)); } text = `rgb(${c.join(',')})`; }
+  if (SECTION_TEXT[S.mode]) text = SECTION_TEXT[S.mode][light ? 0 : 1];
+  else if (light) { let k = 1, c = rgb; while (lum(c) > 0.16 && k > 0.3) { k -= 0.05; c = rgb.map(v => Math.round(v * k)); } text = `rgb(${c.join(',')})`; }
   root.style.setProperty('--accent', acc);
   root.style.setProperty('--accent-ink', ink);
   root.style.setProperty('--accent-text', text);
-  root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},${light ? .14 : .14})`);
+  root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},${SECTION_INK[S.mode] ? (light ? .32 : .18) : .14})`);
   root.style.setProperty('--accent-line', `rgba(${r},${g},${b},.35)`);
   root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},.3)`);
   PHASE.stopwatch = S.accent; PHASE.done = S.accent;
@@ -663,9 +667,16 @@ function sheet(inner, { center = false, onClose } = {}) {
   const sh = $('.sheet', bd);
   if (typeof inner === 'string') sh.insertAdjacentHTML('beforeend', inner); else sh.appendChild(inner);
   let closed = false;
-  const close = () => { if (closed) return; closed = true; unback(); bd.remove(); onClose && onClose(); };
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const close = () => { if (closed) return; closed = true; unback(); onClose && onClose();
+    if (reduce) { bd.remove(); return; } bd.classList.add('closing'); setTimeout(() => bd.remove(), 190); };
   const unback = pushBack(close);
   bd.addEventListener('click', e => { if (e.target === bd) close(); });
+  // Drag the sheet down from its top to close it.
+  if (!center) { let y0 = null, dy = 0;
+    sh.addEventListener('touchstart', e => { if (sh.scrollTop > 0 || e.target.closest('input,textarea,select,.daygrid,.chartwrap')) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; sh.style.transition = 'none'; }, { passive: true });
+    sh.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); if (dy > 0) sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
+    sh.addEventListener('touchend', () => { if (y0 == null) return; sh.style.transition = ''; if (dy > 110) close(); else sh.style.transform = ''; y0 = null; }, { passive: true }); }
   layer.appendChild(bd);
   return { el: sh, close };
 }
@@ -824,7 +835,8 @@ const dayIndex = (n, salt = 0) => { const d = today0(); const doy = Math.floor((
 const lastQuote = {};
 const pickQuote = set => { const list = QUOTES[set] || QUOTES.train; let q; for (let i = 0; i < 5; i++) { q = list[Math.floor(Math.random() * list.length)]; if (q !== lastQuote[set]) break; } lastQuote[set] = q; return q; };
 // Tap any quote card for a new one.
-document.addEventListener('click', e => { const f = e.target.closest && e.target.closest('figure.art'); if (!f) return; const q = f.querySelector('q'); if (q) { q.style.opacity = 0; setTimeout(() => { q.textContent = pickQuote(f.dataset.set || 'train'); q.style.opacity = 1; const fg = f.querySelector('.artfig'); if (fg && typeof Moves !== 'undefined') { fg.innerHTML = Moves.svgFor(pickMove(f.dataset.set || 'train'), { cls: 'artmv' }); Moves.mount(fg); } }, 150); } });
+document.addEventListener('click', e => { const f = e.target.closest && e.target.closest('figure.art'); if (!f) return; const q = f.querySelector('q'); if (q) { q.style.opacity = 0; setTimeout(() => { q.textContent = pickQuote(f.dataset.set || 'train'); q.style.opacity = 1; const fg = f.querySelector('.artfig'); if (fg && typeof Moves !== 'undefined') { fg.innerHTML = Moves.svgFor(pickMove(f.dataset.set || 'train'), { cls: 'artmv' }); Moves.mount(fg); }
+  if (photosOn()) { const p = pickPhoto(f.dataset.set || 'train'); const old = f.querySelector('.artph'); if (p) { const tmp = document.createElement('div'); tmp.innerHTML = photoHtml(p); const img = tmp.firstChild, cred = tmp.lastChild; img.classList.add('incoming'); f.insertBefore(img, f.querySelector('figcaption')); img.addEventListener('load', () => { img.classList.remove('incoming'); if (old) { old.remove(); } const oc = f.querySelector('.artcred'); oc && oc.remove(); f.insertBefore(cred, f.querySelector('figcaption')); }, { once: true }); } } }, 150); } });
 
 // Original vector scenes drawn in code. They use the accent colour, so they follow the theme picker.
 const ART = {
@@ -883,11 +895,36 @@ const ART_MOVES = {
   life: ['Y:mountain', 'Y:warrior2', 'Jumping Jacks', 'Y:triangle', 'Walking Lunge', 'Arm Circles', 'Y:chair', 'High Knees'],
 };
 const pickMove = set => { const l = ART_MOVES[set] || ART_MOVES.train; return l[Math.floor(Math.random() * l.length)]; };
+// Free photos from Unsplash (Unsplash License: free to use, no permission needed). Loaded on the phone when online and kept in
+// the cache; if the phone is offline, a photo fails, or photos are turned off in Settings, the animated figure shows instead.
+const ART_PHOTOS = {
+  train: [['1517836357463-d25dfeac3438', 'Victor Freitas'], ['1541534741688-6078c6bfb5c5', 'John Arano'], ['1599058917212-d750089bc07e', 'Karsten Winegeart'], ['1583454110551-21f2fa2afe61', 'Anastase Maragos'], ['1517130038641-a774d04afb3c', 'Geert Pieters'], ['1536922246289-88c42f957773', 'Meghan Holmes'], ['1549476464-37392f717541', 'John Fornander'], ['1486218119243-13883505764c', 'Jenny Hill'], ['1518214598173-1666bc921d66', 'Jeremy Lapak'], ['1581889470536-467bdbe30cd0', 'Isaac Wendland']],
+  rest: [['1552196563-55cd4e45efb3', 'Dane Wetton'], ['1552196527-bffef41ef674', 'Dane Wetton'], ['1607914660217-754fdd90041d', 'Luemen Rutkowski'], ['1518611012118-696072aa579a', 'bruce mars'], ['1602520628350-fbf9db1f02ae', 'Dex Ezekiel'], ['1588286840104-8957b019727f', 'Dylan Gillis'], ['1531353826977-0941b4779a1c', 'Greg Pappas'], ['1520206183501-b80df61043c2', 'bruce mars']],
+  progress: [['1519834785169-98be25ec3f84', 'Ian Stauffer'], ['1456694441711-af0ab2d64c96', 'Samuel Clara'], ['1491555103944-7c647fd857e6', 'Joshua Earle'], ['1605388218317-0469d5836d17', 'Marc Wieland'], ['1573335553610-a871dfd95bf5', 'Frederik Löwer'], ['1497561813398-8fcc7a37b567', 'Benjamin Davies'], ['1589887305888-6254d60b5308', 'Mark König']],
+  done: [['1551892589-865f69869476', 'Guille Álvarez'], ['1499209974431-9dddcece7f88', 'Zac Durant'], ['1497292682820-42687987a662', 'Nicholas Sampson'], ['1515191107209-c28698631303', 'Miguel Bruna'], ['1604419688742-6ded8cb99b71', 'Katie McBroom'], ['1629721671030-a83edbb11211', 'Afif Ramdhasuma']],
+  money: [['1579621970795-87facc2f976d', 'micheile henderson'], ['1579621970588-a35d0e7ab9b6', 'micheile henderson'], ['1579621970563-ebec7560ff3e', 'micheile henderson'], ['1633158829585-23ba8f7c8caf', 'Towfiqu barbhuiya'], ['1607863680198-23d4b2565df0', 'Andre Taissin'], ['1604594849809-dfedbc827105', 'Mathieu Stern'], ['1459257831348-f0cdd359235f', 'Fabian Blank']],
+  life: [['1497032628192-86f99bcd76bc', 'ian dooley'], ['1518655048521-f130df041f66', 'Leone Venter'], ['1533090161767-e6ffed986c88', 'Samantha Gades'], ['1542435503-956c469947f6', 'Jess Bailey'], ['1517971129774-8a2b38fa128e', 'Hannah Olinger'], ['1514369118554-e20d93546b30', 'Kyle Gregory Devaras'], ['1453928582365-b6ad33cbcf64', 'Lauren Mancke'], ['1759960034642-6fbdef7fb9e6', 'Aleksey Cherenkevich']],
+};
+const photoUrl = id => `https://images.unsplash.com/photo-${id}?w=900&q=70&auto=format&fit=crop`;
+const photosOn = () => S.artPhotos !== false && navigator.onLine !== false;
+const photoBad = new Set(); // photos that failed this session, so they are not tried again
+const lastPhoto = {};
+function pickPhoto(set) {
+  const l = (ART_PHOTOS[set] || ART_PHOTOS.train).filter(p => !photoBad.has(p[0]));
+  if (!l.length) return null;
+  let p; for (let i = 0; i < 4; i++) { p = l[Math.floor(Math.random() * l.length)]; if (p[0] !== lastPhoto[set] || l.length === 1) break; }
+  lastPhoto[set] = p[0]; return p;
+}
+const photoHtml = p => p ? `<img class="artph" alt="" src="${photoUrl(p[0])}" data-ph="${p[0]}" decoding="async" referrerpolicy="no-referrer" draggable="false"><span class="artcred">Photo: ${esc(p[1])} · Unsplash</span>` : '';
 function artCard(scene, quote, { small = false, tag = '' } = {}) {
   const set = Object.keys(QUOTES).find(k => QUOTES[k].includes(quote)) || 'train';
-  return `<figure class="art art2 ${small ? 'small' : ''} art-${set}" data-set="${set}"><span class="artblob"></span><span class="artfig">${Moves.svgFor(pickMove(set), { cls: 'artmv' })}</span>
+  const ph = photosOn() ? pickPhoto(set) : null;
+  return `<figure class="art art2 ${small ? 'small' : ''} art-${set}" data-set="${set}"><span class="artblob"></span><span class="artfig">${Moves.svgFor(pickMove(set), { cls: 'artmv' })}</span>${photoHtml(ph)}
     <figcaption>${tag ? `<span class="tag">${esc(tag)}</span>` : ''}<q>${esc(quote)}</q><small class="arthint">Tap for another</small></figcaption></figure>`;
 }
+// Photo loaded: fade it in over the figure. Failed: forget it and keep the figure.
+document.addEventListener('load', e => { const t = e.target; if (t && t.classList && t.classList.contains('artph')) t.closest('figure').classList.add('hasph'); }, true);
+document.addEventListener('error', e => { const t = e.target; if (t && t.classList && t.classList.contains('artph')) { photoBad.add(t.dataset.ph); const f = t.closest('figure'); const incoming = t.classList.contains('incoming'); t.remove(); if (f && !incoming) { f.classList.remove('hasph'); const c = f.querySelector('.artcred'); c && c.remove(); } } }, true);
 // Start the figure animation on quote cards whenever they appear on screen.
 new MutationObserver(ms => { if (ms.some(m => m.addedNodes.length)) $$('figure.art2 svg[data-mv]').forEach(s2 => { if (!s2.__mv) Moves.animate(s2); }); }).observe(document.body, { childList: true, subtree: true });
 const TRAIN_SCENES = ['summit', 'runner', 'barbell', 'rings', 'stairs'];
@@ -933,7 +970,10 @@ $('#tabs').addEventListener('click', e => {
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.btn.primary, .nu-go, .cplay, .qopt, .tring, .sgrid button')) tap(); }, true);
 function tap(style = 'LIGHT') { if (!S.vibrate) return; try { if (P.Haptics) P.Haptics.impact({ style }); } catch (e) { /* ignore */ } }
 const modeOfTab = t => (t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : 'muscle');
-function go(tab) { if (!/settings/.test(tab)) { S.lastTabs = Object.assign({}, S.lastTabs, { [modeOfTab(tab)]: tab }); saveSettings(); } currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
+const TAB_ORDER = ['today', 'timers', 'workout', 'calendar', 'progress', 'm-home', 'm-txns', 'm-budget', 'm-insights', 'l-home', 'l-notes', 'l-tasks', 'l-clock'];
+function go(tab) { if (!/settings/.test(tab)) { S.lastTabs = Object.assign({}, S.lastTabs, { [modeOfTab(tab)]: tab }); saveSettings(); }
+  const a = TAB_ORDER.indexOf(currentTab), b = TAB_ORDER.indexOf(tab); view.dataset.dir = a < 0 || b < 0 || a === b ? 'up' : b > a ? 'r' : 'l';
+  currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
 function render() {
   if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
   if (currentTab.startsWith('l-')) return Life.renderTab(currentTab.slice(2));
@@ -944,14 +984,23 @@ const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" ar
 $('#app').insertBefore(modebar, $('#view'));
 // Private screens (locked Money, journal, documents) are hidden in recent apps and can't be screenshotted.
 function updateSecure() { try { const on = (S.mode === 'money' && Money.lockOn()) || !!document.querySelector('#layer .secure-screen'); if (P.AppLock && P.AppLock.setSecure) P.AppLock.setSecure({ on }); } catch (e) { /* ignore */ } }
-function paintModebar() { applyTheme(); updateSecure(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); }
+function paintModebar() { applyTheme(); updateSecure(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); placeModePill(); }
+// The coloured pill slides between Fitness, Money and Life instead of jumping.
+function placeModePill() {
+  const seg = $('.modeseg', modebar); if (!seg) return;
+  const on = $('button.on', seg); if (!on || !on.offsetWidth) { requestAnimationFrame(() => { const o = $('button.on', seg); if (o && o.offsetWidth) placeModePill(); }); return; }
+  seg.style.setProperty('--px', on.offsetLeft + 'px'); seg.style.setProperty('--pw', on.offsetWidth + 'px');
+  if (!seg.classList.contains('pill')) requestAnimationFrame(() => seg.classList.add('pill'));
+}
+addEventListener('resize', () => placeModePill());
 async function setMode(mode, quiet) {
   const lt = S.lastTabs || {};
   if (mode === 'money') return Money.openMoney(lt.money ? lt.money.slice(2) : undefined);
-  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = lt.life || 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; } return; }
+  const modeEnter = () => { view.dataset.dir = 'mode'; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); };
+  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = lt.life || 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; modeEnter(); } return; }
   S.mode = 'muscle'; saveSettings();
   currentTab = quiet ? 'today' : (lt.muscle || 'today'); renderTabs(); paintModebar();
-  if (!quiet) { render(); view.scrollTop = 0; }
+  if (!quiet) { render(); view.scrollTop = 0; modeEnter(); }
 }
 modebar.addEventListener('click', e => {
   const mb = e.target.closest('[data-mb]');
@@ -2701,7 +2750,7 @@ function viewSettings() {
     <div class="block">
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Theme</div></span></div>
       <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0"><button class="${S.theme !== 'light' ? 'on' : ''}" data-theme="dark">Dark</button><button class="${S.theme === 'light' ? 'on' : ''}" data-theme="light">Light</button></div></div>
-      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Fitness colour</div><div class="s">Money is always green and Life orange, so you can tell where you are</div></span></div>
+      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Fitness colour</div><div class="s">Money is always green and Life soft lavender, so you can tell where you are</div></span></div>
       <div class="swatches">${ACCENTS.map(([n, c]) => `<button data-acc="${c}" class="${c.toLowerCase() === S.accent.toLowerCase() ? 'on' : ''}" style="background:${c}" aria-label="${n}"></button>`).join('')}</div>
     </div>
     <div class="block">
@@ -2718,6 +2767,7 @@ function viewSettings() {
     <div class="sect">Privacy</div>
     <div class="block">
       ${row('notifDetails', 'Show details in private reminders', 'Off: medicine, bill and document reminders just say "Medicine reminder" or "A bill is due". On: they show the name and amount (still hidden on the lock screen).')}
+      ${row('artPhotos', 'Photos on quote cards', 'Free photos from Unsplash, downloaded when you are online and kept for offline. Off: the animated figure shows instead and nothing is downloaded.')}
       <button class="set-row" data-a="features"><span class="st"><div class="t">Phone features check</div><div class="s">See which features work on this phone, with fixes</div></span>${ic('chevR', 'chev')}</button>
       <button class="set-row" data-a="mlock"><span class="st"><div class="t">Money lock & auto-lock</div><div class="s">${Money.lockOn() ? 'On' : 'Off'} · set in Money → Settings</div></span>${ic('chevR', 'chev')}</button>
     </div>
@@ -2763,7 +2813,7 @@ function viewSettings() {
       ${DB.get('errlog', []).length ? `<button class="set-row" data-a="errlog"><span class="st"><div class="t">Problem log</div><div class="s">${DB.get('errlog', []).length} problem${DB.get('errlog', []).length === 1 ? '' : 's'} recorded. Tap to view or copy for support.</div></span>${ic('info')}</button>` : ''}
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><img class="brandlogo" alt="Vyora" src="brand/vyora-logo-dark.png"><br>Version 6.1 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><img class="brandlogo" alt="Vyora" src="brand/vyora-logo-dark.png"><br>Version 6.2 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
   view.querySelector('.page').addEventListener('click', async e => {
     const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;

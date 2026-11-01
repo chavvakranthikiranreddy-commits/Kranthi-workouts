@@ -1,5 +1,45 @@
 # Vyora changelog
 
+## 6.2 (monthly money, lavender Life, photos, melodies, motion)
+
+### Money
+- Budgets now run by calendar month (1st to last day). Every month starts from ₹0 spent; nothing carries over.
+- One month switcher (‹ November 2026 ›) on Overview, Transactions, Budget & bills and Insights. Go back to any earlier month; "Back to this month" jumps home.
+- Past months show a summary: under or over budget by how much, total spent, income, that month's entries and its report.
+- Adding an entry while looking at a past month dates it to that month.
+- Overview "Recent" now shows only the month you are looking at.
+- Salary-day cycles are still available: Budget & bills → Budget period → From salary day. Existing users are moved to calendar months.
+- Removed the extra floating + button (the centre Add button does the same).
+
+### Life
+- Life colour is now soft lavender: light lilac buttons and tabs with dark violet text, in light and dark themes and on the home-screen widget.
+- 10 new melody alarm tones made on the phone: Music box, Sunrise piano (gets louder), Marimba morning, Harp breeze, Bamboo flute, Kalimba, Soft lullaby, Soft bells, Acoustic guitar, Birdsong garden. All original tunes, free to use. New alarms default to Music box; Bedtime wake-up uses Sunrise piano.
+- Ringtone list is grouped into Melodies, Classic and Yours. Preview plays up to 15 seconds.
+- Notes has New note / Checklist buttons; Clock has a New alarm button (instead of floating + buttons). Fixed the "No notes yet" text splitting into two columns.
+
+### Quote cards
+- Quote cards show free Unsplash photos picked for each theme (training, rest, progress, done, money, life), with the photographer credited on the card.
+- Photos load when online and are cached; offline, or if a photo fails, the animated figure shows instead. Tap still changes the quote and the photo.
+- Settings → Privacy → Photos on quote cards turns them off (nothing is downloaded).
+
+### Look and feel
+- The Fitness / Money / Life switch has a sliding colour pill.
+- Tabs slide in the direction you move; switching mode fades up; cards arrive one after another.
+- Sheets spring up, slide away when closed, and can be dragged down to close.
+- Press feedback on buttons, chips and cards; toasts rise in. Respects the phone's "Remove animations" setting.
+- Even spacing between cards on Life Today.
+
+### Tested
+- All earlier regression suites pass (test11 updated for the new setup screen).
+- Every tab in Fitness, Money and Life at 360 px and 390 px, light and dark: no console errors, no sideways overflow.
+- Month switching, past-month add, salary ↔ calendar switching, past-month report, notes buttons, alarm with melody tone, ringtone preview.
+- Melody tones render in under 0.7 s each with no clipping.
+- Photo fallback tested by simulating loaded, failed and blocked photos.
+
+### Not testable here
+- Real Unsplash photo downloads (blocked from the build machine; they load on the phone). If a photo is ever removed from Unsplash, the card quietly shows the figure.
+- How the melodies sound on the phone speaker at alarm volume.
+
 ## 6.1 (developer action plan)
 
 ### Workouts
