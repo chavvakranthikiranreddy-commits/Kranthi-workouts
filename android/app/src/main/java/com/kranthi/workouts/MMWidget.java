@@ -66,9 +66,9 @@ public class MMWidget extends AppWidgetProvider {
             d = new JSONObject();
         }
         boolean today = StepStore.todayKey().equals(d.optString("day", ""));
-        int accent = Color.parseColor("#00E5FF");
+        int accent = Color.parseColor("#3F51D9");
         try {
-            accent = Color.parseColor(d.optString("accent", "#00E5FF"));
+            accent = Color.parseColor(d.optString("accent", "#3F51D9"));
         } catch (Exception ignored) {
             // keep the default colour
         }
@@ -109,7 +109,7 @@ public class MMWidget extends AppWidgetProvider {
         int streak = d.optInt("streak", 0);
         v.setTextViewText(R.id.w_streak, streak > 0 ? "🔥 " + streak + (streak == 1 ? " day" : " days") : "");
         v.setTextColor(R.id.w_streak, accent);
-        v.setTextColor(R.id.w_steps, Color.WHITE);
+        v.setTextColor(R.id.w_steps, Color.parseColor("#182345"));
 
         Intent open = new Intent(ctx, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);

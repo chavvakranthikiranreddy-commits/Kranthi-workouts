@@ -28,6 +28,8 @@ public class StepWorker extends Worker {
     public Result doWork() {
         final Context ctx = getApplicationContext();
         if (!StepStore.canCount(ctx)) return Result.success();
+        StepClockReceiver.scheduleNext(ctx);
+        StepService.startIfWanted(ctx);
         HandlerThread thread = new HandlerThread("kw-steps");
         thread.start();
         Handler handler = new Handler(thread.getLooper());

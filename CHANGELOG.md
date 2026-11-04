@@ -1,5 +1,85 @@
 # Vyora changelog
 
+## 7.0 (Prism Flow redesign, monthly salary, always-on steps)
+
+### New look and navigation (Prism Flow handoff)
+- Four fixed destinations in a floating dock: **Today, Fitness, Money, Life**. The Fitness/Money/Life switch at the top and the changing bottom bars are gone.
+- New **Today** screen: greeting and date, the next workout in a cobalt-to-violet feature card, steps ring, water and habits tiles, today's agenda (reminders, tasks, medicines, bills) and a Money summary (amounts never shown while Money is locked).
+- Each destination has secondary tabs: Fitness (Overview, Train, Calendar, Progress), Money (Overview, Transactions, Budget & bills, Insights), Life (Overview, Notes, Tasks, Clock).
+- Tapping another destination returns to the screen you were on; tapping the active one goes back to its overview. Scroll position is remembered.
+- Back goes: open sheet → current screen → section overview → Today → leave the app.
+- The old centre Start/Add button became a context action above the dock: "Start a workout", "Add expense", "Add note, task or reminder".
+- While a workout is unfinished, a Resume banner shows above the dock everywhere.
+- Header: VYORA, search, settings. Money settings open from the header while you are in Money.
+- Colours: pearl canvas #F4F6FC, white cards, cobalt #3F51D9 actions, violet #8E79D6 accents, with a matching dark theme (light cobalt #B5BFFF in dark).
+- One action colour across the app (old cyan, green and lavender section colours were moved to cobalt; you can still pick another in Settings).
+- Inter for all text with even-width numbers for money, timers and stats. Page headings 28 px, sections 18 px, no all-caps paragraphs.
+- Radii: feature cards 24, cards 20, fields 14, sheets 28, dock 28. Borders first, soft shadows only.
+- The Money budget-left card is the feature card.
+- Interval timer: readable pearl/dark player with one phase colour instead of full-screen yellow/red/green.
+- Full-screen white flash replaced by a short border pulse.
+- Motion follows the handoff: press 90/140 ms, dock pill 220 ms, tabs 140–180 ms, sheets 240 ms in and 180 ms out, dialogs 140 ms.
+- **Settings → Appearance:** Theme Light / Dark / Same as phone; Motion Follow phone / Reduce; Open the app on now includes Today.
+- Onboarding uses a small brand mark instead of a half-screen logo.
+- Home-screen widgets use the pearl/cobalt palette.
+
+### Fixes from the handoff's product findings
+- F05: Insights no longer shows the literal text "${pWord()}".
+- F06: one version source. The app shows the APK's own version and build (APK version is now 7.0.N).
+- F07: "Move money" with fewer than two accounts shows a proper explanation with "Add account", not a passing toast.
+- F08: the money card says "Budget left" and "this month's money", never a bank balance.
+
+### Money: salary changes every month
+- Each month, enter the salary you actually received (after leave deductions). That becomes the month's money and every expense is taken from it.
+- A card on the Money overview asks for it at the start of each month. Until you enter it, your usual salary is used.
+- "Add more money" adds a bonus or leave encashment to the month.
+- The salary and extra money are saved as income entries. Editing or deleting them in Transactions updates the month.
+- Turn it off in Budget & bills → "Budget comes from salary" to go back to a fixed budget.
+
+### Steps: always-on counting
+- New always-on step counter: listens to the step sensor all day and saves every 30 seconds and at midnight, so steps land on the right day and almost nothing is lost on a sudden power-off.
+- It shows a small, silent "steps today" notification (Android requires it). Turn it off in Settings → Always-on counting.
+- It restarts after a phone restart.
+
+## 6.4 (step counter fixes)
+
+Audit of build 17 (6.2). The phone's step sensor counts correctly; the problems were in how Vyora read it and put steps on days.
+- Steps walked late in the evening no longer move to the next day. Vyora now takes a reading at 23:59 every night (an exact alarm that works even when the phone is asleep).
+- If that reading is missed too, the steps since the last reading are shared between the days by time of day (night hours count much less), instead of all going to the day the app was opened.
+- Restarting the phone: Vyora takes a last reading when the phone switches off (on phones that send that signal), takes a first reading after it starts, and spots a restart by the start time. Before, a restart could lose the steps since the last reading, and a second restart could undercount.
+- Switching on counting now includes steps since the phone started, when it started today.
+- Background readings and the 23:59 reading are re-booked every time the app opens, after a restart and after an update, in case the phone dropped them.
+- The step card shows when the phone really last saved steps ("Updated 4 h ago"), not when the screen refreshed.
+- New warning on the step card when the battery saver can pause background counting, with an "Allow background use" button that opens Android's own dialog. You are also asked once when you switch counting on.
+- Settings text updated.
+
+Not fixable without an always-on notification: steps between the last reading and a sudden power-off (battery died, or a phone that does not send the shutdown signal).
+
+## 6.3 (UX audit fixes)
+
+Audited against the VectorLab UX skills (19 checklists). Changes:
+- Deleting anything now asks first and names it ("Delete bill "Rent"?", "Delete ₹500 to Swiggy on Nov 4?"). The Cancel button gets focus first. Tasks, reminders, habits, alarms, medicines, birthdays, ringtones and cities had no confirmation before.
+- Renaming a shopping list edits the title in place (Enter saves, Escape cancels) instead of opening a pop-up.
+- Escape closes the top sheet or screen. Keyboard focus stays inside an open sheet and goes back to the button that opened it.
+- Add expense: visible labels on every field. The amount is checked when you leave the field, the error clears as you type, and Save shows the problem next to the field instead of a toast.
+- If you close Add expense by accident, your unsaved entry comes back the next time (kept in memory only, never written to storage). "Discard draft" clears it.
+- Labels added to the task, list item, reminder, bedtime and alarm time fields. Search boxes have names for screen readers.
+- Error messages no longer say "Wrong ..." and say how to fix the problem ("That PIN didn't match. Try again.").
+- Empty Transactions shows "Add expense", or "Clear search and filters" when a filter hides everything. Search shows "Clear search".
+- Weather shows a loading skeleton instead of "Loading…".
+- Text is never smaller than 12 px (tab labels, tool names and calendar letters were 11 px).
+- Three font weights only (400 / 500 / 600), for a calmer look.
+- Every tap target is at least 44 × 44 px (colour swatches, small icon buttons, calendar days, chips, "See all" links).
+- Motion uses 100 / 150 / 200 / 300 ms only, ease-out to enter and ease-in to exit, transform and opacity only. Removed the springy overshoot, the pulsing blob behind the figure, and bar-width animations.
+- With "Remove animations" on in phone settings, everything changes instantly.
+- Removed the blur behind the tab bar and sheets. Light-mode glow under buttons is now very soft.
+- Visible focus ring for keyboard use, in light and dark.
+- Icon-only buttons show their name on mouse hover or keyboard focus.
+- Spacing snapped to a 4 px grid.
+- Button labels start with a verb ("Mark paid", "Mark taken", "Add photo", "Resume workout", "Scan or import").
+
+Tested: all regression suites; every tab at 375 px and 1280 px in light and dark has no overflow, no console errors and no text under 12 px; keyboard trap, Escape and focus return; inline rename keeps neighbours in place; blur validation; draft restore and discard; reduced motion.
+
 ## 6.2 (monthly money, lavender Life, photos, melodies, motion)
 
 ### Money

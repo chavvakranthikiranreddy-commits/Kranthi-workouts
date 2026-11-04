@@ -551,7 +551,7 @@ const Moves = (() => {
   function animate(svg, opts = {}) {
     if (!svg || svg.__mv) return svg && svg.__mv;
     // Respect "remove animations": keep figures still unless a workout timer is driving them.
-    if (!opts.clock && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+    if (!opts.clock && (typeof reduceMotion === 'function' ? reduceMotion() : window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) return null;
     const m = get(svg.dataset.mv), pr = prep(m);
     const el = {}; PARTS.forEach(c => { el[c] = svg.querySelector('.mv-' + c); });
     const a = { svg, pr, m, t0: performance.now(), dur: opts.dur || pr.A.dur, clock: opts.clock || null, visible: true, el };

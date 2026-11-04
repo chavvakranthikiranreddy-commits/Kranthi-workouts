@@ -75,6 +75,15 @@ public final class StepStore {
         return prefs(ctx).getBoolean("enabled", false);
     }
 
+    /** Always-on counting (on by default). */
+    static boolean isLive(Context ctx) {
+        return prefs(ctx).getBoolean("live", true);
+    }
+
+    static void setLive(Context ctx, boolean on) {
+        prefs(ctx).edit().putBoolean("live", on).apply();
+    }
+
     static void setEnabled(Context ctx, boolean on) {
         prefs(ctx).edit().putBoolean("enabled", on).apply();
     }
@@ -95,37 +104,104 @@ public final class StepStore {
         return days(ctx).optInt(todayKey(), 0);
     }
 
-    /** Adds the steps taken since the previous reading to today's total. */
+    /** Weight of one hour for spreading steps over a gap: people walk far less between 11 pm and 6 am. */
+    private static double hourWeight(int hour) {
+        return (hour >= 23 || hour < 6) ? 0.1 : 1.0;
+    }
+
+    /**
+     * Adds steps to the right days. When the gap since the last reading crosses midnight
+     * (the phone slept, or the battery saver held back background readings), the steps are
+     * shared between the days by time of day instead of all landing on the day of the reading.
+     */
+    static void addSpread(JSONObject d, long from, long to, int steps) throws Exception {
+        SimpleDateFormat f = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+        if (steps <= 0) return;
+        if (from <= 0L || to - from > 31L * 86400000L) from = to - 3600000L;
+        String a = f.format(new Date(from)), b = f.format(new Date(to));
+        if (a.equals(b) || to <= from) { d.put(b, d.optInt(b, 0) + steps); return; }
+        java.util.LinkedHashMap<String, Double> w = new java.util.LinkedHashMap<>();
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        long t = from;
+        double total = 0;
+        while (t < to) {
+            c.setTimeInMillis(t);
+            c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0);
+            c.add(java.util.Calendar.HOUR_OF_DAY, 1);
+            long next = Math.min(to, c.getTimeInMillis());
+            c.setTimeInMillis(t);
+            double part = (next - t) / 3600000.0 * hourWeight(c.get(java.util.Calendar.HOUR_OF_DAY));
+            String k = f.format(new Date(t));
+            w.put(k, w.getOrDefault(k, 0.0) + part);
+            total += part;
+            t = next;
+        }
+        if (total <= 0) { d.put(b, d.optInt(b, 0) + steps); return; }
+        int given = 0, i = 0, n = w.size();
+        for (java.util.Map.Entry<String, Double> e : w.entrySet()) {
+            int share = (++i == n) ? steps - given : (int) Math.round(steps * e.getValue() / total);
+            if (share < 0) share = 0;
+            given += share;
+            d.put(e.getKey(), d.optInt(e.getKey(), 0) + share);
+        }
+    }
+
+    static long startOfToday() {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0); c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    /** Called when counting is switched on, so steps already walked today since a restart this morning can be counted. */
+    static void markFirstStart(Context ctx) {
+        prefs(ctx).edit().putBoolean("seed", true).apply();
+    }
+
+    static long lastSampleAt(Context ctx) {
+        return prefs(ctx).getLong("lastSample", 0L);
+    }
+
+    /** Adds the steps taken since the previous reading to the right day(s). */
     static synchronized void sample(Context ctx, float counter) {
         SharedPreferences p = prefs(ctx);
         String today = todayKey();
         long now = System.currentTimeMillis();
+        long sinceBoot = SystemClock.elapsedRealtime();
+        long bootAt = now - sinceBoot;
         float last = p.getFloat("lastCounter", -1f);
         long lastAt = p.getLong("lastSample", 0L);
+        long lastBoot = p.getLong("bootAt", 0L);
         // Some phones report 0 on the very first reading. Never use that as the starting point.
         if (counter <= 0f && last < 0f) return;
         JSONObject d = days(ctx);
-        int delta = 0;
-        if (last >= 0f && lastAt > 0L) {
-            float diff = counter - last;
-            // A smaller number means the phone restarted and the sensor began again from zero.
-            delta = Math.round(diff >= 0f ? diff : counter);
-            // Nobody walks more than about 4 steps a second. A bigger jump is a sensor glitch,
-            // so only move the starting point and do not add those steps.
-            long secs = Math.max(1L, (now - lastAt) / 1000L);
-            long maxPlausible = Math.max(300L, secs * 4L);
-            if (diff < 0f) maxPlausible = Math.min(maxPlausible, Math.max(300L, SystemClock.elapsedRealtime() / 1000L * 4L));
-            if (delta > maxPlausible || delta < 0) delta = 0;
-        }
-        int total = d.optInt(today, 0) + delta;
         try {
-            d.put(today, total);
+            if (last < 0f || lastAt <= 0L) {
+                // First reading after switching on. The sensor counts since the phone started, so if the
+                // phone started today, that whole number is today's steps.
+                if (p.getBoolean("seed", false) && bootAt >= startOfToday() && counter > 0f && counter < sinceBoot / 1000f * 4f)
+                    d.put(today, d.optInt(today, 0) + Math.round(counter));
+            } else {
+                // A restart resets the sensor to 0. Spot it by the start time, not only by a smaller number:
+                // after a restart the new count can already be bigger than the old one.
+                boolean restarted = lastBoot > 0L ? Math.abs(bootAt - lastBoot) > 60000L : counter < last;
+                float diff = restarted ? counter : counter - last;
+                if (!restarted && diff < 0f) { restarted = true; diff = counter; }
+                long from = restarted ? Math.max(lastAt, bootAt) : lastAt;
+                long secs = Math.max(1L, (now - from) / 1000L);
+                // Nobody walks more than about 4 steps a second. A bigger jump is a sensor glitch,
+                // so only move the starting point and do not add those steps.
+                long maxPlausible = Math.max(300L, secs * 4L);
+                int delta = Math.round(diff);
+                if (delta > 0 && delta <= maxPlausible) addSpread(d, from, now, delta);
+            }
             trim(d);
         } catch (Exception ignored) {
             // keep going with the old data
         }
-        p.edit().putFloat("lastCounter", counter).putString("days", d.toString()).putLong("lastSample", now).apply();
+        p.edit().putFloat("lastCounter", counter).putString("days", d.toString()).putLong("lastSample", now)
+            .putLong("bootAt", bootAt).putBoolean("seed", false).apply();
 
+        int total = d.optInt(today, 0);
         int goal = p.getInt("goal", 8000);
         if (goal > 0 && total >= goal && !today.equals(p.getString("notified", ""))) {
             p.edit().putString("notified", today).apply();
@@ -143,7 +219,7 @@ public final class StepStore {
         } catch (Exception ignored) {
             // nothing to clear
         }
-        p.edit().putString("days", d.toString()).putFloat("lastCounter", -1f).putLong("lastSample", 0L).remove("notified").apply();
+        p.edit().putString("days", d.toString()).putFloat("lastCounter", -1f).putLong("lastSample", 0L).putBoolean("seed", false).remove("notified").apply();
     }
 
     private static void trim(JSONObject d) {

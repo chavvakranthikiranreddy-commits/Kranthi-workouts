@@ -55,9 +55,25 @@ const Money = (() => {
   let sealed = !!(RAW && RAW.enc && RAW.blob);
   let M = sealed ? Object.assign(fresh(), { setup: true, lockOn: true, pin: LK.pin || null, enc: true }) : Object.assign(fresh(), RAW);
   if (!M.period) M.period = 'month'; // 6.2: every month starts from ₹0 on the 1st
+  // 7.0: salary can change every month (leaves, bonus). The salary you enter for a month becomes that month's money.
+  if (M.salaryMode == null) M.salaryMode = true;
+  if (!M.salaries) M.salaries = {};
   const saveLock = () => DB.set('moneylock', LK);
   let saving = Promise.resolve();
+  // Keep each month's salary in step with its income entries (edited or deleted from Transactions).
+  function syncSalaries() {
+    if (!M.salaries) return;
+    const byId = new Map(M.txns.map(t => [t.id, t]));
+    Object.keys(M.salaries).forEach(k => {
+      const x = M.salaries[k];
+      if (x.tx) { const t = byId.get(x.tx); if (!t) { delete x.tx; delete x.amount; } else x.amount = t.amount; }
+      x.extra = (x.extra || []).filter(e => byId.has(e.tx)).map(e => ({ amount: byId.get(e.tx).amount, tx: e.tx }));
+      if (x.amount == null && !x.extra.length) delete M.salaries[k];
+      else if (x.amount == null) x.amount = M.budgets[k] != null ? M.budgets[k] : M.budget;
+    });
+  }
   const save = () => {
+    if (!sealed) syncSalaries();
     if (sealed) return saving; // never overwrite encrypted data with the empty placeholder
     LK.lockOn = M.lockOn; LK.pin = M.pin; LK.enc = !!M.enc; saveLock();
     if (M.enc && P.Vault) {
@@ -122,7 +138,45 @@ const Money = (() => {
     const n = new Date(y, m, Math.min(pDay(), dim(y + Math.floor(m / 12), m % 12)));
     return addDays(n, -1);
   }
-  const budgetFor = start => (M.budgets[dkey(start)] != null ? M.budgets[dkey(start)] : M.budget);
+  // A month's money: the salary entered for it (plus extra money added), else a one-off budget, else the usual amount.
+  const salaryFor = start => { const x = M.salaries && M.salaries[dkey(start)]; return x ? (x.amount || 0) + (x.extra || []).reduce((a, e) => a + (e.amount || 0), 0) : null; };
+  const budgetFor = start => (M.salaryMode && salaryFor(start) != null ? salaryFor(start) : M.budgets[dkey(start)] != null ? M.budgets[dkey(start)] : M.budget);
+  const lastSalary = () => { const ks = Object.keys(M.salaries || {}).sort(); return ks.length ? M.salaries[ks[ks.length - 1]].amount : M.budget; };
+  // Enter this month's salary. It is also saved as an income entry so reports stay right.
+  function salarySheet(off = mOff) {
+    const st0 = cycleStart(new Date(), off), key = dkey(st0), cur = M.salaries[key];
+    const s = sheet(`<h2>Salary for ${esc(periodName(st0))}</h2><p class="sub">Enter what you actually received this ${pWord()} (after leave deductions). Every expense this ${pWord()} is taken from it.</p>
+      <label class="flabel" for="salv">Salary received</label><div class="amt"><span>₹</span><input id="salv" inputmode="decimal" placeholder="${Math.round(lastSalary() || 0)}" value="${cur ? cur.amount : ''}" aria-describedby="salerr"></div><span class="ferr" id="salerr" hidden></span>
+      <p class="hint">Last ${pWord()}: ${inr(lastSalary() || 0)}. Got a bonus or other money? Use "Add more money" after saving.</p>
+      <div class="btns ${cur ? 'two' : ''}">${cur ? '<button class="btn" data-a="clear">Use usual amount</button>' : ''}<button class="btn primary" data-a="ok">Save salary</button></div>`);
+    const inp = $('#salv', s.el), err = $('#salerr', s.el);
+    const bad = m => { err.textContent = m; err.hidden = !m; inp.closest('.amt').classList.toggle('invalid', !!m); };
+    inp.addEventListener('blur', () => { const v = num(inp.value); bad(inp.value.trim() && !(v > 0) ? 'Enter an amount above ₹0, like 42000.' : ''); });
+    inp.addEventListener('input', () => bad(''));
+    setTimeout(() => inp.focus(), 250);
+    s.el.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'clear') { if (cur && cur.tx) M.txns = M.txns.filter(t => t.id !== cur.tx); delete M.salaries[key]; save(); s.close(); refresh(); toast(`${periodName(st0)} uses your usual ${inr(M.budget)}`); return; }
+      const v = Math.round(num(inp.value) * 100) / 100; if (!(v > 0)) { bad('Enter the salary you received, like 42000.'); inp.focus(); return; }
+      const end = cycleEnd(st0), today = new Date(); const dt = today >= st0 && today <= addDays(end, 1) ? today : st0;
+      let t = cur && cur.tx ? M.txns.find(x => x.id === cur.tx) : null;
+      if (!t) { t = { id: uid(), type: 'income', catId: 'salary', payee: 'Salary', note: `Salary for ${periodName(st0)}`, date: dkey(dt), at: Date.now(), src: 'salary', acc: pickAcc({}) }; M.txns.push(t); }
+      t.amount = v; t.salaryFor = key;
+      M.salaries[key] = Object.assign({}, cur || {}, { amount: v, tx: t.id });
+      save(); s.close(); refresh(); toast(`${periodName(st0)}: ${inr(budgetFor(st0))} to spend from`);
+    });
+  }
+  // Extra money for the month (bonus, refund of leave, side income) that should also be spendable.
+  function extraMoneySheet(off = mOff) {
+    const st0 = cycleStart(new Date(), off), key = dkey(st0);
+    amountSheet(`Add money to ${periodName(st0)}`, null, v => {
+      const t = { id: uid(), type: 'income', catId: 'oincome', payee: 'Extra money', note: `Added to ${periodName(st0)}`, date: dkey(new Date() >= st0 && new Date() <= cycleEnd(st0) ? new Date() : st0), at: Date.now(), src: 'salary', acc: pickAcc({}), amount: v, salaryFor: key };
+      M.txns.push(t);
+      const cur = M.salaries[key] || { amount: M.budgets[key] != null ? M.budgets[key] : M.budget };
+      cur.extra = (cur.extra || []).concat({ amount: v, tx: t.id }); M.salaries[key] = cur;
+      save(); refresh(); toast(`Added ${inr(v)}. ${periodName(st0)} now has ${inr(budgetFor(st0))}.`);
+    }, 'Bonus, leave encashment, gift… it is added to this month\'s money.');
+  }
   const inCycle = (t, s, e) => { const d = parseKey(t.date); return d >= s && d <= e; };
 
   function stats(offset = 0) {
@@ -434,6 +488,7 @@ const Money = (() => {
     else entrySheet(it, () => nextInQueue());
   }
 
+  let entryDraft = null;
   function entrySheet(pre = {}, onDone) {
     const existing = pre.id ? M.txns.find(t => t.id === pre.id) : null;
     const d = existing ? clone(existing) : {
@@ -448,6 +503,11 @@ const Money = (() => {
     let remember = !existing;
     const dup = !existing && d.ref ? M.txns.find(t => t.ref && t.ref === d.ref) : null;
     const left = queue.length;
+    // A new entry you closed by accident comes back (kept in memory only, never saved to storage).
+    const blankPre = !existing && !pre.amount && !pre.payee && !pre.image && !pre.goal && !pre.catId && !pre.type;
+    let draftNote = '';
+    if (blankPre && entryDraft && Date.now() - entryDraft.at < 30 * 60000) { Object.assign(d, entryDraft.d); draftNote = `<div class="draftbar"><span>Restored your unsaved entry</span><button class="linkbtn" data-a="dropdraft">Discard draft</button></div>`; }
+    let saved = false;
     const s = sheet(`<h2>${existing ? 'Edit' : pre.src === 'screenshot' ? 'From screenshot' : 'Add'} ${d.type === 'income' ? 'income' : 'expense'}</h2>
       ${pre.image ? `<button class="shot" data-a="img"><img src="${pre.image}" alt="Payment screenshot"><span>${pre.app ? esc(pre.app) + ' · ' : ''}tap to view</span></button>` : ''}
       ${pre.ocrOk ? `<div class="mwarn ok">${ic('scan')}<span>Read from your screenshot. <b>Check the amount, payee and date</b> before saving.</span></div>` : ''}
@@ -457,14 +517,25 @@ const Money = (() => {
       ${pre.status === 'pending' ? `<div class="mwarn">${ic('info')}<span>This payment looks <b>pending</b>.</span></div>` : ''}
       ${dup ? `<div class="mwarn bad">${ic('info')}<span>You already saved this payment on ${esc(dlabel(dup.date))} (${inr(dup.amount)}, ${esc(dup.payee || cat(dup.catId).name)}).</span></div>` : ''}
       <div class="seg" style="background:var(--surface-2)"><button class="${d.type === 'expense' ? 'on' : ''}" data-type="expense">Expense</button><button class="${d.type === 'income' ? 'on' : ''}" data-type="income">Income</button></div>
-      <div class="amt"><span>₹</span><input id="mamt" inputmode="decimal" placeholder="0" value="${d.amount != null ? esc(String(d.amount)) : ''}" aria-label="Amount"></div>
-      <div class="mrow2"><input class="field body" id="mpayee" placeholder="${d.type === 'income' ? 'From (e.g. Employer)' : 'Paid to (e.g. Swiggy)'}" value="${esc(d.payee)}" maxlength="40"><input class="field body" id="mdate" type="date" value="${esc(d.date)}" max="${dkey(addDays(new Date(), 1))}"></div>
+      ${draftNote}
+      <label class="flabel" for="mamt">Amount</label>
+      <div class="amt"><span>₹</span><input id="mamt" inputmode="decimal" placeholder="0" value="${d.amount != null ? esc(String(d.amount)) : ''}" aria-describedby="mamterr"></div>
+      <span class="ferr" id="mamterr" hidden></span>
+      <div class="mrow2"><div><label class="flabel" for="mpayee" id="mpayeel">${d.type === 'income' ? 'From' : 'Paid to'}</label><input class="field body" id="mpayee" placeholder="${d.type === 'income' ? 'e.g. Employer' : 'e.g. Swiggy'}" value="${esc(d.payee)}" maxlength="40"></div><div><label class="flabel" for="mdate">Date</label><input class="field body" id="mdate" type="date" value="${esc(d.date)}" max="${dkey(addDays(new Date(), 1))}"></div></div>
       <div id="mcats"></div>
       <div id="mextra"></div>
-      <input class="field body" id="mnote" placeholder="Note (optional)" value="${esc(d.note || '')}" maxlength="80" style="margin-top:10px">
+      <label class="flabel" for="mnote">Note (optional)</label>
+      <input class="field body" id="mnote" placeholder="e.g. Dinner with Ravi" value="${esc(d.note || '')}" maxlength="80">
       <label class="mremember" id="mrem"><span class="toggle sm ${remember ? 'on' : ''}"></span><span id="mremt"></span></label>
       <div class="btns ${existing ? 'two' : ''}">${existing ? '<button class="btn danger" data-a="del">Delete</button>' : ''}<button class="btn primary" data-a="save">${left ? `Save · ${left} more` : 'Save'}</button></div>`,
-      { onClose: () => { if (onDone) setTimeout(onDone, 80); } });
+      { onClose: () => {
+        if (blankPre && !saved) { const a = num($('#mamt', s.el).value), py = $('#mpayee', s.el).value.trim(), nt = $('#mnote', s.el).value.trim(); entryDraft = a || py || nt ? { at: Date.now(), d: { amount: a || null, payee: py, note: nt, date: $('#mdate', s.el).value || d.date, type: d.type, catId: d.catId } } : null; }
+        if (onDone) setTimeout(onDone, 80); } });
+    // Amount check: runs when you leave the field, clears as soon as you type.
+    const amtEl = $('#mamt', s.el), amtErr = $('#mamterr', s.el), amtBox = amtEl.closest('.amt');
+    const showAmtErr = msg => { amtErr.textContent = msg; amtErr.hidden = !msg; amtBox.classList.toggle('invalid', !!msg); amtEl.setAttribute('aria-invalid', msg ? 'true' : 'false'); };
+    amtEl.addEventListener('blur', () => { const v = num(amtEl.value); showAmtErr(!amtEl.value.trim() ? 'Enter the amount, like 250.' : (!v || v <= 0) ? 'Enter an amount above ₹0, like 250.' : ''); });
+    amtEl.addEventListener('input', () => { if (!amtErr.hidden) showAmtErr(''); });
     const paintCats = () => {
       const box = $('#mcats', s.el);
       if (d.type === 'income') {
@@ -494,7 +565,7 @@ const Money = (() => {
     s.el.addEventListener('input', e => { if (e.target.id === 'mamt' && splitCfg) paintExtra(); if (e.target.id === 'mpayee') { if (!existing && !d.catId) { const g = guessCat(e.target.value, '', d.type); if (g) { d.catId = g; group = cat(g).group; } } paintCats(); } });
     s.el.addEventListener('click', async e => {
       const ty = e.target.closest('[data-type]');
-      if (ty) { d.type = ty.dataset.type; d.catId = d.type === 'income' ? guessCat($('#mpayee', s.el).value, '', 'income') : guessCat($('#mpayee', s.el).value, d.upi, 'expense'); group = d.type === 'income' ? 'income' : (d.catId ? cat(d.catId).group : 'needs'); $$('[data-type]', s.el).forEach(b => b.classList.toggle('on', b === ty)); $('#mpayee', s.el).placeholder = d.type === 'income' ? 'From (e.g. Employer)' : 'Paid to (e.g. Swiggy)'; return paintCats(); }
+      if (ty) { d.type = ty.dataset.type; d.catId = d.type === 'income' ? guessCat($('#mpayee', s.el).value, '', 'income') : guessCat($('#mpayee', s.el).value, d.upi, 'expense'); group = d.type === 'income' ? 'income' : (d.catId ? cat(d.catId).group : 'needs'); $$('[data-type]', s.el).forEach(b => b.classList.toggle('on', b === ty)); $('#mpayee', s.el).placeholder = d.type === 'income' ? 'e.g. Employer' : 'e.g. Swiggy'; $('#mpayeel', s.el).textContent = d.type === 'income' ? 'From' : 'Paid to'; return paintCats(); }
       const g = e.target.closest('[data-g]'); if (g) { group = g.dataset.g; return paintCats(); }
       const c = e.target.closest('[data-cat]'); if (c) { d.catId = c.dataset.cat; return paintCats(); }
       const ac = e.target.closest('[data-acc]'); if (ac) { d.acc = ac.dataset.acc; return paintExtra(); }
@@ -504,17 +575,19 @@ const Money = (() => {
       if (b.dataset.a === 'img') return viewImage(pre.image);
       if (b.dataset.a === 'split') return splitSheet(num($('#mamt', s.el).value), splitCfg && calcSplit(num($('#mamt', s.el).value) || 1, splitCfg), cfg => { splitCfg = cfg; paintExtra(); });
       if (b.dataset.a === 'del') {
-        if (await confirmBox('Delete this entry?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
+        if (await confirmBox(`Delete ${inr(d.amount || 0)} ${d.payee ? (d.type === 'income' ? 'from ' : 'to ') + d.payee : 'for ' + cat(d.catId).name} on ${short(parseKey(d.date))}?`, 'It is removed from your budget and reports.', [{ label: 'Delete entry', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
           M.txns = M.txns.filter(t => t.id !== d.id);
           M.bills.forEach(bl => Object.keys(bl.paid || {}).forEach(k => { if (bl.paid[k] === d.id) delete bl.paid[k]; }));
           save(); s.close(); refresh(); toast('Deleted');
         }
         return;
       }
+      if (b.dataset.a === 'dropdraft') { entryDraft = null; b.closest('.draftbar').remove(); amtEl.value = ''; $('#mpayee', s.el).value = ''; $('#mnote', s.el).value = ''; return; }
       if (b.dataset.a === 'save') {
         const amt = num($('#mamt', s.el).value);
-        if (!amt || amt <= 0) { toast('Enter the amount'); $('#mamt', s.el).focus(); return; }
-        if (!d.catId) { toast('Pick a category'); return; }
+        if (!amt || amt <= 0) { showAmtErr('Enter the amount, like 250.'); amtEl.focus(); amtEl.scrollIntoView({ block: 'center' }); return; }
+        if (!d.catId) { toast('Pick a category below the date to save this.'); $('#mcats', s.el).scrollIntoView({ block: 'center' }); return; }
+        saved = true; entryDraft = null;
         d.amount = Math.round(amt * 100) / 100;
         d.payee = $('#mpayee', s.el).value.trim();
         d.note = $('#mnote', s.el).value.trim();
@@ -562,7 +635,7 @@ const Money = (() => {
     inp.onchange = async () => {
       const all = [...(inp.files || [])];
       const pdf = all.find(f => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
-      if (pdf) { const buf = await pdf.arrayBuffer().catch(() => null); if (buf) importPdf(new Uint8Array(buf)); else toast('Could not open that PDF'); return; }
+      if (pdf) { const buf = await pdf.arrayBuffer().catch(() => null); if (buf) importPdf(new Uint8Array(buf)); else toast('That PDF couldn\'t be opened. Download it again and retry.'); return; }
       const files = all.slice(0, 10);
       if (!files.length) return;
       if (files.length > 1) toast(`Reading ${files.length} screenshots…`);
@@ -614,14 +687,14 @@ const Money = (() => {
   async function unlock() {
     if (!M.lockOn || unlocked) return sealed ? unseal() : true;
     if (M.pin) {
-      if (LK.until > Date.now()) { toast(`Too many wrong PINs. Try again in ${Math.ceil((LK.until - Date.now()) / 1000)} s`); return false; }
+      if (LK.until > Date.now()) { toast(`PIN entry is paused after several tries. Try again in ${Math.ceil((LK.until - Date.now()) / 1000)} s`); return false; }
       const v = await pinPad('Unlock Money', LK.fails ? `Enter your 4-digit PIN · ${Math.max(0, 5 - LK.fails)} tries before a short wait` : 'Enter your 4-digit PIN');
       if (v && (await sha(v)) === M.pin) { LK.fails = 0; LK.until = 0; saveLock(); if (!(await unseal())) return false; unlocked = true; await upgradeEnc(); return true; }
       if (v) {
         LK.fails = (LK.fails || 0) + 1;
         // After 5 wrong tries: wait 30 s, doubling each time, up to 15 minutes.
         if (LK.fails >= 5) LK.until = Date.now() + Math.min(15 * 60000, 30000 * Math.pow(2, LK.fails - 5));
-        saveLock(); toast(LK.until > Date.now() ? `Wrong PIN. Locked for ${Math.round((LK.until - Date.now()) / 1000)} s` : 'Wrong PIN');
+        saveLock(); toast(LK.until > Date.now() ? `That PIN didn't match. PIN entry is paused for ${Math.round((LK.until - Date.now()) / 1000)} s.` : 'That PIN didn\'t match. Try again.');
       }
       return false;
     }
@@ -744,13 +817,14 @@ const Money = (() => {
     const recent = st.tx.slice().sort((a, b) => (b.date.localeCompare(a.date)) || (b.at - a.at)).slice(0, 8);
     const bills = M.bills.map(b => ({ b, nd: nextDue(b) })).filter(x => x.nd).sort((x, y) => x.nd.due - y.nd.due).slice(0, 3);
     const pct = st.budget ? Math.min(100, st.total / st.budget * 100) : 0;
-    view.innerHTML = topbarM('Money', `<button class="round-btn" data-a="hideamt" aria-label="${M.hide ? 'Show amounts' : 'Hide amounts'}">${ic(M.hide ? 'lock' : 'unlock')}</button>`) + `<div class="page">
+    view.innerHTML = topbarM('Money, made clear.', `<button class="round-btn" data-a="hideamt" aria-label="${M.hide ? 'Show amounts' : 'Hide amounts'}">${ic(M.hide ? 'lock' : 'unlock')}</button>`) + `<div class="page">
       ${monthBar(st.s)}
+      ${M.salaryMode && st.current && salaryFor(st.s) == null ? `<button class="nudge salnudge" data-a="salary">${ic('wallet')}<span><b>Add your ${esc(periodName(st.s))} salary.</b> It changes with leaves, so enter what you actually got. Until then the usual ${inr(M.budget)} is used.</span></button>` : ''}
       <div class="mhero">
         <div class="k">${st.current ? `${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left · starts from ₹0 each ${pWord()}` : `Finished · ${st.tx.length} entr${st.tx.length === 1 ? 'y' : 'ies'}`}</div>
         <div class="mlabel">${st.current ? 'Budget left' : st.left >= 0 ? 'You stayed under budget by' : 'You went over budget by'}${st.current && M.accounts && M.accounts.length ? ' (not your bank balance)' : ''}</div>
         <div class="big ${st.left < 0 ? 'neg' : ''}">${inr(st.left)}</div>
-        <div class="sub2">${st.left >= 0 ? 'left' : 'over'} of ${inr(st.budget)} budget · ${Math.round(pct)}% used</div>
+        <div class="sub2">${st.left >= 0 ? 'left' : 'over'} of ${inr(st.budget)} ${M.salaryMode && salaryFor(st.s) != null ? `this ${pWord()}'s money` : 'budget'} · ${Math.round(pct)}% used</div>
         ${stackBar(st)}
         <div class="mlegend">${GKEYS.map(g => `<span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name} ${inr(st.spent[g])}</span>`).join('')}</div>
         ${st.current ? `<div class="mhero-row">
@@ -759,7 +833,7 @@ const Money = (() => {
         </div>` : `<div class="mhero-row"><div class="safe"><span>Spent</span><b>${inr(st.total)}</b><small>${st.income ? `Income ${inr(st.income)}` : 'No income recorded'}</small></div></div>`}
         ${st.current && st.reserve > 0 ? `<p class="hint" style="margin:8px 0 0">Keeps ${inr(st.reserve)} aside for ${[st.billNW ? 'upcoming bills' : '', st.savingsLeft ? 'your savings goal' : ''].filter(Boolean).join(' and ')}.</p>` : ''}
       </div>
-      <div class="mactions"><button class="btn primary" data-a="add">${ic('plus')}Add expense</button><button class="btn" data-a="scan">${ic('scan')}Scan / PDF</button></div>
+      <div class="mactions one"><button class="btn" data-a="scan">${ic('scan')}Scan a payment screenshot or import a PDF</button></div>
       ${st.current ? reportCardHtml() : `<button class="nudge" data-a="report">${ic('pie')}<span><b>${esc(periodName(st.s))} report.</b> Plan vs actual and top categories.</span></button>`}
       ${st.current ? alertsHtml(st) : ''}
       ${accountsHtml()}
@@ -795,10 +869,10 @@ const Money = (() => {
     const total = tx.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0);
     view.innerHTML = topbarM('Transactions') + `<div class="page">
       ${monthBar(s)}
-      <input class="search" id="txq" placeholder="Search payee, category or note" value="${esc(txQuery)}">
+      <input class="search" id="txq" type="search" aria-label="Search transactions" placeholder="Search payee, category or note" value="${esc(txQuery)}">
       <div class="chips" style="margin-bottom:12px">${[['all', 'All'], ['needs', 'Needs'], ['wants', 'Wants'], ['savings', 'Savings'], ['income', 'Income']].map(([k, n]) => `<button class="chip small ${txFilter === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
       <p class="hint" style="margin:0 2px 10px">${tx.length} entr${tx.length === 1 ? 'y' : 'ies'}${total ? ` · ${inr(total)} spent` : ''}</p>
-      ${Object.entries(byDay).map(([k, list]) => `<div class="sect"><span>${esc(dlabel(k))}</span><span style="text-transform:none;letter-spacing:0">${inr(list.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0))}</span></div><div class="block" style="padding:0">${list.map(txRow).join('')}</div>`).join('') || `<div class="empty">Nothing here yet.</div>`}
+      ${Object.entries(byDay).map(([k, list]) => `<div class="sect"><span>${esc(dlabel(k))}</span><span style="text-transform:none;letter-spacing:0">${inr(list.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0))}</span></div><div class="block" style="padding:0">${list.map(txRow).join('')}</div>`).join('') || (txFilter !== 'all' || txQuery ? `<div class="empty"><b>No matching entries</b>Nothing in ${esc(periodName(s))} matches this search or filter.<div class="btns"><button class="btn" data-a="txclear">Clear search and filters</button></div></div>` : `<div class="empty"><b>No entries in ${esc(periodName(s))}</b>Add what you spend or earn to see where your money goes.<div class="btns"><button class="btn primary" data-a="add">${ic('plus')}Add expense</button></div></div>`)}
     </div>`;
     const q = $('#txq', view);
     q.addEventListener('input', () => { txQuery = q.value; const pos = q.selectionStart; txnsView(); const n = $('#txq', view); n.focus(); n.setSelectionRange(pos, pos); });
@@ -808,8 +882,11 @@ const Money = (() => {
     const st = stats(mOff);
     view.innerHTML = topbarM('Budget & bills') + `<div class="page">${monthBar(st.s)}
       <div class="block">
-        <button class="set-row" data-a="cbud"><span class="st"><div class="t">Budget for ${esc(periodName(st.s))}</div><div class="s">${isMonthly() ? 'Only this month' : `${short(st.s)} – ${short(st.e)}`}</div></span><span class="val">${inr(st.budget)}</span>${ic('chevR', 'chev')}</button>
-        <button class="set-row" data-a="dbud"><span class="st"><div class="t">Default monthly budget</div><div class="s">Used for every new ${pWord()}</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
+        ${M.salaryMode ? `<button class="set-row" data-a="salary"><span class="st"><div class="t">Salary for ${esc(periodName(st.s))}</div><div class="s">${salaryFor(st.s) != null ? `What you received${(M.salaries[dkey(st.s)].extra || []).length ? ' plus money you added' : ''}. Expenses are taken from this.` : 'Not entered yet. Tap to add what you received.'}</div></span><span class="val">${salaryFor(st.s) != null ? inr(salaryFor(st.s)) : 'Add'}</span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="extramoney"><span class="st"><div class="t">Add more money</div><div class="s">Bonus, leave encashment or other money for this ${pWord()}</div></span>${ic('plus', 'chev')}</button>` : ''}
+        <button class="set-row" data-a="salmode"><span class="st"><div class="t">Budget comes from salary</div><div class="s">${M.salaryMode ? 'On. Each month\'s salary is that month\'s money.' : 'Off. Every month uses the fixed budget below.'}</div></span><span class="toggle ${M.salaryMode ? 'on' : ''}"></span></button>
+        ${M.salaryMode && salaryFor(st.s) != null ? '' : `<button class="set-row" data-a="cbud"><span class="st"><div class="t">Budget for ${esc(periodName(st.s))}</div><div class="s">${isMonthly() ? 'Only this month' : `${short(st.s)} – ${short(st.e)}`}</div></span><span class="val">${inr(st.budget)}</span>${ic('chevR', 'chev')}</button>`}
+        <button class="set-row" data-a="dbud"><span class="st"><div class="t">${M.salaryMode ? 'Usual salary' : 'Default monthly budget'}</div><div class="s">${M.salaryMode ? `Used until you enter a ${pWord()}'s salary` : `Used for every new ${pWord()}`}</div></span><span class="val">${inr(M.budget)}</span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="day"><span class="st"><div class="t">Budget period</div><div class="s">${isMonthly() ? 'Calendar month (1st to last day)' : `Salary cycle from day ${M.cycleDay}`}</div></span><span class="val">${isMonthly() ? 'Month' : M.cycleDay}</span>${ic('chevR', 'chev')}</button>
       </div>
       <div class="sect">Split</div>
@@ -874,7 +951,7 @@ const Money = (() => {
       <div class="sect">Where it went</div>
       <div class="block" style="padding:6px 0">${top.map(([id, v]) => { const c = cat(id); return `<div class="catrow"><span class="ce">${c.icon}</span><span class="cn">${esc(c.name)}<i style="width:${(v / maxC * 100).toFixed(1)}%;background:${GROUPS[c.group || 'wants'].color}"></i></span><span class="cv">${inr(v)}<small>${st.total ? Math.round(v / st.total * 100) : 0}%</small></span></div>`; }).join('')}
         ${otherV ? `<div class="catrow"><span class="ce">…</span><span class="cn">Everything else<i style="width:${(otherV / maxC * 100).toFixed(1)}%;background:var(--faint)"></i></span><span class="cv">${inr(otherV)}</span></div>` : ''}
-        ${top.length ? '' : '<div class="empty" style="padding:16px">No spending in this ${pWord()}.</div>'}</div>
+        ${top.length ? '' : `<div class="empty" style="padding:16px">No spending in this ${pWord()}.</div>`}</div>
       <div class="mlegend">${GKEYS.map(g => `<span><i style="background:${GROUPS[g].color}"></i>${GROUPS[g].name}</span>`).join('')}</div>
       <div class="sect">Last 6 ${pWord()}s</div>
       <div class="chart-card"><div class="hbars" style="grid-template-columns:repeat(${hist.length}, 1fr)">${hist.map(h => `<div class="hb" title="${short(h.s)}: ${inr(h.total)} of ${inr(h.budget)}"><em>${h.total >= 1000 ? Math.round(h.total / 1000) + 'k' : Math.round(h.total)}</em><span class="col"><i style="height:${(h.total / maxH * 100).toFixed(1)}%;${h.total > h.budget ? 'background:var(--danger)' : ''}"></i><b style="bottom:${(h.budget / maxH * 100).toFixed(1)}%"></b></span><span class="hl">${esc(short(h.s))}</span></div>`).join('')}</div>
@@ -1005,7 +1082,7 @@ const Money = (() => {
       const bc = t.closest('[data-bc]'); if (bc) { b.catId = bc.dataset.bc; $$('[data-bc]', s.el).forEach(x => x.classList.toggle('on', x === bc)); return; }
       const a = t.closest('[data-a]'); if (!a) return;
       if (a.dataset.a === 'rem') { b.remind = b.remind === false; $('.toggle', a).classList.toggle('on', b.remind !== false); return; }
-      if (a.dataset.a === 'del') { if (await confirmBox('Delete this bill?', 'Past payments stay in your transactions.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { M.bills = M.bills.filter(x => x.id !== b.id); save(); s.close(); scheduleBillReminders(); refresh(); } return; }
+      if (a.dataset.a === 'del') { if (await confirmBox(`Delete bill "${b.name || 'Bill'}"?`, 'Its reminders stop. Past payments stay in your transactions.', [{ label: 'Delete bill', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { M.bills = M.bills.filter(x => x.id !== b.id); save(); s.close(); scheduleBillReminders(); refresh(); } return; }
       if (a.dataset.a === 'ok') {
         b.name = $('#bn', s.el).value.trim(); b.amount = num($('#ba', s.el).value);
         if (!b.name) { toast('Give the bill a name'); return; }
@@ -1103,7 +1180,7 @@ const Money = (() => {
       if (at) { a.type = at.dataset.at; $$('[data-at]', s.el).forEach(x => x.classList.toggle('on', x === at)); $('#alab', s.el).textContent = a.type === 'card' ? 'Amount you owe right now' : 'Balance right now'; if (!$('#an', s.el).value && a.type === 'cash') $('#an', s.el).value = 'Cash'; return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'del') {
-        if (await confirmBox(`Delete ${a.name}?`, 'Your entries stay. They just stop moving a balance.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
+        if (await confirmBox(`Delete ${a.name}?`, 'Your entries stay. They just stop moving a balance.', [{ label: 'Delete account', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
           M.accounts = M.accounts.filter(x => x.id !== a.id); if (M.lastAcc === a.id) M.lastAcc = null; save(); s.close(); refresh();
         }
         return;
@@ -1125,7 +1202,15 @@ const Money = (() => {
     return out.sort((a, b) => b.date.localeCompare(a.date) || b.at - a.at);
   }
   function transferSheet() {
-    if (M.accounts.length < 2) { toast('Add at least two accounts first'); return accountSheet(null); }
+    if (M.accounts.length < 2) {
+      // Moving money needs a "from" and a "to" account. Explain that first instead of a passing toast.
+      const need = 2 - M.accounts.length;
+      const s0 = sheet(`<h2>Move money between accounts</h2><p class="sub">Moving money needs two accounts, like your bank and your cash wallet. You have ${M.accounts.length ? 'one' : 'none'} yet.</p>
+        <div class="block" style="padding:0">${M.accounts.map(a => `<div class="mini-row"><span>${esc(a.name)}</span><b>${inr(balance(a))}</b></div>`).join('') || '<div class="empty" style="padding:16px">No accounts yet.</div>'}</div>
+        <div class="btns"><button class="btn primary" data-a="addacc">${ic('plus')}Add ${need === 2 ? 'your first' : 'another'} account</button></div>`);
+      s0.el.addEventListener('click', e => { if (e.target.closest('[data-a="addacc"]')) { s0.close(); setTimeout(() => accountSheet(null), 120); } });
+      return;
+    }
     const x = { from: (M.accounts.find(a => a.type === 'bank') || M.accounts[0]).id, to: (M.accounts.find(a => a.type === 'cash') || M.accounts[1]).id };
     const s = sheet(`<h2>Move money</h2><p class="sub">ATM cash, paying a card bill or moving between banks. This does not count as spending.</p>
       <div class="amt"><span>₹</span><input id="tamt" inputmode="decimal" placeholder="0"></div>
@@ -1187,7 +1272,7 @@ const Money = (() => {
       const em = e.target.closest('[data-em]'); if (em) { g.icon = em.dataset.em; $$('[data-em]', s.el).forEach(x => x.classList.toggle('on', x === em)); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'del') {
-        if (await confirmBox('Delete this goal?', 'Payments you made towards it stay in your transactions.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
+        if (await confirmBox(`Delete goal "${g.name || 'Goal'}"?`, 'Payments made towards it stay in your transactions.', [{ label: 'Delete goal', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) {
           M.goals = M.goals.filter(x => x.id !== g.id); M.txns.forEach(t => { if (t.goal === g.id) delete t.goal; }); save(); s.close(); refresh();
         }
         return;
@@ -1461,7 +1546,7 @@ const Money = (() => {
     for (let tries = 0; tries < 4; tries++) {
       try { return await pdfLines(bytes.slice(), password); } catch (e) {
         if (!e || e.name !== 'PasswordException') throw e;
-        password = await promptText(tries ? 'Wrong password. Try again' : 'This PDF has a password', { placeholder: 'PDF password', ok: 'Open' });
+        password = await promptText(tries ? 'That password didn\'t open the PDF. Try again' : 'This PDF has a password', { placeholder: 'PDF password', ok: 'Open' });
         if (!password) return null;
       }
     }
@@ -1535,7 +1620,7 @@ const Money = (() => {
     if (!M.setup) { toast('Set up Money first, then import the statement'); return setupView(); }
     toast('Reading statement…');
     let lines;
-    try { lines = await readPdf(bytes); } catch (e) { toast(String(e && e.message || '').includes('missing') ? 'PDF reader is missing from this build' : 'Could not read this PDF'); return; }
+    try { lines = await readPdf(bytes); } catch (e) { toast(String(e && e.message || '').includes('missing') ? 'PDF reading is missing from this build. Install the latest Vyora APK.' : 'This PDF couldn\'t be read. Try a screenshot of the statement instead.'); return; }
     if (!lines) return;
     const rows = parseStatement(lines);
     if (!rows.length) { toast("Couldn't find payments in this PDF. PhonePe statements work best."); return; }
@@ -1718,7 +1803,7 @@ const Money = (() => {
     if (M.lockOn && !unlocked) return lockView();
     ({ home: homeView, txns: txnsView, budget: budgetView, insights: insightsView, settings: settingsView })[tab]();
   }
-  function refresh() { if (S.mode === 'money' && !$('#layer > .screen')) { const t = view.scrollTop; renderTab(mTab); view.scrollTop = t; } }
+  function refresh() { if ($('#layer > .screen')) return; if (S.mode === 'money' && currentTab.startsWith('m-')) { const t = view.scrollTop; renderTab(mTab); view.scrollTop = t; } else if (currentTab === 'home') rerenderKeepScroll(); try { paintCtxAct(); } catch (e) { /* shell not ready */ } }
   async function handleClick(e) {
     const t = e.target;
     if (t.closest('[data-a="hideamt"]')) { M.hide = !M.hide; save(); refresh(); toast(M.hide ? 'Amounts hidden' : 'Amounts shown'); return; }
@@ -1750,6 +1835,10 @@ const Money = (() => {
       case 'add': return M.setup ? entrySheet({}) : setupView();
       case 'scan': return M.setup ? pickScreenshots() : setupView();
       case 'pdf': return M.setup ? pickScreenshots(true) : setupView();
+      case 'txclear': txFilter = 'all'; txQuery = ''; return refresh();
+      case 'salary': return salarySheet(mOff);
+      case 'extramoney': return extraMoneySheet(mOff);
+      case 'salmode': M.salaryMode = !M.salaryMode; save(); refresh(); return toast(M.salaryMode ? 'Each month\'s salary is now that month\'s money' : 'Every month uses the fixed budget');
       case 'cbud': { const st = stats(mOff); return amountSheet(`Budget for ${periodName(st.s)}`, st.budget, v => { M.budgets[dkey(st.s)] = v; save(); refresh(); }, `${short(st.s)} – ${short(st.e)} only`); }
       case 'dbud': return amountSheet('Monthly budget', M.budget, v => { M.budget = v; save(); refresh(); }, `Used for each new ${pWord()}`);
       case 'day': return dayPicker();

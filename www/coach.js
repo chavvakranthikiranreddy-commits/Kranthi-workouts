@@ -161,7 +161,7 @@ const Coach = (() => {
         case 'more': return menu(w.name, [
           { icon: 'share', label: 'Share with a friend', run: () => share(w) },
           { icon: 'copy', label: w.tpl ? 'Save to My workouts' : 'Duplicate', run: () => { const c = copyOf(w); if (!w.tpl) c.name = w.name + ' copy'; mine.unshift(c); saveMine(); toast('Saved to My workouts'); } },
-          ...(w.tpl ? [] : [{ icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox('Delete workout?', `"${w.name}" will be removed.`, [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { mine = mine.filter(x => x.id !== w.id); saveMine(); close(); } } }]),
+          ...(w.tpl ? [] : [{ icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox(`Delete workout "${w.name}"?`, 'Workouts you already did with it stay in your history.', [{ label: 'Delete workout', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { mine = mine.filter(x => x.id !== w.id); saveMine(); close(); } } }]),
         ]);
       }
     });
@@ -281,7 +281,7 @@ const Coach = (() => {
         ${single1 ? stepper('xrest', 'Rest after each set', b.rest, ' s', 15, 0, 600) : ''}
       </div>
       ${sg ? `<p class="hint">${esc(sg.text)}${sg.tip ? ' · <b>' + esc(sg.tip) + '</b>' : ''}</p>` : '<p class="hint">Leave weight at 0 for bodyweight moves.</p>'}
-      <div class="btns two"><button class="btn" data-a="how">How to</button><button class="btn primary" data-a="ok">Done</button></div>`);
+      <div class="btns two"><button class="btn" data-a="how">Show how-to</button><button class="btn primary" data-a="ok">Done</button></div>`);
     Moves.mount(s.el); wireSteppers(s.el, (id, v) => v + (id === 'xt' || id === 'xrest' ? ' s' : ''));
     s.el.addEventListener('click', e => {
       const md = e.target.closest('[data-md]'); if (md) { mode = md.dataset.md; $$('[data-md]', s.el).forEach(x => x.classList.toggle('on', x === md)); $('#rp', s.el).hidden = mode !== 'reps'; $('#tm', s.el).hidden = mode !== 'time'; return; }
@@ -629,7 +629,7 @@ const Coach = (() => {
   async function offerResume() {
     const p = pendingSession(); if (!p || PL) return;
     const n = Object.values(p.done || {}).reduce((a, x) => a + (x || []).filter(y => y && y.r > 0).length, 0);
-    const v = await confirmBox('Continue your workout?', `${p.w.name} · ${n} set${n === 1 ? '' : 's'} logged so far.`, [{ label: 'Continue', cls: 'primary', value: 'go' }, { label: 'Save what I did', cls: 'ghost', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }]);
+    const v = await confirmBox('Resume your workout?', `${p.w.name} · ${n} set${n === 1 ? '' : 's'} logged so far.`, [{ label: 'Resume workout', cls: 'primary', value: 'go' }, { label: 'Save what I did', cls: 'ghost', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }]);
     if (v === 'go') return play(p.w, p);
     if (v === 'save') return play(p.w, Object.assign({}, p, { autoFinish: true }));
     if (v === 'drop') DB.del('coachsession');

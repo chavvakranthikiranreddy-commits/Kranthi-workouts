@@ -80,7 +80,7 @@ const Life = (() => {
     if (!isNative) return `<div class="mwarn">${ic('info')}<span>Reminders pop up in the installed app.</span></div>`;
     if (st.denied) return `<button class="mwarn bad" data-a="notifperm">${ic('bell')}<span><b>Notifications are off for Vyora.</b> Reminders won't appear. Tap to allow them.</span></button>`;
     if (st.error) return `<div class="mwarn bad">${ic('info')}<span>Reminders couldn't be scheduled (${esc(st.error)}). Try again, or restart the phone.</span></div>`;
-    return `<div class="nstatus">${ic('check')}<span>${st.total ? `${st.scheduled} reminder alerts scheduled${st.total > st.scheduled ? ` · <b class="badt">${st.total - st.scheduled} later ones will be added as the soonest ones pass</b>` : ''}` : 'Notifications allowed'} · Battery saver can delay alerts on some phones.</span><button class="btn sm" data-a="notiftest">Test</button></div>`;
+    return `<div class="nstatus">${ic('check')}<span>${st.total ? `${st.scheduled} reminder alerts scheduled${st.total > st.scheduled ? ` · <b class="badt">${st.total - st.scheduled} later ones will be added as the soonest ones pass</b>` : ''}` : 'Notifications allowed'} · Battery saver can delay alerts on some phones.</span><button class="btn sm" data-a="notiftest">Send test</button></div>`;
   }
   async function askNotif() { try { if (typeof BG !== 'undefined') await BG.ensurePermission(true); } catch (e) { /* ignore */ } }
   function nextOccur(r) {
@@ -109,23 +109,23 @@ const Life = (() => {
   /* ---------- Home ---------- */
   const WX = { 0: ['☀️', 'Clear'], 1: ['🌤️', 'Mostly clear'], 2: ['⛅', 'Partly cloudy'], 3: ['☁️', 'Cloudy'], 45: ['🌫️', 'Fog'], 48: ['🌫️', 'Fog'], 51: ['🌦️', 'Light drizzle'], 53: ['🌦️', 'Drizzle'], 55: ['🌧️', 'Heavy drizzle'], 61: ['🌦️', 'Light rain'], 63: ['🌧️', 'Rain'], 65: ['🌧️', 'Heavy rain'], 66: ['🌧️', 'Freezing rain'], 67: ['🌧️', 'Freezing rain'], 71: ['🌨️', 'Light snow'], 73: ['🌨️', 'Snow'], 75: ['❄️', 'Heavy snow'], 77: ['🌨️', 'Snow grains'], 80: ['🌦️', 'Showers'], 81: ['🌧️', 'Showers'], 82: ['⛈️', 'Heavy showers'], 85: ['🌨️', 'Snow showers'], 86: ['🌨️', 'Snow showers'], 95: ['⛈️', 'Thunderstorm'], 96: ['⛈️', 'Storm with hail'], 99: ['⛈️', 'Storm with hail'] };
   const wx = c => WX[c] || ['🌡️', 'Weather'];
-  function agenda() {
+  function agenda(limit) {
     const k = dkey(new Date()), now = new Date(), items = [];
     L.reminders.filter(r => r.on).forEach(r => {
       const due = r.repeat === 'daily' || (r.repeat === 'weekly' && r.days[now.getDay()]) || (dkey(nextOccur(r)) === k);
       if (due) items.push({ t: r.time, html: `<div class="agi"><span class="agt">${t12(r.time)}</span><span class="agx">🔔 ${esc(r.title)}</span></div>` });
     });
     L.tasks.filter(t => !t.done && t.due && t.due <= k).forEach(t => items.push({ t: t.time || '23:59', html: `<div class="agi">${checkBtn(false, `data-tdone="${t.id}"`)}<span class="agx">${esc(t.title)}${t.due < k ? ' <em class="badt">overdue</em>' : ''}</span>${t.time ? `<span class="agt">${t12(t.time)}</span>` : ''}</div>` }));
-    L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const st = ((L.medLog[k] || {})[md.id] || {})[i]; items.push({ t: tm, html: `<div class="agi"><span class="agt">${t12(tm)}</span><span class="agx">💊 ${esc(md.name)}${md.dose ? ` · ${esc(md.dose)}` : ''}</span>${st ? `<span class="agok ${st}">${st === 'taken' ? 'Taken ✓' : 'Skipped'}</span>` : `<button class="btn sm" data-med="${md.id}:${i}">Taken</button>`}</div>` }); }));
+    L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const st = ((L.medLog[k] || {})[md.id] || {})[i]; items.push({ t: tm, html: `<div class="agi"><span class="agt">${t12(tm)}</span><span class="agx">💊 ${esc(md.name)}${md.dose ? ` · ${esc(md.dose)}` : ''}</span>${st ? `<span class="agok ${st}">${st === 'taken' ? 'Taken ✓' : 'Skipped'}</span>` : `<button class="btn sm" data-med="${md.id}:${i}">Mark taken</button>`}</div>` }); }));
     (billsSafe(0) || []).forEach(b => items.push({ t: '00:00', html: billRow(b) }));
-    return items.sort((a, b) => a.t.localeCompare(b.t)).map(x => x.html).join('');
+    return items.sort((a, b) => a.t.localeCompare(b.t)).slice(0, limit || 99).map(x => x.html).join('');
   }
   // Money bills on the Life side (hidden while Money is locked).
   function billsSafe(days) { try { return typeof Money !== 'undefined' && Money.billsDue ? Money.billsDue(days) : null; } catch (e) { return null; } }
   function billRow(b) {
     const days = Math.round((b.due - today0()) / 864e5);
     const when = b.overdue ? '<em class="badt">overdue</em>' : days === 0 ? 'due today' : days === 1 ? 'due tomorrow' : `in ${days} days`;
-    return `<div class="agi"><span class="agt">₹${Math.round(b.amount || 0).toLocaleString('en-IN')}</span><span class="agx">🧾 ${esc(b.name)} · ${when}</span><button class="btn sm" data-paybill="${b.id}|${dkey(b.due)}">Paid</button></div>`;
+    return `<div class="agi"><span class="agt">₹${Math.round(b.amount || 0).toLocaleString('en-IN')}</span><span class="agx">🧾 ${esc(b.name)} · ${when}</span><button class="btn sm" data-paybill="${b.id}|${dkey(b.due)}">Mark paid</button></div>`;
   }
   function habitsMini() {
     if (!L.habits.length) return '';
@@ -153,7 +153,7 @@ const Life = (() => {
     const ev = upcomingEvents(14).slice(0, 3);
     const w = L.weather && L.weather.data;
     view.innerHTML = `<div class="page life" style="padding-top:12px">
-      <div class="hello2"><div><div class="hi">${h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${S.name ? ', ' + esc(S.name) : ''}</div><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
+      <div class="hello2"><div><div class="hi">${h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${S.name ? ', ' + esc(S.name) : ''}</div><h1 class="ptitle">Find your rhythm.</h1><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
         <button class="lclock" data-go="clock">${ic('clock')}<b>${nextA ? t12(nextA.hm) : 'No alarm'}</b></button></div>
       <div class="lhero"><button class="lvoice" data-a="voice">${ic('mic')}<span><b>Speak to add</b><small>“Remind me to pay rent on the 5th”</small></span></button><button class="lbrief" data-a="brief">${ic('sun')}<span><b>${h < 12 ? 'Morning' : 'Day'} briefing</b><small>Hear your day</small></span></button></div>
       ${w ? `<button class="wxcard" data-tool="weather"><span class="wxi">${wx(w.current.weather_code)[0]}</span><span class="wxt"><b>${Math.round(w.current.temperature_2m)}°</b><span>${esc(wx(w.current.weather_code)[1])} · ${esc(L.weather.name)}</span><small>H ${Math.round(w.daily.temperature_2m_max[0])}° · L ${Math.round(w.daily.temperature_2m_min[0])}°${w.daily.precipitation_probability_max ? ` · ${w.daily.precipitation_probability_max[0]}% rain` : ''}</small></span>${ic('chevR', 'chev')}</button>`
@@ -176,8 +176,8 @@ const Life = (() => {
     const q = noteQuery.toLowerCase();
     const list = L.notes.filter(n => !q || (n.title + ' ' + n.body + ' ' + (n.items || []).map(i => i.t).join(' ')).toLowerCase().includes(q)).sort((a, b) => (b.pin ? 1 : 0) - (a.pin ? 1 : 0) || b.at - a.at);
     view.innerHTML = topbar('Notes') + `<div class="page">
-      <input class="search" id="nq" placeholder="Search notes" value="${esc(noteQuery)}">
-      <div class="qrow"><button class="btn sm" data-add="note">${ic('note')}New note</button><button class="btn sm" data-add="list">${ic('list')}Checklist</button></div>
+      <input class="search" id="nq" type="search" aria-label="Search notes" placeholder="Search notes" value="${esc(noteQuery)}">
+      <div class="qrow"><button class="btn sm" data-add="note">${ic('note')}Write a note</button><button class="btn sm" data-add="list">${ic('list')}Make a checklist</button></div>
       <div class="ngrid">${list.map(n => { const items = n.items || []; const done = items.filter(i => i.d).length; return `<button class="ncard" data-note="${n.id}" style="${n.color ? `--nc:${n.color}` : ''}">${n.pin ? `<span class="npin">${ic('pin')}</span>` : ''}${n.title ? `<b>${esc(n.title)}</b>` : ''}
         ${n.type === 'list' ? `<span class="nitems">${items.slice(0, 5).map(i => `<span class="${i.d ? 'd' : ''}">${i.d ? '☑' : '☐'} ${esc(i.t)}</span>`).join('')}</span><small>${done}/${items.length} done</small>` : `<span class="nbody">${esc((n.body || '').slice(0, 160))}</span>`}
         ${n.remind ? `<small class="nrem">🔔 ${esc(dayName(n.remind.date))} ${t12(n.remind.time)}</small>` : ''}</button>`; }).join('') || `<div class="empty" style="grid-column:1/-1"><b>${q ? 'No matching notes' : 'No notes yet'}</b>${q ? '' : 'Write your first note or checklist above.'}</div>`}</div>
@@ -230,7 +230,7 @@ const Life = (() => {
         { icon: 'list', label: n.type === 'list' ? 'Turn into a text note' : 'Turn into a checklist', run: () => { read(); if (n.type === 'list') { n.body = n.items.map(i => (i.d ? '✓ ' : '• ') + i.t).join('\n'); n.type = 'text'; } else { n.items = n.body.split('\n').map(x => x.replace(/^[•\-✓*]\s*/, '').trim()).filter(Boolean).map(t => ({ t, d: false })); n.type = 'list'; } $('h1', scr).textContent = n.type === 'list' ? 'Checklist' : 'Note'; paint(); } },
         { icon: 'share', label: 'Share', run: async () => { read(); const text = (n.title ? n.title + '\n' : '') + (n.type === 'list' ? n.items.map(i => (i.d ? '✓ ' : '• ') + i.t).join('\n') : n.body); try { if (P.Share) await P.Share.share({ text }); else if (navigator.share) await navigator.share({ text }); else { await navigator.clipboard.writeText(text); toast('Copied'); } } catch (err) { /* cancelled */ } } },
         { icon: 'copy', label: 'Duplicate', run: () => { read(); const c = clone(n); c.id = uid(); c.title = (n.title || 'Note') + ' copy'; c.remind = null; L.notes.unshift(c); save(); toast('Duplicated'); } },
-        { icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox('Delete this note?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.notes = L.notes.filter(x => x.id !== n.id); L.reminders = L.reminders.filter(r => r.note_id !== n.id); save(); reschedule(); unback(); scr.remove(); refresh(); } } },
+        { icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox(`Delete ${n.type === 'list' ? 'checklist' : 'note'} "${(n.title || (n.type === 'list' ? (n.items[0] || {}).t : n.body) || 'Untitled').slice(0, 40)}"?`, '', [{ label: n.type === 'list' ? 'Delete checklist' : 'Delete note', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.notes = L.notes.filter(x => x.id !== n.id); L.reminders = L.reminders.filter(r => r.note_id !== n.id); save(); reschedule(); unback(); scr.remove(); refresh(); } } },
       ]);
     });
   }
@@ -239,7 +239,7 @@ const Life = (() => {
     const v = cur || { date: dkey(new Date()), time: (() => { const d = new Date(Date.now() + 3600e3); return `${pad(d.getHours())}:00`; })() };
     const s = sheet(`<h2>Remind me</h2>
       <div class="presets" style="justify-content:flex-start">${[['Later today', 0, null], ['Tomorrow 9 AM', 1, '09:00'], ['This weekend', ((6 - new Date().getDay()) + 7) % 7 || 7, '10:00'], ['Next week', 7, '09:00']].map(([n, dd, tm], i) => `<button class="chip small" data-p="${i}" data-dd="${dd}" data-tm="${tm || ''}">${n}</button>`).join('')}</div>
-      <div class="mrow2 eq"><input class="field body" type="date" id="wd" value="${v.date}"><input class="field body" type="time" id="wt" value="${v.time}"></div>
+      <div class="mrow2 eq"><div><label class="flabel" for="wd">Date</label><input class="field body" type="date" id="wd" value="${v.date}"></div><div><label class="flabel" for="wt">Time</label><input class="field body" type="time" id="wt" value="${v.time}"></div></div>
       <div class="btns ${allowClear && cur ? 'two' : ''}">${allowClear && cur ? '<button class="btn" data-a="clr">Remove</button>' : ''}<button class="btn primary" data-a="ok">Set</button></div>`);
     s.el.addEventListener('click', e => {
       const p = e.target.closest('[data-p]'); if (p) { $('#wd', s.el).value = dkey(addDays(today0(), +p.dataset.dd)); $('#wt', s.el).value = p.dataset.tm || (() => { const d = new Date(Date.now() + 3 * 3600e3); return `${pad(d.getHours())}:00`; })(); return; }
@@ -258,7 +258,7 @@ const Life = (() => {
     if (taskSeg === 'todo') {
       const open = L.tasks.filter(t => !t.done), done = L.tasks.filter(t => t.done).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0)).slice(0, 20);
       const grp = (title, list) => list.length ? `<div class="sect">${title}</div><div class="block" style="padding:0">${list.map(taskRow).join('')}</div>` : '';
-      body = `<div class="qadd"><input class="field body" id="tq" placeholder="Add a task…" enterkeyhint="done"><button class="round-btn" data-a="tdate" aria-label="Due date">${ic('calendar')}</button><button class="round-btn accent" data-a="tadd" aria-label="Add">${ic('plus')}</button></div><p class="hint" id="tdue"></p>
+      body = `<label class="flabel" for="tq" style="margin-top:0">New task</label><div class="qadd"><input class="field body" id="tq" placeholder="e.g. Pay electricity bill" enterkeyhint="done"><button class="round-btn" data-a="tdate" aria-label="Due date">${ic('calendar')}</button><button class="round-btn accent" data-a="tadd" aria-label="Add">${ic('plus')}</button></div><p class="hint" id="tdue"></p>
         ${grp('Overdue', open.filter(t => t.due && t.due < k))}${grp('Today', open.filter(t => t.due === k))}${grp('Upcoming', open.filter(t => t.due && t.due > k).sort((a, b) => a.due.localeCompare(b.due)))}${grp('Any time', open.filter(t => !t.due))}
         ${!open.length ? '<div class="empty"><b>All clear</b>Type a task above and press enter.</div>' : ''}${done.length ? `<div class="sect">Done</div><div class="block" style="padding:0">${done.map(taskRow).join('')}</div>` : ''}`;
     } else if (taskSeg === 'rem') {
@@ -301,13 +301,13 @@ const Life = (() => {
   const remRepeatTxt = r => r.repeat === 'daily' ? 'Every day' : r.repeat === 'weekly' ? r.days.map((on, i) => on ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i] : '').filter(Boolean).join(', ') : r.repeat === 'monthly' ? `Monthly on day ${parseKey(r.date).getDate()}` : r.repeat === 'yearly' ? `Yearly on ${parseKey(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : dayName(r.date);
   function taskSheet(t) {
     const s = sheet(`<h2>Task</h2><input class="field body" id="tt" value="${esc(t.title)}" maxlength="120">
-      <div class="mrow2 eq" style="margin-top:10px"><input class="field body" type="date" id="td" value="${t.due || ''}"><input class="field body" type="time" id="tm" value="${t.time || ''}"></div>
+      <div class="mrow2 eq"><div><label class="flabel" for="td">Due date</label><input class="field body" type="date" id="td" value="${t.due || ''}"></div><div><label class="flabel" for="tm">Time</label><input class="field body" type="time" id="tm" value="${t.time || ''}"></div></div>
       <label class="mremember" data-a="star"><span class="toggle sm ${t.star ? 'on' : ''}"></span><span>Important ★</span></label>
       <div class="btns two"><button class="btn danger" data-a="del">Delete</button><button class="btn primary" data-a="ok">Save</button></div>`);
-    s.el.addEventListener('click', e => {
+    s.el.addEventListener('click', async e => {
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'star') { t.star = !t.star; $('.toggle', b).classList.toggle('on', t.star); return; }
-      if (b.dataset.a === 'del') L.tasks = L.tasks.filter(x => x.id !== t.id);
+      if (b.dataset.a === 'del') { if (!(await sure('task', t.title))) return; L.tasks = L.tasks.filter(x => x.id !== t.id); }
       else { t.title = $('#tt', s.el).value.trim() || t.title; t.due = $('#td', s.el).value || null; t.time = $('#tm', s.el).value || null; }
       save(); reschedule(); s.close(); refresh();
     });
@@ -317,7 +317,7 @@ const Life = (() => {
     const r = r0 ? clone(r0) : Object.assign({ id: uid(), nid: nextNid(), title: '', note: '', time: (() => { const d = new Date(Date.now() + 3600e3); return `${pad(d.getHours())}:00`; })(), date: dkey(new Date()), repeat: 'once', days: [0, 1, 1, 1, 1, 1, 0], on: true }, preset);
     const s = sheet(`<h2>${isNew ? 'New reminder' : 'Edit reminder'}</h2>
       <input class="field body" id="rt" placeholder="What? (e.g. Pay credit card)" value="${esc(r.title)}" maxlength="80">
-      <div class="mrow2 eq" style="margin-top:10px"><input class="field body" type="time" id="rtm" value="${r.time}"><input class="field body" type="date" id="rd" value="${r.date}" style="visibility:${['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'}"></div>
+      <div class="mrow2 eq"><div><label class="flabel" for="rtm">Time</label><input class="field body" type="time" id="rtm" value="${r.time}"></div><div id="rdw" style="visibility:${['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'}"><label class="flabel" for="rd">Date</label><input class="field body" type="date" id="rd" value="${r.date}"></div></div>
       <div class="sect">Repeat</div>
       <div class="presets" style="justify-content:flex-start">${[['once', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']].map(([k, n]) => `<button class="chip small ${r.repeat === k ? 'on' : ''}" data-rp="${k}">${n}</button>`).join('')}</div>
       <div class="wdays" id="rwd" ${r.repeat === 'weekly' ? '' : 'hidden'}>${WDS.map((d, i) => `<button class="${r.days[i] ? 'on' : ''}" data-wd="${i}">${d}</button>`).join('')}</div>
@@ -325,10 +325,10 @@ const Life = (() => {
       <div class="btns ${isNew ? '' : 'two'}">${isNew ? '' : '<button class="btn danger" data-a="del">Delete</button>'}<button class="btn primary" data-a="ok">Save</button></div>`);
     if (isNew && !r.title) setTimeout(() => $('#rt', s.el).focus(), 250);
     s.el.addEventListener('click', async e => {
-      const rp = e.target.closest('[data-rp]'); if (rp) { r.repeat = rp.dataset.rp; $$('[data-rp]', s.el).forEach(x => x.classList.toggle('on', x === rp)); $('#rwd', s.el).hidden = r.repeat !== 'weekly'; $('#rd', s.el).style.visibility = ['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'; return; }
+      const rp = e.target.closest('[data-rp]'); if (rp) { r.repeat = rp.dataset.rp; $$('[data-rp]', s.el).forEach(x => x.classList.toggle('on', x === rp)); $('#rwd', s.el).hidden = r.repeat !== 'weekly'; $('#rdw', s.el).style.visibility = ['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'; return; }
       const wd = e.target.closest('[data-wd]'); if (wd) { r.days[+wd.dataset.wd] = r.days[+wd.dataset.wd] ? 0 : 1; wd.classList.toggle('on'); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
-      if (b.dataset.a === 'del') { L.reminders = L.reminders.filter(x => x.id !== r.id); save(); reschedule(); s.close(); return refresh(); }
+      if (b.dataset.a === 'del') { if (!(await sure('reminder', r.text || r.title))) return; L.reminders = L.reminders.filter(x => x.id !== r.id); save(); reschedule(); s.close(); return refresh(); }
       r.title = $('#rt', s.el).value.trim(); if (!r.title) { toast('What should I remind you about?'); return; }
       r.time = $('#rtm', s.el).value || '09:00'; r.date = $('#rd', s.el).value || dkey(new Date()); r.note = $('#rn', s.el).value.trim(); r.on = true;
       if (r.repeat === 'weekly' && !r.days.some(Boolean)) { toast('Pick at least one day'); return; }
@@ -343,12 +343,12 @@ const Life = (() => {
     const isNew = !h0; const h = h0 ? clone(h0) : { id: uid(), nid: nextNid(), name: '', icon: '📚', time: '', log: {} };
     const s = sheet(`<h2>${isNew ? 'New habit' : 'Edit habit'}</h2><input class="field body" id="hn" placeholder="e.g. Read 10 pages" value="${esc(h.name)}" maxlength="40">
       <div class="emojis" style="margin-top:10px">${HAB_ICONS.map(x => `<button class="${h.icon === x ? 'on' : ''}" data-em="${x}">${x}</button>`).join('')}</div>
-      <div class="sect">Daily reminder (optional)</div><input class="field body" type="time" id="ht" value="${h.time || ''}">
+      <label class="sect" for="ht">Daily reminder (optional)</label><input class="field body" type="time" id="ht" value="${h.time || ''}">
       <div class="btns ${isNew ? '' : 'two'}">${isNew ? '' : '<button class="btn danger" data-a="del">Delete</button>'}<button class="btn primary" data-a="ok">Save</button></div>`);
     s.el.addEventListener('click', async e => {
       const em = e.target.closest('[data-em]'); if (em) { h.icon = em.dataset.em; $$('[data-em]', s.el).forEach(x => x.classList.toggle('on', x === em)); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
-      if (b.dataset.a === 'del') L.habits = L.habits.filter(x => x.id !== h.id);
+      if (b.dataset.a === 'del') { if (!(await sure('habit', h.name, 'Its streak history is removed too.'))) return; L.habits = L.habits.filter(x => x.id !== h.id); }
       else { h.name = $('#hn', s.el).value.trim(); if (!h.name) { toast('Name your habit'); return; } h.time = $('#ht', s.el).value || ''; const i = L.habits.findIndex(x => x.id === h.id); if (i >= 0) L.habits[i] = h; else L.habits.push(h); if (h.time) await askNotif(); }
       save(); reschedule(); s.close(); refresh();
     });
@@ -361,7 +361,7 @@ const Life = (() => {
   function listScreen(id) {
     const l = L.lists.find(x => x.id === id); if (!l) return;
     const scr = el(`<section class="screen"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button></div><h1>${esc(l.name)}</h1><div class="tb-right"><button class="round-btn" data-a="more" aria-label="More">${ic('more')}</button></div></header>
-      <div class="scroll"><div class="page"><div class="qadd"><input class="field body" id="li" placeholder="Add item (e.g. Milk 2)" enterkeyhint="done"><button class="round-btn accent" data-a="add" aria-label="Add">${ic('plus')}</button></div><div id="lit"></div></div></div>
+      <div class="scroll"><div class="page"><label class="flabel" for="li" style="margin-top:0">Add item</label><div class="qadd"><input class="field body" id="li" placeholder="e.g. Milk 2" enterkeyhint="done"><button class="round-btn accent" data-a="add" aria-label="Add">${ic('plus')}</button></div><div id="lit"></div></div></div>
       <div class="gym-bar"><button class="btn" data-a="clear">Clear bought</button><button class="btn primary" data-a="money">${ic('plus')}Add to Money</button></div></section>`);
     const paint = () => {
       const open = l.items.filter(i => !i.d), got = l.items.filter(i => i.d);
@@ -383,9 +383,9 @@ const Life = (() => {
       if (b.dataset.a === 'clear') { l.items = l.items.filter(i => !i.d); save(); return paint(); }
       if (b.dataset.a === 'money') { close(); return Money.quickAddPre({ catId: 'groceries', payee: l.name, note: l.items.filter(i => i.d).map(i => i.t).join(', ').slice(0, 80) }); }
       if (b.dataset.a === 'more') return menu(l.name, [
-        { icon: 'edit', label: 'Rename', run: async () => { const n = await promptText('Rename list', { value: l.name, ok: 'Save' }); if (n) { l.name = n; save(); $('h1', scr).textContent = n; } } },
+        { icon: 'edit', label: 'Rename', run: () => renameInline($('h1', scr), l.name, n => { l.name = n; save(); }) },
         { icon: 'share', label: 'Share list', run: async () => { const text = `${l.name}\n` + l.items.filter(i => !i.d).map(i => `• ${i.t}${i.q ? ' × ' + i.q : ''}`).join('\n'); try { if (P.Share) await P.Share.share({ text }); else await navigator.clipboard.writeText(text); } catch (err) { /* cancelled */ } } },
-        { icon: 'trash', label: 'Delete list', danger: true, run: async () => { if (await confirmBox('Delete this list?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.lists = L.lists.filter(x => x.id !== l.id); save(); close(); } } },
+        { icon: 'trash', label: 'Delete list', danger: true, run: async () => { if (await confirmBox(`Delete list "${l.name}"?`, `All ${l.items.length} item${l.items.length === 1 ? '' : 's'} on it are removed.`, [{ label: 'Delete list', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.lists = L.lists.filter(x => x.id !== l.id); save(); close(); } } },
       ]);
     });
   }
@@ -413,15 +413,15 @@ const Life = (() => {
         ${!P.Alarm && isNative ? '<div class="mwarn">' + ic('info') + '<span>This build is missing the alarm part. Upload the <b>android</b> folder from the update.</span></div>' : ''}
         ${!isNative ? `<div class="mwarn">${ic('info')}<span>Alarms ring in the installed app, even when it is closed.</span></div>` : ''}
         <div id="alperm"></div>
-        ${L.alarms.map(a => `<div class="alarm ${a.on ? '' : 'off'}"><button class="alm" data-alarm="${a.id}"><b>${t12(a.hm).replace(/ (AM|PM)/, '<small> $1</small>')}</b><span>${esc(a.label || 'Alarm')} · ${a.days.some(Boolean) ? (a.days.every(Boolean) ? 'Every day' : a.days.map((on, i) => on ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] : '').filter(Boolean).join(' ')) : 'Once'}${a.smart ? ' · logs sleep' : ''}</span></button><button class="toggle ${a.on ? 'on' : ''}" data-altog="${a.id}" aria-label="On or off"></button></div>`).join('') || '<div class="empty"><b>No alarms</b>Tap New alarm below. Pick a built-in melody or your own ringtone.</div>'}
-        <button class="btn" data-add="alarm" style="margin-top:10px">${ic('plus')}New alarm</button>`;
+        ${L.alarms.map(a => `<div class="alarm ${a.on ? '' : 'off'}"><button class="alm" data-alarm="${a.id}"><b>${t12(a.hm).replace(/ (AM|PM)/, '<small> $1</small>')}</b><span>${esc(a.label || 'Alarm')} · ${a.days.some(Boolean) ? (a.days.every(Boolean) ? 'Every day' : a.days.map((on, i) => on ? ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'][i] : '').filter(Boolean).join(' ')) : 'Once'}${a.smart ? ' · logs sleep' : ''}</span></button><button class="toggle ${a.on ? 'on' : ''}" data-altog="${a.id}" aria-label="On or off"></button></div>`).join('') || '<div class="empty"><b>No alarms</b>Tap Add alarm below. Pick a built-in melody or your own ringtone.</div>'}
+        <button class="btn" data-add="alarm" style="margin-top:10px">${ic('plus')}Add alarm</button>`;
     } else if (clockSeg === 'world') {
       body = `<div class="block" style="padding:0">${L.cities.map(z => { const t = new Date().toLocaleTimeString(undefined, { timeZone: z, hour: 'numeric', minute: '2-digit' }); const dd = new Date().toLocaleDateString(undefined, { timeZone: z, weekday: 'short' }); return `<div class="lrow"><span class="lrm"><b>${esc(cityName(z))}</b><span>${dd} · ${offsetTxt(z)}</span></span><span class="wctime">${t}</span><button class="round-btn sm" data-czdel="${esc(z)}" aria-label="Remove">${ic('close')}</button></div>`; }).join('')}</div>
         <button class="btn" data-a="cityadd" style="margin-top:10px">${ic('plus')}Add city</button>`;
     } else {
       const b = L.bed; const [bh, bm] = b.bed.split(':').map(Number), [wh, wm] = b.wake.split(':').map(Number);
       const mins = ((wh * 60 + wm) - (bh * 60 + bm) + 1440) % 1440;
-      body = `<div class="bedcard"><div><span>🌙 Bedtime</span><input type="time" id="bbed" value="${b.bed}" class="field body"></div><div><span>⏰ Wake up</span><input type="time" id="bwake" value="${b.wake}" class="field body"></div></div>
+      body = `<div class="bedcard"><div><label for="bbed">🌙 Bedtime</label><input type="time" id="bbed" value="${b.bed}" class="field body"></div><div><label for="bwake">⏰ Wake up</label><input type="time" id="bwake" value="${b.wake}" class="field body"></div></div>
         <p class="hint" style="text-align:center">${Math.floor(mins / 60)} h ${mins % 60} min of sleep · ${mins >= 420 && mins <= 540 ? 'a healthy amount' : mins < 420 ? 'try for 7–9 hours' : 'more than 9 hours'}</p>
         <div class="sect">Days</div><div class="wdays">${WDS.map((d, i) => `<button class="${b.days[i] ? 'on' : ''}" data-bd="${i}">${d}</button>`).join('')}</div>
         <div class="block" style="margin-top:12px">
@@ -469,7 +469,7 @@ const Life = (() => {
     const a = a0 ? clone(a0) : { id: Date.now() % 1e9, hm: '06:30', days: [0, 1, 1, 1, 1, 1, 0], label: '', tone: 'b:m_musicbox', vibrate: true, snooze: 10, on: true, smart: false };
     const toneName = id => (BUILTIN_TONES.find(t => t[0] === id) || (L.tones.find(t => t.id === id) ? [id, L.tones.find(t => t.id === id).name] : ['', 'Phone default']))[1];
     const s = sheet(`<h2>${isNew ? 'New alarm' : 'Edit alarm'}</h2>
-      <input type="time" id="ahm" class="field bigtime" value="${a.hm}">
+      <label class="flabel" for="ahm" style="text-align:center">Alarm time</label><input type="time" id="ahm" class="field bigtime" value="${a.hm}">
       <div class="wdays" style="margin-top:12px">${WDS.map((d, i) => `<button class="${a.days[i] ? 'on' : ''}" data-ad="${i}">${d}</button>`).join('')}</div>
       <p class="hint" id="arep"></p>
       <input class="field body" id="alb" placeholder="Label (e.g. Gym)" value="${esc(a.label)}" maxlength="30">
@@ -490,7 +490,7 @@ const Life = (() => {
       if (b.dataset.a === 'vib') { a.vibrate = !a.vibrate; $('#avb', s.el).classList.toggle('on', a.vibrate); return; }
       if (b.dataset.a === 'smart') { a.smart = !a.smart; $('#asm', s.el).classList.toggle('on', a.smart); return; }
       if (b.dataset.a === 'brief') { a.brief = !a.brief; $('#abr', s.el).classList.toggle('on', a.brief); return; }
-      if (b.dataset.a === 'del') { L.alarms = L.alarms.filter(x => x.id !== a.id); save(); s.close(); await syncAlarms(); return refresh(); }
+      if (b.dataset.a === 'del') { if (!(await sure('alarm', `${t12(a.hm)}${a.label ? ' · ' + a.label : ''}`))) return; L.alarms = L.alarms.filter(x => x.id !== a.id); save(); s.close(); await syncAlarms(); return refresh(); }
       a.hm = $('#ahm', s.el).value || a.hm; a.label = $('#alb', s.el).value.trim(); a.snooze = +$('#asn', s.el).value; a.on = true;
       const i = L.alarms.findIndex(x => x.id === a.id); if (i >= 0) L.alarms[i] = a; else L.alarms.push(a);
       L.alarms.sort((x, y) => x.hm.localeCompare(y.hm));
@@ -516,19 +516,19 @@ const Life = (() => {
     paint();
     s.el.addEventListener('click', async e => {
       const tn = e.target.closest('[data-tn]'); if (tn) { sel = tn.dataset.tn; paint(); stopPreview(); s.close(); return cb(sel); }
-      const pl = e.target.closest('[data-play]'); if (pl) { stopPreview(); const src = await toneSrc(pl.dataset.play); if (!src) { toast('Could not play this tone'); return; } previewAudio = new Audio(src); previewAudio.play().catch(() => toast('Could not play this tone')); setTimeout(stopPreview, 15000); return; }
-      const td = e.target.closest('[data-tdel]'); if (td) { const t = L.tones.find(x => x.id === td.dataset.tdel); L.tones = L.tones.filter(x => x !== t); try { if (P.Filesystem && t.path) await P.Filesystem.deleteFile({ path: t.path, directory: 'DATA' }); } catch (err) { /* ignore */ } L.alarms.forEach(a => { if (a.tone === t.id) a.tone = ''; }); save(); syncAlarms(); return paint(); }
+      const pl = e.target.closest('[data-play]'); if (pl) { stopPreview(); const src = await toneSrc(pl.dataset.play); if (!src) { toast('This tone can\'t play here. Pick another tone or add it again.'); return; } previewAudio = new Audio(src); previewAudio.play().catch(() => toast('This tone can\'t play here. Pick another tone or add it again.')); setTimeout(stopPreview, 15000); return; }
+      const td = e.target.closest('[data-tdel]'); if (td) { const t = L.tones.find(x => x.id === td.dataset.tdel); if (!(await sure('ringtone', t.name, 'Alarms using it go back to the phone default.'))) return; L.tones = L.tones.filter(x => x !== t); try { if (P.Filesystem && t.path) await P.Filesystem.deleteFile({ path: t.path, directory: 'DATA' }); } catch (err) { /* ignore */ } L.alarms.forEach(a => { if (a.tone === t.id) a.tone = ''; }); save(); syncAlarms(); return paint(); }
       if (e.target.closest('[data-a="upload"]')) {
         const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*';
         inp.onchange = async () => {
           const f = inp.files && inp.files[0]; if (!f) return;
           if (f.size > 15 * 1024 * 1024) { toast('Please pick a file under 15 MB'); return; }
           const data = await new Promise(r => { const rd = new FileReader(); rd.onload = () => r(rd.result); rd.onerror = () => r(null); rd.readAsDataURL(f); });
-          if (!data) { toast('Could not read that file'); return; }
+          if (!data) { toast('That file couldn\'t be read. Pick another audio file.'); return; }
           const id = 'u' + uid(); const ext = (f.name.match(/\.(\w{2,4})$/) || [, 'mp3'])[1].toLowerCase();
           const t = { id, name: f.name.replace(/\.\w+$/, '').slice(0, 40), path: `tones/${id}.${ext}` };
           try { if (P.Filesystem) await P.Filesystem.writeFile({ path: t.path, data: data.split(',')[1], directory: 'DATA', recursive: true }); else t.data = data; }
-          catch (err) { toast('Could not save that tone'); return; }
+          catch (err) { toast('The tone wasn\'t saved. Free some phone storage and try again.'); return; }
           L.tones.push(t); save(); sel = id; paint(); toast(`${t.name} added`);
         };
         document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
@@ -563,6 +563,20 @@ const Life = (() => {
     guitar: { p: [[1, 1, 2], [2, .6, 2.8], [3, .35, 3.6], [4, .2, 4.5], [5, .12, 5.5], [6, .06, 7]], a: .003, ring: 1.9 },
     flute: { p: [[1, 1, 0], [2, .18, 0], [3, .06, 0]], a: .06, ring: .18, sustain: true, vib: [5.2, .006], breath: .015 },
   };
+  // Rename in place: the title itself becomes editable in the same box. Enter saves, Escape cancels.
+  function renameInline(h, cur, onSave) {
+    if (!h) return; const old = cur;
+    h.contentEditable = 'true'; h.setAttribute('role', 'textbox'); h.setAttribute('aria-label', 'List name'); h.focus();
+    const r = document.createRange(); r.selectNodeContents(h); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    const end = keep => { h.removeEventListener('keydown', key); h.removeEventListener('blur', blur); h.contentEditable = 'false'; h.removeAttribute('role'); h.removeAttribute('aria-label');
+      const v = h.textContent.replace(/\s+/g, ' ').trim().slice(0, 40);
+      if (keep && v && v !== old) { h.textContent = v; onSave(v); toast('Renamed'); } else h.textContent = old; };
+    const key = e => { if (e.key === 'Enter') { e.preventDefault(); end(true); } else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); end(false); } };
+    const blur = () => end(true);
+    h.addEventListener('keydown', key); h.addEventListener('blur', blur);
+  }
+  // Named confirmation before deleting anything in Life.
+  const sure = (kind, name, msg = '') => confirmBox(`Delete ${kind} "${String(name || 'Untitled').slice(0, 40)}"?`, msg, [{ label: `Delete ${kind}`, cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }]);
   function synthMelody(name, rate) {
     const [bpm, ins, score, build] = MELODIES[name], I = INSTR[ins], beat = 60 / bpm;
     const notes = []; let t = 0.05;
@@ -693,7 +707,7 @@ const Life = (() => {
     } catch (e) { if (L.weather) { L.weather.offline = true; save(); const ws = $('#wxbox'); if (ws && L.weather.data) ws.innerHTML = weatherHtml(); } if (!quiet) toast('Could not load weather. Check your internet.'); }
   }
   function weatherHtml() {
-    const w = L.weather && L.weather.data; if (!w) return '<div class="empty">Loading…</div>';
+    const w = L.weather && L.weather.data; if (!w) return '<div class="skelwx" aria-busy="true" aria-label="Loading weather"><span class="skel" style="width:40%;height:32px"></span><span class="skel" style="width:70%"></span><span class="skelrow">' + '<span class="skel"></span>'.repeat(7) + '</span></div>';
     const c = w.current; const hrs = [];
     const ago = L.weather.at ? Math.round((Date.now() - L.weather.at) / 60000) : null;
     const stale = L.weather.offline || (ago != null && ago > 180);
@@ -717,7 +731,7 @@ const Life = (() => {
         } catch (e) { toast('Could not search. Check your internet.'); }
       };
       $('#wq', scr).addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
-      scr.addEventListener('click', e => { if (e.target.closest('[data-a="wsearch"]')) return search(); const c = e.target.closest('[data-wc]'); if (c) { const x = scr._res[+c.dataset.wc]; L.weather = { name: x.name, lat: x.latitude, lon: x.longitude }; save(); $('#wres', scr).innerHTML = ''; $('#wq', scr).value = x.name; $('#wxbox', scr).innerHTML = '<div class="empty">Loading…</div>'; refreshWeather(); } });
+      scr.addEventListener('click', e => { if (e.target.closest('[data-a="wsearch"]')) return search(); const c = e.target.closest('[data-wc]'); if (c) { const x = scr._res[+c.dataset.wc]; L.weather = { name: x.name, lat: x.latitude, lon: x.longitude }; save(); $('#wres', scr).innerHTML = ''; $('#wq', scr).value = x.name; $('#wxbox', scr).innerHTML = '<div class="skelwx" aria-busy="true" aria-label="Loading weather"><span class="skel" style="width:40%;height:32px"></span><span class="skel" style="width:70%"></span></div>'; refreshWeather(); } });
     });
   }
   // Journal
@@ -758,7 +772,7 @@ const Life = (() => {
       <div class="presets" style="justify-content:flex-start;margin-top:10px">${prompts.map(p => `<button class="chip small" data-pr="${esc(p)}">${esc(p)}</button>`).join('')}</div>
       <textarea class="field body" id="jt" rows="8" placeholder="Write freely…" style="margin-top:8px">${esc(j.text)}</textarea>
       <div class="jph" id="jph"></div>
-      <div class="btns ${j0 ? 'two' : 'two'}">${j0 ? '<button class="btn danger" data-a="del">Delete</button>' : `<button class="btn" data-a="photo">${ic('camera')}Photo</button>`}<button class="btn primary" data-a="ok">Save</button></div>`);
+      <div class="btns ${j0 ? 'two' : 'two'}">${j0 ? '<button class="btn danger" data-a="del">Delete</button>' : `<button class="btn" data-a="photo">${ic('camera')}Add photo</button>`}<button class="btn primary" data-a="ok">Save</button></div>`);
     const paintPh = async () => { const box = $('#jph', s.el); box.innerHTML = j.photos.map((p, i) => `<span><img data-jp="${i}" alt="Journal photo"><button data-jpd="${i}" aria-label="Remove">${ic('close')}</button></span>`).join(''); for (let i = 0; i < j.photos.length; i++) { const im = $(`[data-jp="${i}"]`, box); const src = await photoSrc(j.photos[i]); if (src && im) im.src = src; } };
     paintPh();
     s.el.addEventListener('click', async e => {
@@ -767,7 +781,7 @@ const Life = (() => {
       const pd = e.target.closest('[data-jpd]'); if (pd) { removed.push(...j.photos.splice(+pd.dataset.jpd, 1)); return paintPh(); }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'photo') { const p = await pickPhoto(); if (p) { j.photos.push(p); paintPh(); } return; }
-      if (b.dataset.a === 'del') { if (await confirmBox('Delete this entry?', 'Its photos are deleted from the app too.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.journal = L.journal.filter(x => x.id !== j.id); save(); dropFiles([...(j0 ? j0.photos || [] : []), ...removed, ...j.photos]); s.close(); after(); } return; }
+      if (b.dataset.a === 'del') { if (await confirmBox(`Delete journal entry for ${new Date(j.date + 'T00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}?`, 'Its photos are deleted from the app too.', [{ label: 'Delete entry', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.journal = L.journal.filter(x => x.id !== j.id); save(); dropFiles([...(j0 ? j0.photos || [] : []), ...removed, ...j.photos]); s.close(); after(); } return; }
       j.text = $('#jt', s.el).value.trim(); j.date = $('#jd', s.el).value || j.date;
       if (!j.text && !j.photos.length && !j.mood) { s.close(); return; }
       const i = L.journal.findIndex(x => x.id === j.id); if (i >= 0) L.journal[i] = j; else L.journal.push(j);
@@ -786,7 +800,7 @@ const Life = (() => {
         try {
           if (P.Filesystem && P.Vault && L.secure) { const r2 = await P.Vault.encrypt({ text: small.split(',')[1] }); const path = `${folder}/${id}.enc`; await P.Filesystem.writeFile({ path, data: r2.data, directory: 'DATA', encoding: 'utf8', recursive: true }); return res({ path, enc: true }); }
           if (P.Filesystem) { const path = `${folder}/${id}.jpg`; await P.Filesystem.writeFile({ path, data: small.split(',')[1], directory: 'DATA', recursive: true }); return res({ path }); }
-        } catch (e) { toast('Could not save that photo'); return res(null); }
+        } catch (e) { toast('The photo wasn\'t saved. Free some phone storage and try again.'); return res(null); }
         res({ data: small });
       };
       document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
@@ -855,8 +869,8 @@ const Life = (() => {
           ${adh != null ? `<p class="hint">Taken on time this week: <b>${adh}%</b></p>` : ''}
           <div class="sect">Water reminders</div>
           <div class="block"><button class="set-row" data-a="won"><span class="st"><div class="t">Remind me to drink water</div><div class="s">${L.water.on ? `${waterTimes().length} reminders a day` : 'Off'}</div></span><span class="toggle ${L.water.on ? 'on' : ''}"></span></button>
-            <div class="set-row"><span class="st"><div class="t">From</div></span><input type="time" id="wf" class="timein" value="${L.water.from}"></div>
-            <div class="set-row"><span class="st"><div class="t">Until</div></span><input type="time" id="wt" class="timein" value="${L.water.to}"></div>
+            <div class="set-row"><span class="st"><div class="t">From</div></span><input type="time" id="wf" aria-label="Reminders from" class="timein" value="${L.water.from}"></div>
+            <div class="set-row"><span class="st"><div class="t">Until</div></span><input type="time" id="wt" aria-label="Reminders until" class="timein" value="${L.water.to}"></div>
             <div class="set-row"><span class="st"><div class="t">Every</div></span><select id="we" class="timein">${[1, 1.5, 2, 3].map(v => `<option value="${v}" ${L.water.every === v ? 'selected' : ''}>${v} h</option>`).join('')}</select></div></div>
           <p class="hint">Your water goal and glasses are tracked on the Muscle side under Protein &amp; water.</p>`;
         ['#wf', '#wt', '#we'].forEach(s2 => $(s2, body).addEventListener('change', () => { L.water.from = $('#wf', body).value || '08:00'; L.water.to = $('#wt', body).value || '21:00'; L.water.every = +$('#we', body).value; save(); reschedule(); paint(); }));
@@ -891,7 +905,7 @@ const Life = (() => {
       const mt = e.target.closest('[data-mt]'); if (mt) { read(); md.times.push(mt.dataset.mt); md.times.sort(); return paint(); }
       const rm = e.target.closest('[data-mrm]'); if (rm) { read(); if (md.times.length > 1) md.times.splice(+rm.dataset.mrm, 1); return paint(); }
       const b = e.target.closest('[data-a]'); if (!b) return;
-      if (b.dataset.a === 'del') L.meds = L.meds.filter(x => x.id !== md.id);
+      if (b.dataset.a === 'del') { if (!(await sure('medicine', md.name, 'Its reminders stop.'))) return; L.meds = L.meds.filter(x => x.id !== md.id); }
       else { read(); md.name = $('#mn', s.el).value.trim(); if (!md.name) { toast('Add the medicine name'); return; } md.dose = $('#md', s.el).value.trim(); md.note = $('#mo', s.el).value.trim(); md.times = [...new Set(md.times)].sort(); const i = L.meds.findIndex(x => x.id === md.id); if (i >= 0) L.meds[i] = md; else L.meds.push(md); await askNotif(); }
       save(); reschedule(); s.close(); after();
     });
@@ -926,7 +940,7 @@ const Life = (() => {
       const eb = e.target.closest('[data-eb]'); if (eb) { ev.before = +eb.dataset.eb; $$('[data-eb]', s.el).forEach(x => x.classList.toggle('on', x === eb)); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'yr') { ev.yearly = !ev.yearly; $('.toggle', b).classList.toggle('on', ev.yearly); return; }
-      if (b.dataset.a === 'del') L.events = L.events.filter(x => x.id !== ev.id);
+      if (b.dataset.a === 'del') { if (!(await sure(ev.type === 'birthday' ? 'birthday' : 'date', ev.name))) return; L.events = L.events.filter(x => x.id !== ev.id); }
       else { ev.name = $('#en', s.el).value.trim(); if (!ev.name) { toast('Add a name'); return; } const dv = $('#ed', s.el).value || dkey(new Date()); ev.year = ev.type === 'birthday' && +dv.slice(0, 4) < new Date().getFullYear() ? +dv.slice(0, 4) : null; ev.date = dv; const i = L.events.findIndex(x => x.id === ev.id); if (i >= 0) L.events[i] = ev; else L.events.push(ev); await askNotif(); }
       save(); reschedule(); s.close(); after();
     });
@@ -1131,7 +1145,7 @@ const Life = (() => {
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'shownum') { const n = $('#dnum', s.el); n.type = n.type === 'password' ? 'text' : 'password'; return; }
       if (b.dataset.a === 'photo') { const p = await pickPhoto('docs', 1800); if (p) { d.photos.push(p); paintPh(); } return; }
-      if (b.dataset.a === 'del') { if (await confirmBox('Delete this document?', 'Its photos are deleted from the phone too. This can\'t be undone.', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.docs = L.docs.filter(x => x.id !== d.id); save(); dropFiles([...(d0 ? d0.photos || [] : []), ...removedD, ...d.photos]); reschedule(); s.close(); after && after(); } return; }
+      if (b.dataset.a === 'del') { if (await confirmBox(`Delete document "${d.name || 'Document'}"?`, 'Its photos are deleted from the phone too. This can\'t be undone.', [{ label: 'Delete document', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.docs = L.docs.filter(x => x.id !== d.id); save(); dropFiles([...(d0 ? d0.photos || [] : []), ...removedD, ...d.photos]); reschedule(); s.close(); after && after(); } return; }
       d.name = $('#dn', s.el).value.trim() || docType(d.type)[2]; d.number = $('#dnum', s.el).value.trim(); d.exp = $('#dexp', s.el).value || '';
       L.docs = L.docs || []; const i = L.docs.findIndex(x => x.id === d.id); if (i >= 0) L.docs[i] = d; else L.docs.push(d);
       if (save() === false) return; dropFiles(removedD); if (d.exp) await askNotif(); reschedule(); s.close(); after && after(); toast(d.exp ? `Saved · ${docExpTxt(d)}` : 'Saved');
@@ -1289,7 +1303,7 @@ const Life = (() => {
     tab = t;
     ({ home: homeView, notes: notesView, tasks: tasksView, clock: clockView })[t]();
   }
-  function refresh() { if (S.mode === 'life' && currentTab.startsWith('l-') && !$('#layer > .screen')) { const sc = view.scrollTop; renderTab(tab); view.scrollTop = sc; } }
+  function refresh() { if ($('#layer > .screen')) return; if (S.mode === 'life' && currentTab.startsWith('l-')) { const sc = view.scrollTop; renderTab(tab); view.scrollTop = sc; } else if (currentTab === 'home') rerenderKeepScroll(); }
   async function handleClick(e) {
     const t = e.target;
     const g = t.closest('[data-go]'); if (g) { const [where, seg] = g.dataset.go.split(':'); if (where === 'tasks' && seg) taskSeg = seg; if (where === 'clock') clockSeg = 'alarms'; return go('l-' + where); }
@@ -1308,7 +1322,7 @@ const Life = (() => {
     const md = t.closest('[data-med]'); if (md) return markMed(md.dataset.med);
     const al = t.closest('[data-alarm]'); if (al) return alarmSheet(L.alarms.find(a => a.id === +al.dataset.alarm));
     const at = t.closest('[data-altog]'); if (at) { const a = L.alarms.find(x => x.id === +at.dataset.altog); a.on = !a.on; save(); const ok = await syncAlarms(); refresh(); if (a.on) { if (ok || !P.Alarm) alarmToast(a); else toast('The phone refused to schedule this alarm. Check Settings → Phone features.'); } return; }
-    const cz = t.closest('[data-czdel]'); if (cz) { L.cities = L.cities.filter(z => z !== cz.dataset.czdel); save(); return refresh(); }
+    const cz = t.closest('[data-czdel]'); if (cz) { return sure('city', cityName(cz.dataset.czdel)).then(ok => { if (!ok) return; L.cities = L.cities.filter(z => z !== cz.dataset.czdel); save(); refresh(); }); }
     const bd = t.closest('[data-bd]'); if (bd) { L.bed.days[+bd.dataset.bd] = L.bed.days[+bd.dataset.bd] ? 0 : 1; save(); syncBedAlarm(); reschedule(); return refresh(); }
     const cy = t.closest('[data-cyc]'); if (cy) { L.bed.bed = cy.dataset.cyc; save(); syncBedAlarm(); reschedule(); toast(`Bedtime set to ${t12(cy.dataset.cyc)}`); return refresh(); }
     const ev = t.closest('[data-ev]'); if (ev) return eventSheet(L.events.find(x => x.id === ev.dataset.ev), refresh);
@@ -1351,6 +1365,10 @@ const Life = (() => {
   function boot() { unsealLife().then(() => { reschedule(); onResume().then(syncAlarms); setTimeout(checkWidgetAction, 600); }); }
 
   return {
+    agendaHtml: n => agenda(n),
+    habitsInfo: () => { const k = dkey(new Date()); return { total: L.habits.length, done: L.habits.filter(h => (h.log || {})[k]).length }; },
+    openTasks: seg => { taskSeg = seg || 'todo'; go('l-tasks'); },
+    openAdd: k => add(k),
     renderTab, handleClick, refresh, quickAdd, boot, onResume, search, openResult, openTool, widgetPush, voiceAdd, openBriefing,
     get rawData() { return clone(L); },
     isSealed: () => secSealed, photoB64, reschedule,

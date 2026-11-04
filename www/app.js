@@ -152,11 +152,23 @@ window.addEventListener('unhandledrejection', e => { const m = String(e.reason &
 if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() === '#00E5FF') S.accent = '#2F6BFF'; saveSettings(); }
 // Each section has its own colour on active tabs and main buttons (plus its label and dot, never colour alone):
 // Fitness uses your accent (cyan by default), Money green, Life soft lavender.
-const SECTION_COLORS = { money: '#059669', life: '#C4B5FD' };
-// Soft lavender for Life: light lilac buttons with dark violet text on top, deeper violet for text links.
-const SECTION_INK = { life: '#2E1065' };
-const SECTION_TEXT = { life: ['#6D28D9', '#C4B5FD'] };
-const curAccent = () => SECTION_COLORS[S.mode] || S.accent;
+// 7.0 Prism Flow: one cobalt colour for actions everywhere (sections are told apart by the dock and headings).
+const PRISM = '#3F51D9';
+// One source for the version: the installed APK reports its own (e.g. 7.0.23); the web preview uses this.
+const APP_VERSION = '7.0';
+let appBuild = null;
+const SECTION_COLORS = {}, SECTION_INK = {}, SECTION_TEXT = {};
+const curAccent = () => S.accent || PRISM;
+if (!S.v70) {
+  S.v70 = 1;
+  if (!S.accent || ['#0891B2', '#2F6BFF', '#00E5FF'].includes(String(S.accent).toUpperCase())) S.accent = PRISM;
+  if (S.motion == null) S.motion = 'system';
+  saveSettings();
+}
+// Reduced motion: when the phone asks for it, or the app's Motion setting says Reduce.
+const reduceMotion = () => S.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const isDark = () => (S.theme === 'system' ? matchMedia('(prefers-color-scheme: dark)').matches : S.theme !== 'light');
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (S.theme === 'system') applyTheme(); }); matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => applyTheme()); } catch (e) { /* old WebView */ }
 if (!S.v61) { S.v61 = 1; if (['#2F6BFF', '#00E5FF'].includes(String(S.accent).toUpperCase())) S.accent = '#0891B2'; saveSettings(); }
 // 6.0: Vyora look, cleaner Today (money moves to the Money side), remember where you were in each section.
 if (!S.v6) {
@@ -167,8 +179,8 @@ if (!S.v6) {
 }
 
 const COLORS = ['#00E5FF', '#22D46A', '#FFD43B', '#FF9F1C', '#FF4057', '#B26BFF', '#FF5FC8', '#4D8DFF'];
-const ACCENTS = [['Vyora cyan', '#0891B2'], ['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
-const PHASE = { prepare: '#FFD43B', work: '#22D46A', rest: '#FF4057', cyclerest: '#FF9F1C', cooldown: '#4D8DFF', stopwatch: '#00E5FF', done: '#00E5FF', flow: '#9D8CFF', ease: '#C9D2DC' };
+const ACCENTS = [['Prism cobalt', '#3F51D9'], ['Vyora cyan', '#0891B2'], ['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
+const PHASE = { prepare: '#E0A100', work: '#16A36A', rest: '#D64561', cyclerest: '#E07B1F', cooldown: '#3F51D9', stopwatch: '#3F51D9', done: '#3F51D9', flow: '#8E79D6', ease: '#8A96B0' };
 
 const iv = (name, kind, dur) => ({ id: uid(), name, kind, dur });
 const mk = (o) => Object.assign({ id: uid(), name: 'New timer', desc: '', color: COLORS[0], prepare: 10, sets: [{ id: uid(), intervals: [iv('Work', 'work', 30), iv('Rest', 'rest', 30)], rounds: 8 }], cycles: 1, cycleRest: 60, cooldown: 0, noLog: false }, o);
@@ -239,23 +251,26 @@ function hexRgb(h) { const n = parseInt(h.slice(1), 16); return [n >> 16 & 255, 
 function lum([r, g, b]) { const f = c => { c /= 255; return c <= .03928 ? c / 12.92 : Math.pow((c + .055) / 1.055, 2.4); }; return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); }
 function applyTheme() {
   const root = document.documentElement;
-  root.dataset.theme = S.theme === 'light' ? 'light' : 'dark';
-  const acc = curAccent(); root.dataset.mode = S.mode || 'muscle';
+  const light = !isDark();
+  root.dataset.theme = light ? 'light' : 'dark';
+  root.classList.toggle('rm', reduceMotion());
+  // Cobalt is too dark on the dark canvas, so dark mode uses the light cobalt with dark text on filled buttons.
+  let acc = curAccent(); root.dataset.mode = S.mode || 'home';
+  if (!light && acc.toUpperCase() === PRISM) acc = '#B5BFFF';
   const rgb = hexRgb(acc); const [r, g, b] = rgb;
-  const light = S.theme === 'light';
-  const ink = SECTION_INK[S.mode] || (lum(rgb) > 0.4 ? '#071114' : '#FFFFFF');
+  const ink = acc === '#B5BFFF' ? '#17215D' : (lum(rgb) > 0.4 ? '#071114' : '#FFFFFF');
   // On a light background, bright accents need darkening to stay readable as text.
   let text = acc;
-  if (SECTION_TEXT[S.mode]) text = SECTION_TEXT[S.mode][light ? 0 : 1];
+  if (light && acc.toUpperCase() === PRISM) text = PRISM;
   else if (light) { let k = 1, c = rgb; while (lum(c) > 0.16 && k > 0.3) { k -= 0.05; c = rgb.map(v => Math.round(v * k)); } text = `rgb(${c.join(',')})`; }
   root.style.setProperty('--accent', acc);
   root.style.setProperty('--accent-ink', ink);
   root.style.setProperty('--accent-text', text);
-  root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},${SECTION_INK[S.mode] ? (light ? .32 : .18) : .14})`);
+  root.style.setProperty('--accent-soft', `rgba(${r},${g},${b},${light ? .1 : .16})`);
   root.style.setProperty('--accent-line', `rgba(${r},${g},${b},.35)`);
-  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},.3)`);
+  root.style.setProperty('--accent-glow', `rgba(${r},${g},${b},${light ? .07 : .2})`); // soft, diffuse: under 0.08 in light mode
   PHASE.stopwatch = S.accent; PHASE.done = S.accent;
-  const meta = $('meta[name="theme-color"]'); if (meta) meta.content = light ? '#F2F4F6' : '#0D0F12';
+  const meta = $('meta[name="theme-color"]'); if (meta) meta.content = light ? '#F4F6FC' : '#101526';
   try { const SB = Cap && Cap.Plugins && Cap.Plugins.SystemBars; if (isNative && SB) SB.setStyle({ style: light ? 'LIGHT' : 'DARK' }).catch(() => {}); } catch (e) { /* ignore */ }
 }
 applyTheme();
@@ -487,7 +502,7 @@ if (P.App) {
 
 
 /* ---------- step counter ---------- */
-const STP = { avail: false, granted: false, enabled: false, today: 0, days: DB.get('steps', {}), updated: 0 };
+const STP = { avail: false, granted: false, enabled: false, batteryOk: true, live: true, today: 0, days: DB.get('steps', {}), updated: 0 };
 const fmtN = n => Math.round(n || 0).toLocaleString('en-IN');
 const strideM = () => (S.height ? S.height * 0.415 / 100 : 0.75);
 const stepsKm = n => (n || 0) * strideM() / 1000;
@@ -499,7 +514,7 @@ async function stepsInit() {
   if (!P.Steps) return;
   try {
     const st = await P.Steps.status();
-    STP.avail = !!st.available; STP.granted = !!st.granted; STP.enabled = !!st.enabled && !!st.granted;
+    STP.avail = !!st.available; STP.granted = !!st.granted; STP.enabled = !!st.enabled && !!st.granted; STP.batteryOk = st.batteryOk !== false; STP.live = st.live !== false;
     P.Steps.setGoal({ goal: S.stepGoal }).catch(() => {});
     if (STP.enabled) {
       await stepsRefresh();
@@ -514,6 +529,11 @@ async function stepsInit() {
 async function stepsRefresh() {
   if (!P.Steps || !STP.enabled) return;
   try { mergeSteps(await P.Steps.refresh()); } catch (e) { /* ignore */ }
+  try { const st = await P.Steps.status(); const ok = st.batteryOk !== false; if (ok !== STP.batteryOk) { STP.batteryOk = ok; paintStepsCard(); } } catch (e) { /* ignore */ }
+}
+async function stepsBattery() {
+  if (!P.Steps || !P.Steps.openBatterySettings) { toast('Open phone Settings → Apps → Vyora → Battery and choose "Unrestricted".'); return; }
+  try { await P.Steps.openBatterySettings(); } catch (e) { toast('Open phone Settings → Apps → Vyora → Battery and choose "Unrestricted".'); }
 }
 function mergeSteps(r) {
   if (!r) return;
@@ -522,7 +542,8 @@ function mergeSteps(r) {
   // The phone's own record wins for every day it has; older days from a restored backup stay as they are.
   Object.entries(r.days || {}).forEach(([d, v]) => { STP.days[d] = v || 0; });
   STP.today = r.today || 0; STP.days[k] = STP.today;
-  STP.updated = Date.now();
+  // Show when the phone last really read the sensor, not when the screen asked.
+  STP.updated = r.lastAt || (r.fresh ? Date.now() : STP.updated);
   DB.set('steps', STP.days);
   if (before < S.stepGoal && STP.today >= S.stepGoal && before > 0) toast(`🎉 Step goal reached: ${fmtN(STP.today)} steps`);
   paintStepsCard();
@@ -537,10 +558,13 @@ async function enableSteps() {
     if (!S.height) await askHeight();
     STP.granted = true; STP.enabled = true;
     P.Steps.setGoal({ goal: S.stepGoal }).catch(() => {});
-    mergeSteps(await P.Steps.start());
-    toast('Step counting is on. It counts from now on.');
+    const had = STP.days[dkey(new Date())] || 0;
+    const r0 = await P.Steps.start(); mergeSteps(r0);
+    toast(STP.today > had ? `Step counting is on. ${fmtN(STP.today - had)} steps since your phone started this morning are counted.` : 'Step counting is on. It counts from now on.');
     rerenderKeepScroll();
-  } catch (e) { toast('Could not start step counting'); }
+    try { const st = await P.Steps.status(); STP.batteryOk = st.batteryOk !== false; } catch (e) { /* ignore */ }
+    if (!STP.batteryOk && await confirmBox('Keep counting when Vyora is closed?', 'Your phone\'s battery saver can pause background step readings, which puts evening steps on the next day. Allow Vyora to run in the background; it uses almost no battery.', [{ label: 'Allow background use', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }])) stepsBattery();
+  } catch (e) { toast('Step counting didn\'t start. Allow Physical activity for Vyora in phone Settings, then try again.'); }
 }
 async function resetTodaySteps(silent) {
   if (!P.Steps) return;
@@ -593,7 +617,7 @@ function stepsCardHtml() {
     <div class="sring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle class="bar" id="stRing" cx="50" cy="50" r="44" stroke-dasharray="${SRING}" stroke-dashoffset="${SRING}"/></svg>
       <div class="sc">${ic('feet')}<b id="stN">0</b><span>of ${fmtN(S.stepGoal)}</span></div></div>
     <div class="sinfo"><div><b id="stKm">0</b><span>${S.unit === 'lb' ? 'miles' : 'km'}</span></div><div><b id="stKc">0</b><span>kcal</span></div><div><b id="stPc">0%</b><span>of goal</span></div><small id="stUp"></small></div>
-  </button>`;
+  </button><div id="stWarn"></div>`;
 }
 function paintStepsCard() {
   const c = $('#stepsCard'); if (!c) return;
@@ -606,7 +630,12 @@ function paintStepsCard() {
   $('#stPc', c).textContent = Math.round(pct * 100) + '%';
   c.classList.toggle('done', pct >= 1);
   const ago = STP.updated ? Math.round((Date.now() - STP.updated) / 60000) : null;
-  $('#stUp', c).textContent = pct >= 1 ? 'Goal reached 🎉' : ago === null ? '' : ago < 1 ? 'Updated just now' : `Updated ${ago} min ago`;
+  $('#stUp', c).textContent = pct >= 1 ? 'Goal reached 🎉' : ago === null ? '' : ago < 1 ? 'Updated just now' : ago < 60 ? `Updated ${ago} min ago` : `Updated ${Math.floor(ago / 60)} h ago`;
+  // Background readings held back: say so, and offer the fix.
+  const w = $('#stWarn');
+  if (w) w.innerHTML = !STP.batteryOk
+    ? `<div class="mwarn stwarn">${ic('info')}<span><b>Battery saver can pause step counting</b> when Vyora is closed, so steps may land on the wrong day. <button class="linkbtn" data-a="stepbat">Allow background use</button></span></div>`
+    : (ago !== null && ago > 180 ? `<div class="mwarn stwarn">${ic('info')}<span>The phone hasn't saved steps for ${Math.floor(ago / 60)} h. The phone's sensor keeps counting, and the steps are added at the next reading. If this happens often, set Vyora's battery use to <b>Unrestricted</b>.</span></div>` : '');
 }
 setInterval(() => { if (appVisible && STP.enabled && currentTab === 'today' && !Run.cur) stepsRefresh(); }, 15000);
 
@@ -644,11 +673,16 @@ let stepsRange = 'week';
 const layer = $('#layer');
 const backStack = []; // functions that close the top-most overlay
 
+// Escape works like the phone's Back button: closes the top sheet or screen.
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && backStack.length) { e.preventDefault(); backStack[backStack.length - 1](); } });
 function pushBack(fn) { backStack.push(fn); return () => { const i = backStack.lastIndexOf(fn); if (i >= 0) backStack.splice(i, 1); }; }
 function handleBack() {
   if (backStack.length) { backStack[backStack.length - 1](); return; }
-  if (currentTab.startsWith('m-') && currentTab !== 'm-home') { go('m-home'); return; }
-  if (currentTab !== 'today' && !currentTab.startsWith('m-')) { go('today'); return; }
+  // Back: current screen -> section root -> Today -> leave the app.
+  if (isSettingsTab(currentTab)) { setMode(S.mode === 'money' ? 'money' : (S.mode || 'home')); return; }
+  const d = destOf(currentTab), root = DESTS.find(x => x.id === d).root;
+  if (currentTab !== root) { go(root); return; }
+  if (d !== 'home') { setMode('home'); return; }
   if (P.App) P.App.minimizeApp ? P.App.minimizeApp().catch(() => P.App.exitApp()) : P.App.exitApp();
 }
 
@@ -667,8 +701,24 @@ function sheet(inner, { center = false, onClose } = {}) {
   const sh = $('.sheet', bd);
   if (typeof inner === 'string') sh.insertAdjacentHTML('beforeend', inner); else sh.appendChild(inner);
   let closed = false;
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const close = () => { if (closed) return; closed = true; unback(); onClose && onClose();
+  const reduce = reduceMotion();
+  const opener = document.activeElement;
+  sh.setAttribute('role', 'dialog'); sh.setAttribute('aria-modal', 'true'); sh.tabIndex = -1;
+  const h2 = sh.querySelector('h2'); if (h2) { h2.id = h2.id || 'dlg' + Math.random().toString(36).slice(2, 8); sh.setAttribute('aria-labelledby', h2.id); }
+  // Keep keyboard focus inside the sheet while it is open.
+  bd.addEventListener('keydown', e => {
+    if (e.key !== 'Tab') return;
+    const f = [...sh.querySelectorAll('button:not([disabled]), [href], input:not([disabled]):not([type=hidden]), select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]')].filter(x => x.offsetParent !== null);
+    if (!f.length) { e.preventDefault(); sh.focus(); return; }
+    const first = f[0], last = f[f.length - 1];
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === sh)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
+  // Remember the control that opened the sheet; if the screen re-rendered, find its replacement by the same data attribute.
+  const oKey = opener && opener.attributes ? [...opener.attributes].find(x => x.name.startsWith('data-')) : null;
+  const oSel = oKey ? `[${oKey.name}${oKey.value ? `="${CSS.escape(oKey.value)}"` : ''}]` : null;
+  const restore = () => setTimeout(() => { try { const t = opener && opener.isConnected ? opener : (oSel && document.querySelector(oSel)); const ae = document.activeElement; const idle = !ae || ae === document.body || !ae.isConnected || bd.contains(ae); if (idle && t && t.focus && !document.querySelector('.backdrop:not(.closing)')) t.focus({ preventScroll: true }); } catch (e) { /* ignore */ } }, 120);
+  const close = () => { if (closed) return; closed = true; unback(); onClose && onClose(); restore();
     if (reduce) { bd.remove(); return; } bd.classList.add('closing'); setTimeout(() => bd.remove(), 190); };
   const unback = pushBack(close);
   bd.addEventListener('click', e => { if (e.target === bd) close(); });
@@ -678,6 +728,7 @@ function sheet(inner, { center = false, onClose } = {}) {
     sh.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); if (dy > 0) sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
     sh.addEventListener('touchend', () => { if (y0 == null) return; sh.style.transition = ''; if (dy > 110) close(); else sh.style.transform = ''; y0 = null; }, { passive: true }); }
   layer.appendChild(bd);
+  requestAnimationFrame(() => { if (!sh.contains(document.activeElement)) sh.focus({ preventScroll: true }); });
   return { el: sh, close };
 }
 
@@ -700,6 +751,8 @@ function confirmBox(title, msg, buttons) {
       x.onclick = () => { res(b.value); s.close(); };
       box.appendChild(x);
     });
+    // For destructive choices, the safe option (Cancel / Keep) gets focus first.
+    if (buttons.some(b => b.cls === 'danger')) { const safe = [...box.children].find(x => x.classList.contains('ghost')); if (safe) requestAnimationFrame(() => safe.focus({ preventScroll: true })); }
   });
 }
 
@@ -955,58 +1008,188 @@ const LTABS = [
 ];
 const moneyMode = () => S.mode === 'money';
 const lifeMode = () => S.mode === 'life';
-// Bottom bar: two tabs, the big Start (or Add in Money) button, two tabs. Settings and search live at the top.
+const homeMode = () => S.mode === 'home';
+/* ===== Prism Flow shell: four fixed destinations (Today, Fitness, Money, Life) =====
+   The dock never changes. Each destination has its own secondary tabs and remembers its last screen and scroll. */
+const DESTS = [
+  { id: 'home', label: 'Today', icon: 'home', root: 'home' },
+  { id: 'muscle', label: 'Fitness', icon: 'dumbbell', root: 'today' },
+  { id: 'money', label: 'Money', icon: 'wallet', root: 'm-home' },
+  { id: 'life', label: 'Life', icon: 'leaf', root: 'l-home' },
+];
+const CTX = {
+  muscle: [['today', 'Overview'], ['timers', 'Train'], ['calendar', 'Calendar'], ['progress', 'Progress']],
+  money: [['m-home', 'Overview'], ['m-txns', 'Transactions'], ['m-budget', 'Budget & bills'], ['m-insights', 'Insights']],
+  life: [['l-home', 'Overview'], ['l-notes', 'Notes'], ['l-tasks', 'Tasks'], ['l-clock', 'Clock']],
+};
+const destOf = t => (t === 'home' ? 'home' : t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : t === 'settings' ? (S.mode || 'muscle') : 'muscle');
+const isSettingsTab = t => t === 'settings' || t === 'm-settings';
+const scrollMem = {};
 function renderTabs() {
-  const list = (moneyMode() ? MTABS : lifeMode() ? LTABS : TABS).filter(t => t.id !== 'settings' && t.id !== 'm-settings');
-  const btn = t => `<button class="tab ${t.id === currentTab ? 'active' : ''}" data-tab="${t.id}"><span class="pill">${ic(t.icon)}</span>${t.label}</button>`;
-  const mid = `<button class="tab tstart" data-start aria-label="${moneyMode() ? 'Add expense' : lifeMode() ? 'Add note, task or reminder' : 'Start a workout'}"><span class="sbtn">${ic(moneyMode() || lifeMode() ? 'plus' : 'play')}</span>${moneyMode() || lifeMode() ? 'Add' : 'Start'}</button>`;
-  $('#tabs').innerHTML = list.slice(0, 2).map(btn).join('') + mid + list.slice(2).map(btn).join('');
-  try { $$('[data-mb="settings"]', modebar).forEach(b => b.classList.toggle('on', currentTab === 'settings' || currentTab === 'm-settings')); } catch (e) { /* modebar not built yet */ }
+  const d = isSettingsTab(currentTab) ? '' : destOf(currentTab);
+  $('#tabs').innerHTML = `<div class="dock" role="tablist" aria-label="Main sections">${DESTS.map(x => `<button class="dk ${x.id === d ? 'on' : ''}" data-dest="${x.id}" role="tab" aria-selected="${x.id === d}"><span class="dki">${ic(x.icon)}</span><span class="dkl">${x.label}</span></button>`).join('')}<span class="dkpill" aria-hidden="true"></span></div>`;
+  const ctx = $('#ctx'), list = !isSettingsTab(currentTab) && CTX[destOf(currentTab)];
+  if (ctx) {
+    ctx.hidden = !list;
+    ctx.innerHTML = list ? `<div class="ctabs" role="tablist" aria-label="${esc(DESTS.find(x => x.id === destOf(currentTab)).label)} sections">${list.map(([id, n]) => `<button class="ct ${id === currentTab ? 'on' : ''}" data-tab="${id}" role="tab" aria-selected="${id === currentTab}">${n}</button>`).join('')}</div>` : '';
+  }
+  try { $$('[data-mb="settings"]', modebar).forEach(b => b.classList.toggle('on', isSettingsTab(currentTab))); } catch (e) { /* header not built yet */ }
+  paintCtxAct();
+  requestAnimationFrame(placeDockPill);
 }
+// The active pill slides to the chosen destination (transform only).
+function placeDockPill() {
+  const dock = $('#tabs .dock'); if (!dock) return;
+  const on = $('.dk.on', dock), pill = $('.dkpill', dock);
+  if (!on) { pill.style.opacity = 0; return; }
+  pill.style.opacity = 1; pill.style.width = on.offsetWidth + 'px'; pill.style.transform = `translateX(${on.offsetLeft}px)`;
+  const ct = $('#ctx .ct.on'); if (ct) ct.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+addEventListener('resize', () => placeDockPill());
+// Context action above the dock: Resume an unfinished workout first, otherwise the main action of the section.
+function paintCtxAct() {
+  const box = $('#ctxact'); if (!box) return;
+  const draft = DB.get('gymdraft', null), cs = DB.get('coachsession', null);
+  const inPlayer = !!document.querySelector('#layer > .screen');
+  const d = isSettingsTab(currentTab) ? '' : destOf(currentTab);
+  let html = '';
+  if ((draft || cs) && !inPlayer) html = `<button class="sessbar" data-ca="resume">${ic('dumbbell')}<span><b>Workout in progress</b><small>${esc((cs && cs.w && cs.w.name) || (draft && draft.title) || 'Gym workout')}</small></span><span class="sessgo">Resume</span></button>`;
+  else if (d === 'muscle' && currentTab !== 'today') html = `<button class="ctxbtn" data-ca="start">${ic('play')}Start a workout</button>`;
+  else if (d === 'money' && M_SETUP()) html = `<button class="ctxbtn" data-ca="money">${ic('plus')}Add expense</button>`;
+  else if (d === 'life') html = `<button class="ctxbtn" data-ca="life">${ic('plus')}Add note, task or reminder</button>`;
+  box.innerHTML = html; box.hidden = !html;
+  document.body.classList.toggle('has-ctxact', !!html);
+}
+// Refresh the Resume banner when a player or editor screen opens or closes.
+new MutationObserver(() => { clearTimeout(paintCtxAct._t); paintCtxAct._t = setTimeout(paintCtxAct, 60); }).observe($('#layer'), { childList: true });
+const M_SETUP = () => { try { return !!Money.widgetData().money; } catch (e) { return false; } };
 $('#tabs').addEventListener('click', e => {
-  if (e.target.closest('[data-start]')) { tap(); return moneyMode() ? Money.quickAdd() : lifeMode() ? Life.quickAdd() : openStartSheet(); }
-  const b = e.target.closest('[data-tab]'); if (b) { tap(); go(b.dataset.tab); }
+  const b = e.target.closest('[data-dest]'); if (!b) return; tap();
+  const d = b.dataset.dest, cur = isSettingsTab(currentTab) ? '' : destOf(currentTab);
+  const root = DESTS.find(x => x.id === d).root;
+  // Tapping the active destination returns to its root (filters kept); another destination restores its last screen.
+  if (d === cur) { if (currentTab !== root) go(root); else view.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
+  scrollMem[currentTab] = view.scrollTop;
+  setMode(d);
 });
+document.addEventListener('click', e => {
+  const c = e.target.closest && e.target.closest('#ctxact [data-ca]'); if (!c) return; tap();
+  const k = c.dataset.ca;
+  if (k === 'resume') { if (DB.get('coachsession', null)) return Coach.offerResume(); return openGym({}); }
+  if (k === 'start') return openStartSheet();
+  if (k === 'money') return Money.quickAdd();
+  if (k === 'life') return Life.quickAdd();
+});
+// Secondary tabs (Overview / Train / …)
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#ctx [data-tab]'); if (b) { tap(); go(b.dataset.tab); } });
 document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.btn.primary, .nu-go, .cplay, .qopt, .tring, .sgrid button')) tap(); }, true);
 function tap(style = 'LIGHT') { if (!S.vibrate) return; try { if (P.Haptics) P.Haptics.impact({ style }); } catch (e) { /* ignore */ } }
-const modeOfTab = t => (t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : 'muscle');
-const TAB_ORDER = ['today', 'timers', 'workout', 'calendar', 'progress', 'm-home', 'm-txns', 'm-budget', 'm-insights', 'l-home', 'l-notes', 'l-tasks', 'l-clock'];
-function go(tab) { if (!/settings/.test(tab)) { S.lastTabs = Object.assign({}, S.lastTabs, { [modeOfTab(tab)]: tab }); saveSettings(); }
-  const a = TAB_ORDER.indexOf(currentTab), b = TAB_ORDER.indexOf(tab); view.dataset.dir = a < 0 || b < 0 || a === b ? 'up' : b > a ? 'r' : 'l';
-  currentTab = tab; renderTabs(); render(); view.scrollTop = 0; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
+const modeOfTab = t => (t === 'home' ? 'home' : t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : 'muscle');
+const TAB_ORDER = ['home', 'today', 'timers', 'workout', 'calendar', 'progress', 'm-home', 'm-txns', 'm-budget', 'm-insights', 'l-home', 'l-notes', 'l-tasks', 'l-clock'];
+function enterAnim(dir) { view.dataset.dir = dir; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); }
+function go(tab) {
+  // Money screens always pass through the Money lock.
+  if (tab.startsWith('m-') && tab !== 'm-settings' && S.mode !== 'money') return Money.openMoney(tab.slice(2));
+  if (!isSettingsTab(tab)) {
+    S.lastTabs = Object.assign({}, S.lastTabs, { [modeOfTab(tab)]: tab });
+    const m = modeOfTab(tab); if (S.mode !== m) { S.mode = m; paintModebar(); }
+    saveSettings();
+  }
+  const sameDest = destOf(currentTab) === destOf(tab);
+  const a = TAB_ORDER.indexOf(currentTab), b = TAB_ORDER.indexOf(tab);
+  currentTab = tab; renderTabs(); render(); view.scrollTop = 0;
+  enterAnim(!sameDest ? 'mode' : a < 0 || b < 0 || a === b ? 'up' : 'tab');
+}
 function render() {
+  if (currentTab === 'home') return viewHome();
   if (currentTab.startsWith('m-')) return Money.renderTab(currentTab.slice(2));
   if (currentTab.startsWith('l-')) return Life.renderTab(currentTab.slice(2));
   ({ today: viewToday, timers: viewTimers, calendar: viewCalendar, progress: viewProgress, settings: viewSettings })[currentTab]();
 }
-// The Muscle | Money switch at the top of every main screen.
-const modebar = el(`<div id="modebar"><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button><div class="modeseg" role="tablist" aria-label="App section"><button data-mode="muscle" role="tab" aria-label="Fitness"><i class="mdot"></i>Fitness</button><button data-mode="money" role="tab" aria-label="Money"><i class="mdot"></i>Money</button><button data-mode="life" role="tab" aria-label="Life"><i class="mdot"></i>Life</button></div><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button></div>`);
+// Page header: brand on the left, search and profile/settings on the right. (Kept as "modebar" for older code.)
+const modebar = el(`<header id="modebar" class="phead"><span class="brand" aria-label="Vyora">VYORA</span><div class="ph-r"><button class="mbtn" data-mb="search" aria-label="Search">${ic('search')}</button><button class="mbtn" data-mb="settings" aria-label="Settings">${ic('gear')}</button></div></header>`);
 $('#app').insertBefore(modebar, $('#view'));
+$('#app').insertBefore(el('<nav id="ctx" aria-label="Sections"></nav>'), $('#view'));
+$('#app').insertBefore(el('<div id="ctxact" hidden></div>'), $('#tabs'));
 // Private screens (locked Money, journal, documents) are hidden in recent apps and can't be screenshotted.
 function updateSecure() { try { const on = (S.mode === 'money' && Money.lockOn()) || !!document.querySelector('#layer .secure-screen'); if (P.AppLock && P.AppLock.setSecure) P.AppLock.setSecure({ on }); } catch (e) { /* ignore */ } }
-function paintModebar() { applyTheme(); updateSecure(); $$('[data-mode]', modebar).forEach(b => { const on = b.dataset.mode === (S.mode || 'muscle'); b.classList.toggle('on', on); b.setAttribute('aria-selected', on); }); placeModePill(); }
-// The coloured pill slides between Fitness, Money and Life instead of jumping.
-function placeModePill() {
-  const seg = $('.modeseg', modebar); if (!seg) return;
-  const on = $('button.on', seg); if (!on || !on.offsetWidth) { requestAnimationFrame(() => { const o = $('button.on', seg); if (o && o.offsetWidth) placeModePill(); }); return; }
-  seg.style.setProperty('--px', on.offsetLeft + 'px'); seg.style.setProperty('--pw', on.offsetWidth + 'px');
-  if (!seg.classList.contains('pill')) requestAnimationFrame(() => seg.classList.add('pill'));
-}
-addEventListener('resize', () => placeModePill());
+function paintModebar() { applyTheme(); updateSecure(); }
+function placeModePill() { placeDockPill(); }
 async function setMode(mode, quiet) {
   const lt = S.lastTabs || {};
-  if (mode === 'money') return Money.openMoney(lt.money ? lt.money.slice(2) : undefined);
-  const modeEnter = () => { view.dataset.dir = 'mode'; view.classList.remove('enter'); void view.offsetWidth; view.classList.add('enter'); };
-  if (mode === 'life') { S.mode = 'life'; saveSettings(); currentTab = lt.life || 'l-home'; renderTabs(); paintModebar(); if (!quiet) { render(); view.scrollTop = 0; modeEnter(); } return; }
-  S.mode = 'muscle'; saveSettings();
-  currentTab = quiet ? 'today' : (lt.muscle || 'today'); renderTabs(); paintModebar();
-  if (!quiet) { render(); view.scrollTop = 0; modeEnter(); }
+  if (mode === 'money') {
+    const ok = await Money.openMoney(lt.money ? lt.money.slice(2) : undefined);
+    if (ok && scrollMem[currentTab]) view.scrollTop = scrollMem[currentTab];
+    if (ok) enterAnim('mode');
+    return ok;
+  }
+  S.mode = mode; saveSettings();
+  currentTab = mode === 'home' ? 'home' : mode === 'life' ? (lt.life || 'l-home') : quiet ? 'today' : (lt.muscle || 'today');
+  renderTabs(); paintModebar();
+  if (!quiet) { render(); view.scrollTop = scrollMem[currentTab] || 0; enterAnim('mode'); }
 }
 modebar.addEventListener('click', e => {
-  const mb = e.target.closest('[data-mb]');
-  if (mb) { tap(); if (mb.dataset.mb === 'search') return openSearch(); if (lifeMode()) setMode('muscle', true); return go(moneyMode() ? 'm-settings' : 'settings'); }
-  const b = e.target.closest('[data-mode]'); if (b && b.dataset.mode !== (S.mode || 'muscle')) { tap(); setMode(b.dataset.mode); }
+  const mb = e.target.closest('[data-mb]'); if (!mb) return; tap();
+  if (mb.dataset.mb === 'search') return openSearch();
+  scrollMem[currentTab] = view.scrollTop;
+  // Money keeps its own settings (budget, lock, categories); everything else uses app settings.
+  if (moneyMode()) return go('m-settings');
+  return go('settings');
 });
+
+/* ---------- Today (unified summary) ---------- */
+function viewHome() {
+  const st = computeStats(); const now = new Date(); const h = now.getHours();
+  const day = plan && plan[now.getDay()]; const draft = DB.get('gymdraft', null);
+  const nu = nextUp(st, day, draft);
+  const hh = Health.today();
+  const steps = STP.today || stepsOn(dkey(now));
+  const hab = Life.habitsInfo ? Life.habitsInfo() : { done: 0, total: 0 };
+  const agenda = Life.agendaHtml ? Life.agendaHtml(4) : '';
+  const pct = S.stepGoal ? Math.min(1, steps / S.stepGoal) : 0, R = 42, C = 2 * Math.PI * R;
+  const money = M_SETUP() ? Money.todayChip() : '';
+  view.innerHTML = `<div class="page home">
+    <div class="hhead"><div class="hi">${h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${S.name ? ', ' + esc(S.name) : ''}</div><h1 class="ptitle">Your day, connected.</h1><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
+    <section class="feature ${nu.done ? 'done' : ''}" aria-label="Next workout">
+      <span class="ftag">${esc(nu.tag)}</span><b class="ftitle">${esc(nu.title)}</b><span class="fsub">${esc(nu.sub)}${nu.more ? ' · ' + esc(nu.more) : ''}</span>
+      <button class="fbtn" data-a="nu">${ic(nu.icon)}${esc(nu.btn)}</button>
+      <span class="fart" aria-hidden="true">${Moves.svgFor(pickMove(nu.done ? 'done' : 'train'), { cls: 'artmv' })}</span>
+    </section>
+    <div class="htiles">
+      <button class="htile steps" data-a="steps" aria-label="${STP.enabled || steps ? `${fmtN(steps)} of ${fmtN(S.stepGoal)} steps` : 'Turn on step counting'}">
+        <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="${R}"/><circle class="bar" cx="50" cy="50" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}"/></svg>
+        <span class="hv"><b>${STP.enabled || steps ? fmtN(steps) : 'Off'}</b><small>${STP.enabled || steps ? `of ${fmtN(S.stepGoal)} steps` : 'Tap to count steps'}</small></span></button>
+      <div class="hcol">
+        <button class="htile sm" data-a="water"><span class="hic water">${ic('drop')}</span><span><b>${String(Math.round(hh.w / 100) / 10).replace(/\.0$/, '')} L</b><small>of ${String(hh.tw / 1000).replace(/\.0+$/, '')} L water</small></span></button>
+        <button class="htile sm" data-a="habits"><span class="hic hab">${ic('check')}</span><span><b>${hab.total ? `${hab.done} of ${hab.total}` : 'Habits'}</b><small>${hab.total ? 'habits today' : 'Build a habit'}</small></span></button>
+      </div>
+    </div>
+    <div class="sect"><span>Next up</span><button class="linkbtn" data-a="addrem">+ Reminder</button></div>
+    <div class="block agenda">${agenda || '<div class="empty" style="padding:16px"><b>Nothing scheduled</b>Reminders, tasks, medicines and bills for today show up here.</div>'}</div>
+    ${money ? `<div class="sect"><span>Money</span></div>${money}` : ''}
+    <button class="tcustom" data-a="fitover">${ic('dumbbell')}Open Fitness overview</button>
+  </div>`;
+  view.querySelector('.page').addEventListener('click', async e => {
+    const b = e.target.closest('[data-a]');
+    if (!b) { if (e.target.closest('.agenda')) { await Life.handleClick(e); setTimeout(() => { if (currentTab === 'home' && !$('#layer > .screen')) rerenderKeepScroll(); }, 200); } return; }
+    switch (b.dataset.a) {
+      case 'nu':
+        if (nu.act === 'pi') return startPlanItem(day.items[nu.idx]);
+        if (nu.act === 'resume') return openGym({});
+        if (nu.act === 'coachresume') return Coach.offerResume();
+        if (nu.act === 'yoga') return Yoga.openPicker();
+        if (nu.act === 'workouts') { timersSeg = 'wk'; return go('timers'); }
+        return openStartSheet();
+      case 'steps': return STP.enabled ? go('progress') : enableSteps();
+      case 'water': return Health.handle({ dataset: { h: 'nut' } });
+      case 'habits': return Life.openTasks ? Life.openTasks('habits') : go('l-tasks');
+      case 'addrem': return Life.openAdd ? Life.openAdd('reminder') : Life.quickAdd();
+      case 'money': return Money.openMoney('home');
+      case 'fitover': return setMode('muscle');
+      default: if (e.target.closest('.agenda')) { await Life.handleClick(e); setTimeout(() => { if (currentTab === 'home' && !$('#layer > .screen')) rerenderKeepScroll(); }, 200); }
+    }
+  });
+}
 
 /* ---------- Start sheet (centre button) ---------- */
 function openStartSheet() {
@@ -1067,12 +1250,13 @@ function openSearch() {
       + (tx === null ? sec('Payments', `<div class="empty" style="padding:14px">Unlock Money to search payments.</div>`) : sec('Payments', (tx || []).map(t => row('tx:' + t.id, t.title, t.sub, t.amt, `<span class="sico rs">₹</span>`)).join('')))
       + sec('Notes, tasks & dates', lf.map(x => row('lf:' + x.type + ':' + x.id, x.title, x.sub, '', `<span class="sico">${ic({ note: 'note', task: 'check', rem: 'bell', ev: 'cake', jr: 'book' }[x.type])}</span>`)).join(''))
       + sec('Settings', sets.map(x => row('st:' + x[1] + ':' + (x[2] || ''), x[0], x[1].startsWith('m-') ? 'Money settings' : 'Settings', '', `<span class="sico">${ic('gear')}</span>`)).join(''))
-      || `<div class="empty" style="padding-top:40px">Nothing found for "${esc(q)}".</div>`;
+      || `<div class="empty" style="padding-top:40px"><b>Nothing found for "${esc(q)}"</b>Try a shorter word, like "squat" or "rent".<div class="btns"><button class="btn" data-a="sclear">Clear search</button></div></div>`;
     Moves.mount(box);
   };
   paint(); inp.addEventListener('input', paint);
   scr.addEventListener('click', e => {
     if (e.target.closest('[data-a="close"]')) return close();
+    if (e.target.closest('[data-a="sclear"]')) { const q = $('#sq', scr); q.value = ''; q.dispatchEvent(new Event('input')); q.focus(); return; }
     const r = e.target.closest('[data-k]'); if (!r) return;
     const [type, ...rest] = r.dataset.k.split(':'); const v = rest.join(':');
     if (type === 'ex') return Moves.howTo(v);
@@ -1114,7 +1298,7 @@ function openOnboarding() {
     $('[data-a="back"]', scr).style.visibility = step ? 'visible' : 'hidden';
     $('#onext', scr).textContent = step === N - 1 ? 'Start using the app' : 'Next';
     const ob = $('#ob', scr);
-    if (step === 0) ob.innerHTML = `<div class="onb-brand"><img src="brand/vyora-logo.png" alt="Vyora"></div><h1 class="onb-h">Welcome to Vyora</h1><p class="sub" style="text-align:left">Fitness, money and your day in one place: workouts and health, spending and budgets, notes, tasks and alarms. Everything stays on this phone.</p>
+    if (step === 0) ob.innerHTML = `<div class="onb-brand"><img src="brand/vyora-mark.png" alt=""><span>VYORA</span></div><h1 class="onb-h">Welcome to Vyora</h1><p class="sub" style="text-align:left">Fitness, money and your day in one place: workouts and health, spending and budgets, notes, tasks and alarms. Everything stays on this phone.</p>
       <div class="sect">What should we call you?</div><input class="field body" id="on" placeholder="Your first name" maxlength="20" value="${esc(a.name)}">`;
     if (step === 1) ob.innerHTML = `<h1 class="onb-h">About you</h1><p class="sub" style="text-align:left">Used for protein and water targets, step distance and calories.</p>
       <div class="seg" style="background:var(--surface-2)"><button class="${a.unit === 'kg' ? 'on' : ''}" data-u="kg">kg · cm</button><button class="${a.unit === 'lb' ? 'on' : ''}" data-u="lb">lb · in</button></div>
@@ -1376,6 +1560,7 @@ function viewToday() {
       case 'money': return Money.openMoney('home');
       case 'backup': return exportBackup();
       case 'steps-on': return enableSteps();
+      case 'stepbat': return stepsBattery();
       case 'prog-new': case 'prog-next': case 'prog-level': return Program.handleAction(b.dataset.a, b);
       case 'steps-go': return go('progress');
     }
@@ -1409,7 +1594,7 @@ function startPlanItem(it) {
 /* ---------- Timers ---------- */
 const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Program'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
 function viewWorkouts() {
-  view.innerHTML = topbar('Workout') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
+  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
     Coach.handleList(e);
@@ -1419,7 +1604,7 @@ function viewTimers() {
   if (timersSeg === 'prog') return viewProgramTab();
   if (timersSeg === 'wk') return viewWorkouts();
   const mine = timersSeg === 'mine';
-  view.innerHTML = topbar('Workout') + `<div class="page">
+  view.innerHTML = topbar('Train') + `<div class="page">
     ${trainSeg(timersSeg)}
     ${mine ? `
     <div class="sect">Quick rest</div>
@@ -1451,7 +1636,7 @@ function viewTimers() {
         { icon: 'edit', label: 'Edit', run: () => openEditor(t) },
         { icon: 'copy', label: 'Duplicate', run: () => { const c = clone(t); c.id = uid(); c.name = t.name + ' copy'; timers.splice(timers.indexOf(t) + 1, 0, c); saveTimers(); render(); } },
         { icon: 'chevU', label: 'Move up', run: () => { const i = timers.indexOf(t); if (i > 0) { timers.splice(i, 1); timers.splice(i - 1, 0, t); saveTimers(); render(); } } },
-        { icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox('Delete timer?', `"${t.name}" will be removed.`, [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { timers = timers.filter(x => x !== t); saveTimers(); render(); } } },
+        { icon: 'trash', label: 'Delete', danger: true, run: async () => { if (await confirmBox(`Delete timer "${t.name}"?`, 'Workouts you already did with it stay in your history.', [{ label: 'Delete timer', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { timers = timers.filter(x => x !== t); saveTimers(); render(); } } },
       ]);
     } else {
       const t = allTemplates().find(x => x.id === id);
@@ -1467,7 +1652,7 @@ function viewTimers() {
 }
 
 function viewProgramTab() {
-  view.innerHTML = topbar('Workout') + `<div class="page">${trainSeg('prog')}<div id="progbox"></div></div>`;
+  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('prog')}<div id="progbox"></div></div>`;
   Program.viewTab($('#progbox'));
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
@@ -1795,7 +1980,7 @@ function paintRun(e, idx, rem) {
   if (!runEl) return;
   const R = Run.cur, st = R.steps[idx], nx = R.steps[idx + 1];
   const main = $('#rmain', runEl);
-  if (main.dataset.k !== st.kind) { main.style.background = PHASE[st.kind]; main.dataset.k = st.kind; }
+  if (main.dataset.k !== st.kind) { runEl.style.setProperty('--phc', PHASE[st.kind]); main.dataset.k = st.kind; }
   $('#rlabel', runEl).textContent = st.label.toUpperCase();
   const sub = [];
   if (st.kind === 'cyclerest') sub.push(st.sub);
@@ -1808,8 +1993,8 @@ function paintRun(e, idx, rem) {
   $('#rring', runEl).style.strokeDashoffset = (RING_C * (1 - frac)).toFixed(2);
   $('#rtot', runEl).textContent = fmt(Math.ceil((R.total - e) / 1000));
   const next = $('#rnext', runEl);
-  if (nx) { next.style.background = PHASE[nx.kind]; $('#rnv', runEl).textContent = nx.label.toUpperCase(); }
-  else { next.style.background = PHASE.done; $('#rnv', runEl).textContent = 'FINISH'; }
+  if (nx) { next.style.setProperty('--nxc', PHASE[nx.kind]); $('#rnv', runEl).textContent = nx.label.toUpperCase(); }
+  else { next.style.setProperty('--nxc', PHASE.done); $('#rnv', runEl).textContent = 'FINISH'; }
   if (R.timer.yoga) {
     const fig = $('#rfig', runEl);
     const stepMs = st.dur * 1000 - rem;
@@ -1846,7 +2031,7 @@ function renderSW() {
   const e = R.elapsed();
   const main = $('#rmain', runEl);
   const k = R.running ? 'stopwatch' : 'prepare';
-  if (main.dataset.k !== k) { main.style.background = PHASE[k]; main.dataset.k = k; }
+  if (main.dataset.k !== k) { runEl.style.setProperty('--phc', PHASE[k]); main.dataset.k = k; }
   $('#rlabel', runEl).textContent = R.running ? 'STOPWATCH' : (e ? 'PAUSED' : 'READY');
   const s = Math.floor(e / 1000), tenths = Math.floor(e % 1000 / 100);
   const dig = $('#rdig', runEl);
@@ -1864,7 +2049,7 @@ function renderSW() {
     lapsEl.dataset.n = R.laps.length;
   }
   $('#rsub', runEl).textContent = R.laps.length ? `Lap ${R.laps.length + 1}` : '';
-  $('#rnext', runEl).style.background = PHASE.work;
+  $('#rnext', runEl).style.setProperty('--nxc', PHASE.work);
   setPlayIcon(R.running);
 }
 
@@ -1902,7 +2087,7 @@ function showFinish(R, entry, ms) {
     ${entry ? `<div class="sect" style="justify-content:center">How did it feel?</div>
       <div class="feel">${FEEL.map((x, i) => `<button data-f="${i + 1}" aria-label="${x.t}">${x.e}</button>`).join('')}</div>
       <textarea class="field body" id="fnote" placeholder="Notes (optional): weights, PRs, how you felt…">${esc(entry.notes)}</textarea>` : ''}
-    <div class="btns">${entry ? '' : `<button class="btn" data-a="again">Again</button>`}<button class="btn primary" data-a="done">Done</button></div>
+    <div class="btns">${entry ? '' : `<button class="btn" data-a="again">Do it again</button>`}<button class="btn primary" data-a="done">Done</button></div>
   </div></div>`);
   f.addEventListener('click', e => {
     e.stopPropagation();
@@ -1974,7 +2159,7 @@ function openGym({ title, entry, date, progKey } = {}) {
       <h1>${editing ? 'Edit Workout' : d.prog ? 'Program Session' : 'Gym Workout'}</h1>
       <div class="tb-right"><button class="round-btn" data-a="menu" aria-label="More">${ic('more')}</button></div></header>
     <div class="scroll"><div class="page" id="gy" style="padding-bottom:30px"></div></div>
-    <div class="gym-bar"><button class="btn" data-a="rest">${ic('pausebars')}Rest</button><button class="btn primary" data-a="finish">${editing ? 'Save changes' : 'Finish workout'}</button></div>
+    <div class="gym-bar"><button class="btn" data-a="rest">${ic('pausebars')}Take a rest</button><button class="btn primary" data-a="finish">${editing ? 'Save changes' : 'Finish workout'}</button></div>
   </section>`);
   const gy = $('#gy', scr);
   Gym.cur = d;
@@ -2055,7 +2240,7 @@ function openGym({ title, entry, date, progKey } = {}) {
       case 'gdur': return pickDuration('Duration', d.dur || 3600, v => { d.dur = v; paint(); }, { presets: [1800, 2700, 3600, 4500, 5400] });
       case 'menu': return menu(d.title || 'Workout', [
         ...(editing ? [{ icon: 'trash', label: 'Delete this workout', danger: true, run: async () => {
-          if (await confirmBox('Delete workout?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { log = log.filter(x => x.id !== d.id); saveLog(); close(true); }
+          if (await confirmBox(`Delete workout "${d.title || 'Workout'}"?`, 'It is removed from your calendar and history.', [{ label: 'Delete workout', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { log = log.filter(x => x.id !== d.id); saveLog(); close(true); }
         } }] : [{ icon: 'trash', label: 'Discard workout', danger: true, run: async () => {
           if (await confirmBox('Discard workout?', 'All sets in this workout will be removed.', [{ label: 'Discard', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { DB.del('gymdraft'); close(true); }
         } }]),
@@ -2272,7 +2457,7 @@ function openEntry(x, preset = {}) {
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'dur') return pickDuration('Duration', d.dur, v => { d.dur = v; $('#edur', s.el).textContent = fmtMins(v); }, { presets: [900, 1200, 1800, 2700, 3600, 5400] });
     if (b.dataset.a === 'del') {
-      const ok = await confirmBox('Delete this workout?', '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }]);
+      const ok = await confirmBox(`Delete "${d.title || d.cat || 'Workout'}" from ${new Date(d.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}?`, 'It is removed from your calendar and history.', [{ label: 'Delete workout', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }]);
       if (ok) { log = log.filter(y => y.id !== d.id); saveLog(); s.close(); rerenderKeepScroll(); }
       return;
     }
@@ -2377,7 +2562,7 @@ function viewProgress() {
     <div class="sect">Last 12 months</div>
     <div class="heat-wrap"><div class="heat-scroll" id="heatsc"><div class="heat">${heat}</div></div>
       <div class="heat-legend"><span>Each square is a day</span><span class="lv">Less <i style="background:var(--surface-2)"></i><i style="background:var(--accent);opacity:.3"></i><i style="background:var(--accent);opacity:.55"></i><i style="background:var(--accent);opacity:.8"></i><i style="background:var(--accent)"></i> More</span></div></div>
-    <div class="sect"><span>Body weight</span><button class="btn sm" data-a="bw" style="background:var(--accent);color:var(--accent-ink)">${ic('plus')}Log</button></div>
+    <div class="sect"><span>Body weight</span><button class="btn sm" data-a="bw" style="background:var(--accent);color:var(--accent-ink)">${ic('plus')}Log weight</button></div>
     <div class="chart-card">
       ${lb ? `<div class="top"><div><div class="k">Latest · ${esc(shortDate(lb.at))}</div><div class="big">${wOut(lb.kg)}<small>${wUnit()}</small></div>${chg ? `<div class="chg">${chg}</div>` : ''}</div>
 </div>
@@ -2404,6 +2589,7 @@ function viewProgress() {
     const ex = e.target.closest('[data-ex]'); if (ex) return showExercise(ex.dataset.ex);
     const sr = e.target.closest('[data-srange]'); if (sr) { stepsRange = sr.dataset.srange; return rerenderKeepScroll(); }
     const so = e.target.closest('[data-a="steps-on"]'); if (so) return enableSteps();
+    if (e.target.closest('[data-a="stepbat"]')) return stepsBattery();
     const ms = e.target.closest('[data-meas]'); if (ms) { const has = body.some(x => x[ms.dataset.meas]); return has ? showMeasure(ms.dataset.meas, ms.dataset.n) : openBodyEntry(null); }
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'bw') return openBodyEntry(null);
@@ -2674,7 +2860,7 @@ function importBackup() {
     const f = inp.files && inp.files[0]; if (!f) return;
     const rd = new FileReader();
     rd.onload = () => restoreFromText(String(rd.result));
-    rd.onerror = () => toast('Could not read that file');
+    rd.onerror = () => toast('That file couldn\'t be read. Pick the backup file again.');
     rd.readAsText(f);
   };
   document.body.appendChild(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
@@ -2686,7 +2872,7 @@ async function restoreFromText(text) {
   try { data = JSON.parse(text); } catch (e) { toast('That file is not a Vyora backup'); return; }
   if (data && data.enc) {
     const pw = await promptText('This backup is password-protected', { placeholder: 'Backup password', ok: 'Open', type: 'password' }); if (!pw) return;
-    try { data = JSON.parse(await decryptText(data, pw)); } catch (e) { toast('Wrong password, or the file is damaged'); return; }
+    try { data = JSON.parse(await decryptText(data, pw)); } catch (e) { toast('That password didn\'t open this backup. Check the password, or pick another backup file.'); return; }
   }
   if (!data || !APP_IDS.includes(data.app)) { toast('That file is not a Vyora backup'); return; }
   if ((data.version || 1) > BACKUP_VERSION) { toast('This backup is from a newer version of Vyora. Update the app first.'); return; }
@@ -2749,13 +2935,15 @@ function viewSettings() {
     <div class="sect">Appearance</div>
     <div class="block">
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Theme</div></span></div>
-      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0"><button class="${S.theme !== 'light' ? 'on' : ''}" data-theme="dark">Dark</button><button class="${S.theme === 'light' ? 'on' : ''}" data-theme="light">Light</button></div></div>
-      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Fitness colour</div><div class="s">Money is always green and Life soft lavender, so you can tell where you are</div></span></div>
+      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['light', 'Light'], ['dark', 'Dark'], ['system', 'Same as phone']].map(([k, n]) => `<button class="${(S.theme || 'light') === k ? 'on' : ''}" data-theme="${k}">${n}</button>`).join('')}</div></div>
+      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Motion</div><div class="s">${matchMedia('(prefers-reduced-motion: reduce)').matches ? 'Your phone asks for less motion, so animations are kept to a minimum.' : 'Reduce turns off sliding, zooming and moving figures.'}</div></span></div>
+      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['system', 'Follow phone'], ['reduce', 'Reduce']].map(([k, n]) => `<button class="${(S.motion || 'system') === k ? 'on' : ''}" data-motion="${k}">${n}</button>`).join('')}</div></div>
+      <div class="set-row" style="padding:6px 16px 10px;border-top:1px solid var(--line)"><span class="st"><div class="t">Action colour</div><div class="s">Buttons and highlights across the app. Prism cobalt is the standard.</div></span></div>
       <div class="swatches">${ACCENTS.map(([n, c]) => `<button data-acc="${c}" class="${c.toLowerCase() === S.accent.toLowerCase() ? 'on' : ''}" style="background:${c}" aria-label="${n}"></button>`).join('')}</div>
     </div>
     <div class="block">
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Open the app on</div><div class="s">Where Vyora starts each time</div></span></div>
-      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['last', 'Last used'], ['muscle', 'Fitness'], ['money', 'Money'], ['life', 'Life']].map(([k, n]) => `<button class="${(S.landing || 'last') === k ? 'on' : ''}" data-landing="${k}">${n}</button>`).join('')}</div></div>
+      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['last', 'Last used'], ['home', 'Today'], ['muscle', 'Fitness'], ['money', 'Money'], ['life', 'Life']].map(([k, n]) => `<button class="${(S.landing || 'last') === k ? 'on' : ''}" data-landing="${k}">${n}</button>`).join('')}</div></div>
     </div>
     <div class="sect">Training safety</div>
     <div class="block">
@@ -2796,9 +2984,10 @@ function viewSettings() {
     </div>
     <div class="sect">Steps</div>
     <div class="block">
-      <button class="set-row" data-a="steps"><span class="st"><div class="t">Step counting</div><div class="s">${isNative ? (STP.enabled ? 'On. Saves your steps about every 15 minutes, even when the app is closed.' : 'Off. Uses the phone\'s step sensor with almost no battery.') : 'Works in the installed app'}</div></span><span class="toggle ${STP.enabled ? 'on' : ''}"></span></button>
+      <button class="set-row" data-a="steps"><span class="st"><div class="t">Step counting</div><div class="s">${isNative ? (STP.enabled ? 'On. Saves your steps about every 15 minutes and at 23:59, even when the app is closed.' : 'Off. Uses the phone\'s step sensor with almost no battery.') : 'Works in the installed app'}</div></span><span class="toggle ${STP.enabled ? 'on' : ''}"></span></button>
       <button class="set-row" data-a="goal"><span class="st"><div class="t">Daily step goal</div><div class="s">You get a notification when you reach it</div></span><span class="val">${fmtN(S.stepGoal)}</span>${ic('chevR', 'chev')}</button>
       ${STP.enabled ? `<button class="set-row" data-a="stepreset"><span class="st"><div class="t">Reset today's steps</div><div class="s">Use this if today's number looks wrong. Counting restarts from now.</div></span>${ic('reset')}</button>` : ''}
+      ${STP.enabled && isNative ? `<button class="set-row" data-a="steplive"><span class="st"><div class="t">Always-on counting</div><div class="s">${STP.live ? 'On. Counts all day and saves every 30 seconds, so steps land on the right day. Shows a small "steps today" notification.' : 'Off. Steps are saved about every 15 minutes, so some may land on the wrong day.'}</div></span><span class="toggle ${STP.live ? 'on' : ''}"></span></button>` : ''}
       <button class="set-row" data-a="height"><span class="st"><div class="t">Height</div><div class="s">For distance and calories</div></span><span class="val">${S.height ? `${lOut(S.height)} ${lUnit().toUpperCase()}` : 'SET'}</span>${ic('chevR', 'chev')}</button>
     </div>
     <div class="sect">Units & calendar</div>
@@ -2813,16 +3002,18 @@ function viewSettings() {
       ${DB.get('errlog', []).length ? `<button class="set-row" data-a="errlog"><span class="st"><div class="t">Problem log</div><div class="s">${DB.get('errlog', []).length} problem${DB.get('errlog', []).length === 1 ? '' : 's'} recorded. Tap to view or copy for support.</div></span>${ic('info')}</button>` : ''}
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
     </div>
-    <div class="about"><img class="brandlogo" alt="Vyora" src="brand/vyora-logo-dark.png"><br>Version 6.2 · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
+    <div class="about"><img class="brandlogo" alt="Vyora" src="brand/vyora-logo-dark.png"><br><span id="appver">Version ${APP_VERSION}</span> · Personal edition<br>${timers.length} timers · ${log.length} workouts · ${body.length} weigh-ins</div>
   </div>`;
+  (async () => { try { if (!appBuild && P.App && P.App.getInfo) appBuild = await P.App.getInfo(); const v = $('#appver'); if (v && appBuild) v.textContent = `Version ${appBuild.version} (build ${appBuild.build})`; } catch (e) { /* web preview */ } })();
   view.querySelector('.page').addEventListener('click', async e => {
-    const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit]'); if (!b) return;
+    const b = e.target.closest('[data-k],[data-a],[data-acc],[data-theme],[data-snd],[data-unit],[data-motion],[data-landing]'); if (!b) return;
     if (b.dataset.k) {
       const k = b.dataset.k; S[k] = !S[k]; saveSettings(); $('.toggle', b).classList.toggle('on', S[k]);
       if (k === 'background' && S[k]) BG.ensurePermission(true);
       if (k === 'notifDetails') { Life.refresh && Life.reschedule && Life.reschedule(); Money.rescheduleBills && Money.rescheduleBills(); }
       return;
     }
+    if (b.dataset.motion) { S.motion = b.dataset.motion; saveSettings(); applyTheme(); return rerenderKeepScroll(); }
     if (b.dataset.landing) { S.landing = b.dataset.landing; saveSettings(); return rerenderKeepScroll(); }
     if (b.dataset.acc) { S.accent = b.dataset.acc; saveSettings(); applyTheme(); return rerenderKeepScroll(); }
     if (b.dataset.theme) { S.theme = b.dataset.theme; saveSettings(); applyTheme(); return rerenderKeepScroll(); }
@@ -2848,6 +3039,7 @@ function viewSettings() {
       case 'restore': return importBackup();
       case 'steps': return STP.enabled ? (await confirmBox('Turn off step counting?', 'Steps already saved stay in your history.', [{ label: 'Turn off', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) && disableSteps() : enableSteps();
       case 'goal': return pickStepGoal();
+      case 'steplive': { const on = !STP.live; try { if (P.Steps.setLive) { const r = await P.Steps.setLive({ on }); STP.live = r.live !== false; } } catch (e) { /* ignore */ } toast(STP.live ? 'Always-on counting is on' : 'Always-on counting is off. Steps are saved every 15 minutes.'); return rerenderKeepScroll(); }
       case 'stepreset': if (await confirmBox('Reset today\'s steps?', `Today shows ${fmtN(STP.today)} steps. This sets today to 0 and counts from now.`, [{ label: 'Reset', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) await resetTodaySteps(); return;
       case 'height': await askHeight(); return rerenderKeepScroll();
       case 'exact':
@@ -2863,10 +3055,10 @@ function viewSettings() {
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
 // program.js loads after this file, so draw the first screen once every script has run.
 window.addEventListener('DOMContentLoaded', () => {
-  const start = S.landing && S.landing !== 'last' ? S.landing : S.mode;
-  const wantMoney = start === 'money', wantLife = start === 'life';
-  S.mode = 'muscle'; currentTab = 'today';
-  if (wantLife) { S.mode = 'life'; currentTab = 'l-home'; }
+  const start = S.landing && S.landing !== 'last' ? S.landing : (S.mode || 'home');
+  const wantMoney = start === 'money';
+  S.mode = start === 'life' ? 'life' : start === 'muscle' ? 'muscle' : 'home';
+  currentTab = S.mode === 'life' ? 'l-home' : S.mode === 'muscle' ? 'today' : 'home';
   renderTabs(); paintModebar(); render();
   if (wantMoney) Money.openMoney();
   Money.boot();
