@@ -187,3 +187,10 @@ Tested: all regression suites; every tab at 375 px and 1280 px in light and dark
 - Recent-apps privacy screen (FLAG_SECURE).
 - APK size and startup time before/after (Play services OCR, bundled exercise photos).
 - Fresh install vs upgrade from Muscle & Money; uninstall/reinstall data behaviour.
+
+## 7.1
+- Location: asks once after login; auto weather, place reminders, expenses tagged with place, outdoor walk/run route map.
+- Money: bank SMS → expenses, subscription finder, EMI/loan tracker, "Can I afford it?", lend/borrow, tax helper, leave-adjusted salary, salary-day reminder, month-end summary.
+- Fitness: smarter weight increase, PR board, rest-day tips, Indian protein food list, streak freeze.
+- Life: night review, focus timer on tasks, meal plan → groceries, important dates, share/import family lists.
+- Home: weekly goals, goals with milestones, weekly insights, voice sentences, Today widget, app shortcuts, notification quick actions, weekly encrypted backup.

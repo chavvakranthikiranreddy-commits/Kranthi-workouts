@@ -67,3 +67,6 @@ Note: your data lives on the phone. Uninstalling the app deletes it.
 **Accessibility.** The app follows your phone's font size (up to 135%), allows pinch zoom, respects "Remove animations", and has larger touch targets and screen-reader labels on buttons.
 
 **Problem log.** If something goes wrong, a short note (the error message and where it happened, never your data) is saved in **Settings → Problem log** so you can copy it when asking for help.
+
+### Privacy (7.1)
+Location and SMS stay on the phone. SMS is read only for bank debit/credit messages, and only after you allow it.

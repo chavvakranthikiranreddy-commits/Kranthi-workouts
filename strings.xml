@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Vyora</string>
+    <string name="title_activity_main">Vyora</string>
+    <string name="package_name">com.kranthi.workouts</string>
+    <string name="custom_url_scheme">com.kranthi.workouts</string>
+    <string name="widget_name">Vyora</string>
+    <string name="life_widget_name">Vyora · Life</string>
+    <string name="today_widget_name">Vyora · Today</string>
+    <string name="today_widget_desc">Next workout, steps and what\'s next, with quick Start, Expense and Water</string>
+    <string name="sc_expense">Add expense</string>
+    <string name="sc_water">Log water</string>
+    <string name="sc_timer">Start workout</string>
+    <string name="sc_note">New note</string>
+    <string name="life_widget_desc">Next alarm, today\'s tasks and reminders, quick note and voice add</string>
+    <string name="widget_desc">Steps, money left, today\'s workout and streak</string>
+</resources>
