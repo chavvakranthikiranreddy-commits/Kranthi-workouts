@@ -57,8 +57,10 @@ const Life = (() => {
         const [h, m] = r.time.split(':').map(Number);
         if (r.repeat === 'daily') N(r.nid, '🔔 ' + r.title, r.note || 'Reminder', { on: { hour: h, minute: m } });
         else if (r.repeat === 'weekly') r.days.forEach((on, d) => { if (on) N(r.nid + d, '🔔 ' + r.title, r.note || 'Reminder', { on: { weekday: d + 1, hour: h, minute: m } }); });
-        else { const at = nextOccur(r); if (at && at > now) N(r.nid, '🔔 ' + r.title, r.note || 'Reminder', { at }); }
+        else if (r.repeat !== 'place') { const at = nextOccur(r); if (at && at > now) N(r.nid, '🔔 ' + r.title, r.note || 'Reminder', { at }); }
       });
+      (L.dates || []).forEach(d => { const dt = parseKey(d.date); [d.before || 30, 7, 0].filter((v, i, a) => a.indexOf(v) === i).forEach((b, j) => { const at = addDays(dt, -b); at.setHours(9, 30, 0, 0); if (at > now) N(d.nid + j, S.notifDetails ? `📅 ${d.title} ${b ? `in ${b} days` : 'today'}` : '📅 An important date is coming up', S.notifDetails ? (d.note || dateKind(d.kind)) : 'Open Vyora to see it', { at }); }); });
+      if (S.nightReview !== false) N(92000, '🌙 How was today?', 'Three taps: mood, energy and one line', { on: { hour: 21, minute: 30 } });
       L.tasks.filter(t => !t.done && t.due && t.time).forEach(t => { const at = atNext(t.time, parseKey(t.due)); if (at > now) N(t.nid, '✅ ' + t.title, 'Task due', { at }); });
       L.habits.filter(h => h.time).forEach(h => { const [hh, mm] = h.time.split(':').map(Number); N(h.nid, `${h.icon} ${h.name}`, 'Keep your streak going', { on: { hour: hh, minute: mm } }); });
       L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const [hh, mm] = tm.split(':').map(Number); N(md.nid + i, S.notifDetails ? `💊 ${md.name}` : '💊 Medicine reminder', S.notifDetails ? (md.dose ? `Take ${md.dose}` : 'Time for your medicine') : 'Open Vyora to see which one', { on: { hour: hh, minute: mm } }, 'kw_private'); }));
@@ -111,13 +113,14 @@ const Life = (() => {
   const wx = c => WX[c] || ['🌡️', 'Weather'];
   function agenda(limit) {
     const k = dkey(new Date()), now = new Date(), items = [];
-    L.reminders.filter(r => r.on).forEach(r => {
+    L.reminders.filter(r => r.on && r.repeat !== 'place').forEach(r => {
       const due = r.repeat === 'daily' || (r.repeat === 'weekly' && r.days[now.getDay()]) || (dkey(nextOccur(r)) === k);
       if (due) items.push({ t: r.time, html: `<div class="agi"><span class="agt">${t12(r.time)}</span><span class="agx">🔔 ${esc(r.title)}</span></div>` });
     });
     L.tasks.filter(t => !t.done && t.due && t.due <= k).forEach(t => items.push({ t: t.time || '23:59', html: `<div class="agi">${checkBtn(false, `data-tdone="${t.id}"`)}<span class="agx">${esc(t.title)}${t.due < k ? ' <em class="badt">overdue</em>' : ''}</span>${t.time ? `<span class="agt">${t12(t.time)}</span>` : ''}</div>` }));
     L.meds.filter(md => md.on !== false).forEach(md => md.times.forEach((tm, i) => { const st = ((L.medLog[k] || {})[md.id] || {})[i]; items.push({ t: tm, html: `<div class="agi"><span class="agt">${t12(tm)}</span><span class="agx">💊 ${esc(md.name)}${md.dose ? ` · ${esc(md.dose)}` : ''}</span>${st ? `<span class="agok ${st}">${st === 'taken' ? 'Taken ✓' : 'Skipped'}</span>` : `<button class="btn sm" data-med="${md.id}:${i}">Mark taken</button>`}</div>` }); }));
     (billsSafe(0) || []).forEach(b => items.push({ t: '00:00', html: billRow(b) }));
+    agendaExtras().forEach(x => items.push(x));
     return items.sort((a, b) => a.t.localeCompare(b.t)).slice(0, limit || 99).map(x => x.html).join('');
   }
   // Money bills on the Life side (hidden while Money is locked).
@@ -135,7 +138,7 @@ const Life = (() => {
   function upcomingEvents(days = 30) {
     return L.events.map(ev => ({ ev, d: nextEvent(ev) })).filter(x => x.d && (x.d - today0()) / 864e5 <= days).sort((a, b) => a.d - b.d);
   }
-  const TOOLS = [['journal', 'book', 'Journal'], ['focus', 'target', 'Focus'], ['weather', 'sun', 'Weather'], ['meds', 'pill', 'Medicine'], ['water', 'drop', 'Water'], ['events', 'cake', 'Birthdays'], ['calc', 'calc', 'Calculator'], ['convert', 'swap', 'Converter'], ['lists', 'cart', 'Shopping'], ['docs', 'lock', 'Documents'], ['world', 'globe', 'World clock'], ['voice', 'mic', 'Voice add'], ['brief', 'sun', 'Briefing'], ['bills', 'wallet', 'Bills'], ['alarm', 'clock', 'Alarms']];
+  const TOOLS = [['journal', 'book', 'Journal'], ['focus', 'target', 'Focus'], ['weather', 'sun', 'Weather'], ['meds', 'pill', 'Medicine'], ['water', 'drop', 'Water'], ['events', 'cake', 'Birthdays'], ['calc', 'calc', 'Calculator'], ['convert', 'swap', 'Converter'], ['lists', 'cart', 'Shopping'], ['meals', 'calendar', 'Meal plan'], ['dates', 'calendar', 'Important dates'], ['docs', 'lock', 'Documents'], ['world', 'globe', 'World clock'], ['voice', 'mic', 'Voice add'], ['brief', 'sun', 'Briefing'], ['bills', 'wallet', 'Bills'], ['alarm', 'clock', 'Alarms']];
   const favTools = () => (Array.isArray(L.favTools) && L.favTools.length ? L.favTools : ['journal', 'meds', 'docs', 'lists', 'focus', 'weather', 'calc', 'events', 'brief']);
   // All tools, with a star to pin your favourites to Today.
   function allTools() {
@@ -270,7 +273,7 @@ const Life = (() => {
         ${L.habits.length ? `<div class="block" style="padding:0;margin-top:12px">${L.habits.map(h => `<div class="habit"><button class="hbm" data-habed="${h.id}"><span class="hico">${h.icon}</span><span class="wkt"><b>${esc(h.name)}</b><span>${streak(h)} day streak${h.time ? ' · 🔔 ' + t12(h.time) : ''}</span></span></button>
           <span class="hdots">${days.map(d => `<i class="${(h.log || {})[dkey(d)] ? 'on' : ''}" title="${dkey(d)}"></i>`).join('')}</span>${checkBtn(!!(h.log || {})[k], `data-hab="${h.id}"`)}</div>`).join('')}</div>` : '<div class="empty"><b>Build a habit</b>Read 10 pages, meditate, no sugar, call parents… tick it off each day and watch the streak grow.</div>'}`;
     } else {
-      body = `<button class="btn primary" data-a="listadd" style="margin-top:4px">${ic('plus')}New list</button>
+      body = `<div class="mactions"><button class="btn primary" data-a="listadd">${ic('plus')}New list</button><button class="btn" data-a="listimport">${ic('download')}Import a shared list</button></div>
         ${L.lists.map(l => { const left = l.items.filter(i => !i.d).length; return `<button class="lcard" data-list="${l.id}"><span class="lico">${l.icon || '🛒'}</span><span class="wkt"><b>${esc(l.name)}</b><span>${left} to buy · ${l.items.length - left} done</span></span>${ic('chevR', 'chev')}</button>`; }).join('') || '<div class="empty"><b>Shopping lists</b>Groceries, Amazon cart, things for the trip. Tick items as you buy them and add the total to Money.</div>'}`;
     }
     view.innerHTML = topbar('Tasks') + `<div class="page"><div class="seg seg4">${segs.map(([k2, n]) => `<button class="${taskSeg === k2 ? 'on' : ''}" data-tseg="${k2}">${n}</button>`).join('')}</div>${body}</div>`;
@@ -296,7 +299,7 @@ const Life = (() => {
   }
   function taskRow(t) {
     const k = dkey(new Date());
-    return `<div class="trow ${t.done ? 'done' : ''}">${checkBtn(t.done, `data-tdone="${t.id}"`)}<button class="ttx" data-task="${t.id}"><b>${esc(t.title)}</b>${t.due ? `<span class="${!t.done && t.due < k ? 'badt' : ''}">${esc(dayName(t.due))}${t.time ? ' · ' + t12(t.time) : ''}</span>` : ''}</button>${t.star ? '<span class="tstar">★</span>' : ''}</div>`;
+    return `<div class="trow ${t.done ? 'done' : ''}">${checkBtn(t.done, `data-tdone="${t.id}"`)}<button class="ttx" data-task="${t.id}"><b>${esc(t.title)}</b>${t.focusMin ? `<span>⏱ ${t.focusMin} min focused</span>` : ''}${t.due ? `<span class="${!t.done && t.due < k ? 'badt' : ''}">${esc(dayName(t.due))}${t.time ? ' · ' + t12(t.time) : ''}</span>` : ''}</button>${t.star ? '<span class="tstar">★</span>' : ''}${t.done ? '' : `<button class="tfocus" data-tfocus="${t.id}" aria-label="Focus on ${esc(t.title)}">${ic('target')}</button>`}</div>`;
   }
   const remRepeatTxt = r => r.repeat === 'daily' ? 'Every day' : r.repeat === 'weekly' ? r.days.map((on, i) => on ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i] : '').filter(Boolean).join(', ') : r.repeat === 'monthly' ? `Monthly on day ${parseKey(r.date).getDate()}` : r.repeat === 'yearly' ? `Yearly on ${parseKey(r.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}` : dayName(r.date);
   function taskSheet(t) {
@@ -319,21 +322,25 @@ const Life = (() => {
       <input class="field body" id="rt" placeholder="What? (e.g. Pay credit card)" value="${esc(r.title)}" maxlength="80">
       <div class="mrow2 eq"><div><label class="flabel" for="rtm">Time</label><input class="field body" type="time" id="rtm" value="${r.time}"></div><div id="rdw" style="visibility:${['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'}"><label class="flabel" for="rd">Date</label><input class="field body" type="date" id="rd" value="${r.date}"></div></div>
       <div class="sect">Repeat</div>
-      <div class="presets" style="justify-content:flex-start">${[['once', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly']].map(([k, n]) => `<button class="chip small ${r.repeat === k ? 'on' : ''}" data-rp="${k}">${n}</button>`).join('')}</div>
+      <div class="presets" style="justify-content:flex-start">${[['once', 'Once'], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly'], ['yearly', 'Yearly'], ['place', '📍 When I arrive']].map(([k, n]) => `<button class="chip small ${r.repeat === k ? 'on' : ''}" data-rp="${k}">${n}</button>`).join('')}</div>
       <div class="wdays" id="rwd" ${r.repeat === 'weekly' ? '' : 'hidden'}>${WDS.map((d, i) => `<button class="${r.days[i] ? 'on' : ''}" data-wd="${i}">${d}</button>`).join('')}</div>
+      <div id="rplace" ${r.repeat === 'place' ? '' : 'hidden'}><div class="sect">Where</div><div class="presets" style="justify-content:flex-start">${placeChoices(r)}</div><p class="hint">Reminds you once when you arrive (within about 150 m). Needs location "Allow all the time".</p></div>
       <input class="field body" id="rn" placeholder="Note (optional)" value="${esc(r.note || '')}" maxlength="120" style="margin-top:10px">
       <div class="btns ${isNew ? '' : 'two'}">${isNew ? '' : '<button class="btn danger" data-a="del">Delete</button>'}<button class="btn primary" data-a="ok">Save</button></div>`);
     if (isNew && !r.title) setTimeout(() => $('#rt', s.el).focus(), 250);
     s.el.addEventListener('click', async e => {
-      const rp = e.target.closest('[data-rp]'); if (rp) { r.repeat = rp.dataset.rp; $$('[data-rp]', s.el).forEach(x => x.classList.toggle('on', x === rp)); $('#rwd', s.el).hidden = r.repeat !== 'weekly'; $('#rdw', s.el).style.visibility = ['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'; return; }
+      const pc = e.target.closest('[data-pl]'); if (pc) { const pl = await pickPlace(pc.dataset.pl); if (pl) { r.place = pl; $$('[data-pl]', s.el).forEach(x => x.classList.toggle('on', x === pc)); pc.innerHTML = `📍 ${esc(pl.name)}`; } return; }
+      const rp = e.target.closest('[data-rp]'); if (rp) { r.repeat = rp.dataset.rp; $('#rplace', s.el).hidden = r.repeat !== 'place'; $$('[data-rp]', s.el).forEach(x => x.classList.toggle('on', x === rp)); $('#rwd', s.el).hidden = r.repeat !== 'weekly'; $('#rdw', s.el).style.visibility = ['daily', 'weekly'].includes(r.repeat) ? 'hidden' : 'visible'; return; }
       const wd = e.target.closest('[data-wd]'); if (wd) { r.days[+wd.dataset.wd] = r.days[+wd.dataset.wd] ? 0 : 1; wd.classList.toggle('on'); return; }
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'del') { if (!(await sure('reminder', r.text || r.title))) return; L.reminders = L.reminders.filter(x => x.id !== r.id); save(); reschedule(); s.close(); return refresh(); }
       r.title = $('#rt', s.el).value.trim(); if (!r.title) { toast('What should I remind you about?'); return; }
       r.time = $('#rtm', s.el).value || '09:00'; r.date = $('#rd', s.el).value || dkey(new Date()); r.note = $('#rn', s.el).value.trim(); r.on = true;
       if (r.repeat === 'weekly' && !r.days.some(Boolean)) { toast('Pick at least one day'); return; }
+      if (r.repeat === 'place' && !r.place) { toast('Pick the place: Here, Home or Work'); return; }
       const i = L.reminders.findIndex(x => x.id === r.id); if (i >= 0) L.reminders[i] = r; else L.reminders.push(r);
       save(); s.close(); refresh(); await askNotif(); reschedule();
+      if (r.repeat === 'place') { await syncPlaces(true); toast(`I'll remind you when you reach ${r.place.name}`); return; }
       const at = r.repeat === 'daily' || r.repeat === 'weekly' ? null : nextOccur(r);
       toast(at && at < new Date() ? 'That time has passed, so it will not ring' : `Reminder set · ${t12(r.time)}`);
     });
@@ -384,7 +391,7 @@ const Life = (() => {
       if (b.dataset.a === 'money') { close(); return Money.quickAddPre({ catId: 'groceries', payee: l.name, note: l.items.filter(i => i.d).map(i => i.t).join(', ').slice(0, 80) }); }
       if (b.dataset.a === 'more') return menu(l.name, [
         { icon: 'edit', label: 'Rename', run: () => renameInline($('h1', scr), l.name, n => { l.name = n; save(); }) },
-        { icon: 'share', label: 'Share list', run: async () => { const text = `${l.name}\n` + l.items.filter(i => !i.d).map(i => `• ${i.t}${i.q ? ' × ' + i.q : ''}`).join('\n'); try { if (P.Share) await P.Share.share({ text }); else await navigator.clipboard.writeText(text); } catch (err) { /* cancelled */ } } },
+        { icon: 'share', label: 'Share list', run: async () => { const text = `${l.name}\n` + l.items.filter(i => !i.d).map(i => `• ${i.t}${i.q ? ' × ' + i.q : ''}`).join('\n') + `\n\nOpen in Vyora: Life → Tasks → Lists → Import a shared list, then paste this message.\nvyora-list:${btoa(unescape(encodeURIComponent(JSON.stringify({ n: l.name, i: l.items.filter(i => !i.d).map(i => [i.t, i.q || '']) }))))}`; try { if (P.Share) await P.Share.share({ text }); else await navigator.clipboard.writeText(text); } catch (err) { /* cancelled */ } } },
         { icon: 'trash', label: 'Delete list', danger: true, run: async () => { if (await confirmBox(`Delete list "${l.name}"?`, `All ${l.items.length} item${l.items.length === 1 ? '' : 's'} on it are removed.`, [{ label: 'Delete list', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { L.lists = L.lists.filter(x => x.id !== l.id); save(); close(); } } },
       ]);
     });
@@ -834,11 +841,11 @@ const Life = (() => {
           <div class="cbtns"><button class="btn" data-f="reset">Reset</button><button class="btn primary" data-f="go">${st.running ? 'Pause' : 'Start'}</button><button class="btn" data-f="skip">Skip</button></div>
           <div class="stats" style="margin-top:16px"><div class="stat"><div class="k">Today</div><div class="v sm">${todayMin()} min</div><div class="s">${L.focus.sessions.filter(x => x.date === dkey(new Date())).length} sessions</div></div><div class="stat"><div class="k">This week</div><div class="v sm">${Math.round(L.focus.sessions.filter(x => parseKey(x.date) >= addDays(today0(), -6)).reduce((a, x) => a + x.min, 0) / 6) / 10} h</div><div class="s">focused</div></div></div>
           <div class="block" style="margin-top:12px;padding:4px 14px">${[['work', 'Focus'], ['brk', 'Short break'], ['long', 'Long break']].map(([k, n]) => `<div class="stp"><span>${n}</span><div class="stpc"><button data-fs="${k}" data-d="-5">−</button><b>${L.focus[k]} min</b><button data-fs="${k}" data-d="5">+</button></div></div>`).join('')}</div>`;
-        $('#ftask', body).addEventListener('input', e => { st.task = e.target.value; });
+        $('#ftask', body).addEventListener('input', e => { st.task = e.target.value; st.taskId = null; });
       };
       const finishPhase = () => {
         Snd.finish(); buzz(600);
-        if (st.mode === 'work') { st.count++; L.focus.sessions.push({ date: dkey(new Date()), min: L.focus.work, task: st.task }); save(); say('Focus session done. Take a break.'); st.mode = st.count % 4 === 0 ? 'long' : 'brk'; }
+        if (st.mode === 'work') { st.count++; L.focus.sessions.push({ date: dkey(new Date()), min: L.focus.work, task: st.task, taskId: st.taskId || null }); const tk = st.taskId && L.tasks.find(x => x.id === st.taskId); if (tk) tk.focusMin = (tk.focusMin || 0) + L.focus.work; save(); say('Focus session done. Take a break.'); st.mode = st.count % 4 === 0 ? 'long' : 'brk'; }
         else { say('Break over. Back to focus.'); st.mode = 'work'; }
         st.left = totalFor(st.mode); st.running = false; cancelFocusNotif(); paint();
       };
@@ -1028,7 +1035,7 @@ const Life = (() => {
   function openTool(k) {
     ({ journal: journalTool, focus: focusTool, weather: weatherTool, meds: medsTool, water: medsTool, events: eventsTool, calc: calcTool, convert: convertTool,
       lists: () => { taskSeg = 'lists'; go('l-tasks'); }, world: () => { clockSeg = 'world'; go('l-clock'); }, alarm: () => { clockSeg = 'alarms'; go('l-clock'); },
-      docs: docsTool, voice: voiceAdd, brief: () => openBriefing(false), bills: () => Money.openMoney('budget') })[k]();
+      docs: docsTool, voice: voiceAdd, meals: mealsTool, dates: datesTool, brief: () => openBriefing(false), bills: () => Money.openMoney('budget') })[k]();
   }
 
   /* ---------- morning briefing ---------- */
@@ -1206,6 +1213,12 @@ const Life = (() => {
   function parseVoice(raw) {
     const t = String(raw || '').trim(); let m;
     if (!t) return null;
+    // 7.1: water, weight, income, lend/borrow, start a workout
+    if ((m = t.match(/\b(?:drank|drink|had|log)\s+(\d+(?:\.\d+)?)\s*(glass(?:es)?|ml|litres?|liters?|l|bottles?)\b.*water|\bwater\b.*?(\d+(?:\.\d+)?)\s*(glass(?:es)?|ml|litres?|liters?|l|bottles?)/i))) { const n = parseFloat(m[1] || m[3]), u = (m[2] || m[4]).toLowerCase(); const ml = /^ml/.test(u) ? n : /^l|lit/.test(u) ? n * 1000 : /bottle/.test(u) ? n * 1000 : n * 250; return { kind: 'water', ml: Math.round(ml) }; }
+    if ((m = t.match(/\b(?:i weigh|my weight is|weight)\s*(?:is\s*)?(\d+(?:\.\d+)?)\s*(kg|kgs|kilos?|lb|lbs|pounds)?/i))) return { kind: 'weight', kg: /lb|pound/i.test(m[2] || '') ? parseFloat(m[1]) / 2.20462 : parseFloat(m[1]) };
+    if ((m = t.match(/\b(?:got|received|credited)\s+(?:my\s+)?(salary|bonus|refund)?\s*(?:of\s+)?(?:rs\.?\s*|₹\s*|rupees\s*)?(\d+(?:[.,]\d+)?)/i))) return { kind: 'income', amount: parseFloat(m[2].replace(',', '')), what: (m[1] || 'income').toLowerCase() };
+    if ((m = t.match(/\b(lent|gave|borrowed|took)\s+(?:rs\.?\s*|₹\s*)?(\d+(?:[.,]\d+)?)\s*(?:rupees|rs)?\s*(?:to|from)\s+([a-z][a-z ]{1,24})/i))) return { kind: 'debt', dir: /borrow|took/i.test(m[1]) ? 'borrowed' : 'lent', amount: parseFloat(m[2].replace(',', '')), person: m[3].trim().replace(/\b\w/g, c => c.toUpperCase()) };
+    if (/^(?:start|begin)\s+(?:a\s+|my\s+)?(?:workout|training|gym|walk|run)/i.test(t)) return { kind: 'start', what: /walk/i.test(t) ? 'walk' : /run/i.test(t) ? 'run' : 'workout' };
     if ((m = t.match(/^(?:please )?(?:set (?:an |the |my )?alarm|wake me(?: up)?)(?:\s+(?:for|at))?\s*(.*)$/i))) { let rest = m[1].replace(/^(at|for)\s+/i, ''); if (!/\d\s*[ap]\.?\s?m/i.test(rest)) rest = rest.replace(/(\d{1,2}(?:[:.]\d{2})?)/, '$1 am'); const w = parseWhen('at ' + rest); return { kind: 'alarm', time: w.time || '06:30', days: w.repeat === 'daily' ? [1, 1, 1, 1, 1, 1, 1] : w.repeat === 'weekly' ? w.days : [0, 0, 0, 0, 0, 0, 0], label: '' }; }
     if ((m = t.match(/^(?:add|put)\s+(.+?)\s+(?:to|on|in)(?: my| the)?\s+(.*?)\s*(?:shopping )?list$/i)) || (m = t.match(/^(?:add|put)\s+(.+?)\s+(?:to|on|in)(?: my| the)?\s+(shopping|groceries|grocery)$/i))) {
       const items = m[1].split(/,|\band\b/i).map(x => x.trim()).filter(Boolean); const lname = /shopping|grocer/i.test(m[2]) || !m[2] ? 'Groceries' : m[2].replace(/\b\w/g, c => c.toUpperCase());
@@ -1226,7 +1239,13 @@ const Life = (() => {
   async function voiceAdd(preset) {
     const text = preset || await listen(); if (!text) return;
     const v = parseVoice(text); if (!v) return;
-    const KIND = { reminder: ['🔔', 'Reminder'], task: ['✅', 'Task'], note: ['📝', 'Note'], alarm: ['⏰', 'Alarm'], shop: ['🛒', 'Shopping list'], expense: ['₹', 'Expense'] };
+    const KIND = { reminder: ['🔔', 'Reminder'], task: ['✅', 'Task'], note: ['📝', 'Note'], alarm: ['⏰', 'Alarm'], shop: ['🛒', 'Shopping list'], expense: ['₹', 'Expense'], water: ['💧', 'Water'], weight: ['⚖️', 'Body weight'], income: ['₹', 'Income'], debt: ['🤝', 'Lent / borrowed'], start: ['▶', 'Start'] };
+    // Quick ones need no confirmation screen.
+    if (v.kind === 'water') { Health.addWater(v.ml); toast(`💧 +${v.ml} ml water`); return; }
+    if (v.kind === 'start') { if (v.what === 'walk' || v.what === 'run') return Route.start(v.what); return openStartSheet(); }
+    if (v.kind === 'weight') { if (!(v.kg > 20 && v.kg < 300)) { toast('That weight looks off. Try again.'); return; } body.push({ id: uid(), at: Date.now(), kg: Math.round(v.kg * 10) / 10 }); saveBody(); toast(`⚖️ Weight saved: ${wOut(v.kg)} ${wUnit()}`); return; }
+    if (v.kind === 'income') return Money.quickAddPre({ amount: v.amount, payee: v.what === 'salary' ? 'Salary' : v.what.charAt(0).toUpperCase() + v.what.slice(1), type: 'income', catId: v.what === 'salary' ? 'salary' : 'oincome' });
+    if (v.kind === 'debt') return Money.addDebt({ person: v.person, amount: v.amount, dir: v.dir });
     const rep = v.repeat && v.repeat !== 'once' ? (v.repeat === 'weekly' ? 'every ' + v.days.map((on, i) => on ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i] : '').filter(Boolean).join(', ') : { daily: 'every day', monthly: 'every month', yearly: 'every year' }[v.repeat]) : '';
     const detail = v.kind === 'reminder' ? `${t12(v.time)} · ${rep || dayName(v.date)}` : v.kind === 'task' ? (v.date ? `${dayName(v.date)}${v.time ? ' · ' + t12(v.time) : ''}` : 'Any time') : v.kind === 'alarm' ? `${t12(v.time)} · ${v.days.some(Boolean) ? 'repeats' : 'once'}` : v.kind === 'shop' ? `${v.items.length} item${v.items.length > 1 ? 's' : ''} to ${v.list}` : v.kind === 'expense' ? `₹${v.amount}${v.payee ? ' · ' + v.payee : ''}` : '';
     const title = v.kind === 'note' ? v.text : v.kind === 'shop' ? v.items.join(', ') : v.kind === 'expense' ? (v.payee || 'Expense') : v.kind === 'alarm' ? 'Alarm' : v.title;
@@ -1266,6 +1285,12 @@ const Life = (() => {
   }
   async function doAction(a) {
     if (!a) return;
+    // Fitness/Money/Today actions from widgets, shortcuts and the step notification.
+    if (a === 'expense') { setTimeout(() => Money.quickAdd(), 300); return; }
+    if (a === 'water') { setTimeout(() => { Health.addWater(250); toast('💧 +250 ml water'); }, 300); return; }
+    if (a === 'start') { setTimeout(() => openStartSheet(), 300); return; }
+    if (a === 'today') { setMode('home'); return; }
+    if (a === 'route') { setTimeout(() => Route.resumeIfRunning(), 300); return; }
     if (S.mode !== 'life') setMode('life');
     setTimeout(() => { if (a === 'note') noteEditor(null, 'text'); else if (a === 'voice') voiceAdd(); else if (a === 'task') add('task'); }, 300);
   }
@@ -1306,6 +1331,8 @@ const Life = (() => {
   function refresh() { if ($('#layer > .screen')) return; if (S.mode === 'life' && currentTab.startsWith('l-')) { const sc = view.scrollTop; renderTab(tab); view.scrollTop = sc; } else if (currentTab === 'home') rerenderKeepScroll(); }
   async function handleClick(e) {
     const t = e.target;
+    if (nightReviewClick(e)) return;
+    const tf = t.closest('[data-tfocus]'); if (tf) { const tk = L.tasks.find(x => x.id === tf.dataset.tfocus); if (tk) { FT = { mode: 'work', left: L.focus.work * 60000, running: false, count: 0, endAt: 0, task: tk.title, taskId: tk.id }; focusTool(); } return; }
     const g = t.closest('[data-go]'); if (g) { const [where, seg] = g.dataset.go.split(':'); if (where === 'tasks' && seg) taskSeg = seg; if (where === 'clock') clockSeg = 'alarms'; return go('l-' + where); }
     const ad = t.closest('[data-add]'); if (ad) return add(ad.dataset.add);
     const tool = t.closest('[data-tool]'); if (tool) return openTool(tool.dataset.tool);
@@ -1330,6 +1357,7 @@ const Life = (() => {
     const b = t.closest('[data-a]'); if (!b) return;
     switch (b.dataset.a) {
       case 'habadd': return habitSheet(null);
+      case 'listimport': return importList();
       case 'listadd': { const n = await promptText('New list', { placeholder: 'e.g. Groceries', suggestions: ['Groceries', 'Vegetables', 'Amazon', 'Trip packing'], ok: 'Create' }); if (n) { const l = { id: uid(), name: n, icon: /trip|pack/i.test(n) ? '🧳' : /amazon|online/i.test(n) ? '📦' : '🛒', items: [] }; L.lists.push(l); save(); refresh(); listScreen(l.id); } return; }
       case 'cityadd': return citySheet();
       case 'notifperm': await askNotif(); reschedule(); setTimeout(refresh, 800); return;
@@ -1362,10 +1390,198 @@ const Life = (() => {
     if (type === 'jr') return journalEditor(L.journal.find(j => j.id === id), refresh);
   }
 
-  function boot() { unsealLife().then(() => { reschedule(); onResume().then(syncAlarms); setTimeout(checkWidgetAction, 600); }); }
+  function boot() { unsealLife().then(() => { reschedule(); onResume().then(syncAlarms); setTimeout(checkWidgetAction, 600); setTimeout(() => { syncPlaces(false); if (!L.weather || L.weather.auto) weatherHere(true); }, 2500); }); }
+
+  /* ======================= 7.1 Life additions ======================= */
+  if (!Array.isArray(L.dates)) L.dates = [];
+  if (!Array.isArray(L.places)) L.places = [];
+  if (!L.meals || typeof L.meals !== 'object') L.meals = {};
+
+  /* ---- Places: Home, Work, or right here ---- */
+  function placeChoices(r) {
+    const cur = r.place && r.place.name;
+    const opts = [['here', '📍 Here'], ...L.places.map(p => [p.id, p.name]), ['save', '+ Save a place']];
+    return opts.map(([k, n]) => `<button class="chip small ${cur && (k === 'here' ? false : n === cur) ? 'on' : ''}" data-pl="${k}">${esc(n)}</button>`).join('');
+  }
+  async function hereNow() {
+    if (!P.Place) { toast('Place reminders work in the installed app'); return null; }
+    let st = await P.Place.status(); if (!st.granted) { st = await P.Place.requestPermission(); if (!st.granted) { toast('Location was not allowed'); return null; } }
+    toast('Finding where you are…');
+    try { const loc = await P.Place.current(); const nm = await P.Place.name({ lat: loc.lat, lng: loc.lng }).catch(() => ({})); return { lat: loc.lat, lng: loc.lng, area: nm.area || '', city: nm.city || '' }; }
+    catch (e) { toast(String(e && e.message || 'Could not find your location')); return null; }
+  }
+  async function pickPlace(k) {
+    if (k === 'here') { const h = await hereNow(); return h ? { lat: h.lat, lng: h.lng, name: h.area || 'this place' } : null; }
+    if (k === 'save') {
+      const n = await promptText('Name this place', { placeholder: 'e.g. Home, Office, Gym', suggestions: ['Home', 'Office', 'Gym', 'Supermarket'], ok: 'Save here' }); if (!n) return null;
+      const h = await hereNow(); if (!h) return null;
+      const p = { id: uid(), name: n, lat: h.lat, lng: h.lng }; L.places.push(p); save(); toast(`${n} saved at your current location`);
+      return { lat: p.lat, lng: p.lng, name: p.name };
+    }
+    const p = L.places.find(x => x.id === k); return p ? { lat: p.lat, lng: p.lng, name: p.name } : null;
+  }
+  async function syncPlaces(ask) {
+    if (!P.Place) return;
+    const list = L.reminders.filter(r => r.on && r.repeat === 'place' && r.place).map(r => ({ id: r.id, lat: r.place.lat, lng: r.place.lng, radius: 150, title: `📍 ${r.title}`, body: r.note || `You're at ${r.place.name}`, place: r.place.name, once: true }));
+    try {
+      const st = await P.Place.status();
+      if (list.length && ask && !st.background) {
+        const ok = await confirmBox('Allow location all the time?', 'Place reminders need Android\'s "Allow all the time" location setting, so they work while Vyora is closed. On the next screen choose "Allow all the time".', [{ label: 'Open setting', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }]);
+        if (ok) await P.Place.requestBackground();
+      }
+      await P.Place.setPlaces({ places: list });
+      // Reminders that already fired while Vyora was closed are done.
+      const f = await P.Place.firedPlaces(); if (f && f.ids) { const ids = f.ids.split(',').filter(Boolean); if (ids.length) { L.reminders.forEach(r => { if (ids.includes(r.id)) r.on = false; }); save(); } }
+    } catch (e) { /* not native */ }
+  }
+
+  /* ---- Weather follows your location ---- */
+  async function weatherHere(quiet) {
+    if (!P.Place) return false;
+    try {
+      const st = await P.Place.status(); if (!st.granted) return false;
+      const loc = await P.Place.current(); const nm = await P.Place.name({ lat: loc.lat, lng: loc.lng }).catch(() => ({}));
+      const moved = !L.weather || Math.abs((L.weather.lat || 0) - loc.lat) > 0.05 || Math.abs((L.weather.lon || 0) - loc.lng) > 0.05;
+      L.weather = Object.assign(L.weather || {}, { lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lng * 100) / 100, name: nm.city || nm.area || (L.weather && L.weather.name) || 'Your location', auto: true });
+      if (moved) L.weather.at = 0;
+      save(); refreshWeather(quiet); return true;
+    } catch (e) { return false; }
+  }
+
+  /* ---- Important dates (insurance, service, passport, warranty…) ---- */
+  const DATE_KINDS = [['insurance', '🛡️', 'Insurance renewal'], ['vehicle', '🚗', 'Vehicle service / PUC'], ['passport', '🛂', 'Passport / visa expiry'], ['warranty', '🧾', 'Warranty ends'], ['licence', '🪪', 'Licence renewal'], ['rent', '🏠', 'Rent agreement'], ['other', '📅', 'Other']];
+  const dateKind = k => (DATE_KINDS.find(x => x[0] === k) || DATE_KINDS[6])[2];
+  const dateIcon = k => (DATE_KINDS.find(x => x[0] === k) || DATE_KINDS[6])[1];
+  const daysTo = d => Math.round((parseKey(d) - today0()) / 864e5);
+  function datesTool() {
+    toolScreen('Important dates', '', (scr, body) => {
+      const paint = () => {
+        const list = L.dates.slice().sort((a, b) => a.date.localeCompare(b.date));
+        body.innerHTML = `<p class="hint" style="margin-top:0">Reminders 30 days, 7 days and on the day. For a document photo, use Documents.</p>
+          <button class="btn primary" data-a="new">${ic('plus')}Add a date</button>
+          <div class="block" style="padding:0;margin-top:12px">${list.map(d => { const n = daysTo(d.date); return `<button class="loanrow" data-dt="${d.id}"><span><b>${dateIcon(d.kind)} ${esc(d.title)}</b><small>${esc(dateKind(d.kind))} · ${esc(parseKey(d.date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }))}</small></span><em class="${n < 0 ? 'badt' : n <= 30 ? '' : 'pos'}">${n < 0 ? `${-n} days ago` : n === 0 ? 'Today' : `in ${n} days`}</em></button>`; }).join('') || '<div class="empty" style="padding:16px"><b>No dates yet</b>Add insurance renewals, vehicle service, passport expiry or warranty end dates.</div>'}</div>`;
+      };
+      paint();
+      body.addEventListener('click', e => { const b = e.target.closest('[data-a="new"],[data-dt]'); if (!b) return; dateSheet(b.dataset.dt ? L.dates.find(x => x.id === b.dataset.dt) : null, paint); });
+    });
+  }
+  function dateSheet(d0, after) {
+    const d = d0 ? clone(d0) : { id: uid(), nid: nextNid() + 4, title: '', kind: 'insurance', date: dkey(addDays(new Date(), 60)), note: '', before: 30 };
+    const s = sheet(`<h2>${d0 ? 'Edit date' : 'Important date'}</h2>
+      <div class="presets" style="justify-content:flex-start">${DATE_KINDS.map(([k, e, n]) => `<button class="chip small ${d.kind === k ? 'on' : ''}" data-k="${k}">${e} ${n}</button>`).join('')}</div>
+      <label class="flabel" for="dtt">Name</label><input class="field" id="dtt" value="${esc(d.title)}" placeholder="e.g. Car insurance (ICICI Lombard)" maxlength="50">
+      <div class="mrow2"><div><label class="flabel" for="dtd">Date</label><input class="field" type="date" id="dtd" value="${d.date}"></div><div><label class="flabel" for="dtb">First reminder</label><select class="field" id="dtb">${[60, 30, 15, 7].map(n => `<option value="${n}" ${n === d.before ? 'selected' : ''}>${n} days before</option>`).join('')}</select></div></div>
+      <label class="flabel" for="dtn">Note (optional)</label><input class="field" id="dtn" value="${esc(d.note)}" placeholder="Policy number, garage phone…" maxlength="80">
+      <div class="btns ${d0 ? 'two' : ''}">${d0 ? '<button class="btn danger" data-a="del">Delete</button>' : ''}<button class="btn primary" data-a="ok">Save date</button></div>`);
+    s.el.addEventListener('click', async e => {
+      const k = e.target.closest('[data-k]'); if (k) { d.kind = k.dataset.k; $$('[data-k]', s.el).forEach(x => x.classList.toggle('on', x === k)); if (!$('#dtt', s.el).value) $('#dtt', s.el).placeholder = dateKind(d.kind); return; }
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'del') { if (!(await sure('date', d.title))) return; L.dates = L.dates.filter(x => x.id !== d.id); save(); reschedule(); s.close(); after && after(); return; }
+      d.title = $('#dtt', s.el).value.trim() || dateKind(d.kind); d.date = $('#dtd', s.el).value; d.before = +$('#dtb', s.el).value; d.note = $('#dtn', s.el).value.trim();
+      if (!d.date) { toast('Pick the date'); return; }
+      const i = L.dates.findIndex(x => x.id === d.id); if (i >= 0) L.dates[i] = d; else L.dates.push(d);
+      save(); reschedule(); askNotif(); s.close(); after && after(); toast(`Reminders set for ${d.title}`);
+    });
+  }
+
+  /* ---- Meal plan → shopping list ---- */
+  const MEALS = {
+    'Idli & sambar': ['Idli rice', 'Urad dal', 'Toor dal', 'Tomatoes', 'Onions', 'Sambar powder'], 'Dosa & chutney': ['Dosa batter', 'Coconut', 'Green chillies', 'Roasted chana'],
+    'Upma': ['Rava (sooji)', 'Onions', 'Green chillies', 'Curry leaves'], 'Poha': ['Poha', 'Onions', 'Peanuts', 'Potatoes'], 'Oats & fruit': ['Oats', 'Milk', 'Bananas'],
+    'Egg omelette & toast': ['Eggs', 'Bread', 'Onions'], 'Paratha & curd': ['Wheat flour', 'Curd', 'Potatoes'], 'Moong dal chilla': ['Moong dal', 'Onions', 'Coriander'],
+    'Dal, rice & sabzi': ['Toor dal', 'Rice', 'Mixed vegetables', 'Tomatoes'], 'Rajma chawal': ['Rajma', 'Rice', 'Tomatoes', 'Onions'], 'Chole & roti': ['Chickpeas', 'Wheat flour', 'Tomatoes', 'Onions'],
+    'Sambar rice': ['Toor dal', 'Rice', 'Drumsticks', 'Sambar powder'], 'Curd rice': ['Rice', 'Curd', 'Cucumber'], 'Chicken curry & rice': ['Chicken', 'Rice', 'Onions', 'Tomatoes', 'Ginger-garlic paste'],
+    'Fish curry & rice': ['Fish', 'Rice', 'Tamarind', 'Coconut'], 'Egg curry & roti': ['Eggs', 'Wheat flour', 'Onions', 'Tomatoes'], 'Paneer bhurji & roti': ['Paneer', 'Wheat flour', 'Onions', 'Capsicum'],
+    'Palak paneer & rice': ['Spinach', 'Paneer', 'Rice', 'Cream'], 'Veg pulao & raita': ['Rice', 'Mixed vegetables', 'Curd'], 'Chicken biryani': ['Basmati rice', 'Chicken', 'Curd', 'Onions', 'Biryani masala'],
+    'Khichdi': ['Rice', 'Moong dal', 'Ghee'], 'Pesarattu': ['Green moong', 'Ginger', 'Green chillies'], 'Soya chunks curry & roti': ['Soya chunks', 'Wheat flour', 'Tomatoes'], 'Salad & sprouts': ['Sprouts', 'Cucumber', 'Tomatoes', 'Lemons'],
+  };
+  const SLOTS = [['b', 'Breakfast'], ['l', 'Lunch'], ['d', 'Dinner']];
+  function mealsTool() {
+    toolScreen('Meal plan', '', (scr, body) => {
+      const paint = () => {
+        const days = []; for (let i = 0; i < 7; i++) days.push(addDays(today0(), i));
+        body.innerHTML = `<p class="hint" style="margin-top:0">Plan the next 7 days, then turn it into one shopping list.</p>
+          ${days.map(d => { const k = dkey(d), m = L.meals[k] || {}; return `<div class="mealday"><b>${esc(dayName(k))}</b><div class="mealslots">${SLOTS.map(([sl, n]) => `<button class="mealslot ${m[sl] ? 'set' : ''}" data-md="${k}" data-sl="${sl}"><small>${n}</small>${esc(m[sl] || 'Add')}</button>`).join('')}</div></div>`; }).join('')}
+          <button class="btn primary" data-a="shop" style="margin-top:12px">${ic('cart')}Make shopping list</button>`;
+      };
+      paint();
+      body.addEventListener('click', e => {
+        if (e.target.closest('[data-a="shop"]')) return makeShopping();
+        const b = e.target.closest('[data-md]'); if (!b) return;
+        const k = b.dataset.md, sl = b.dataset.sl, cur = (L.meals[k] || {})[sl];
+        const s = sheet(`<h2>${esc(dayName(k))} · ${SLOTS.find(x => x[0] === sl)[1]}</h2><div class="presets" style="justify-content:flex-start">${Object.keys(MEALS).map(n => `<button class="chip small ${cur === n ? 'on' : ''}" data-meal="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+          <label class="flabel" for="mown">Or type your own</label><div class="qadd"><input class="field" id="mown" placeholder="e.g. Pasta" maxlength="40"><button class="round-btn accent" data-a="own" aria-label="Add meal">${ic('plus')}</button></div>
+          ${cur ? '<button class="btn ghost" data-a="clear" style="margin-top:10px">Clear this meal</button>' : ''}`);
+        s.el.addEventListener('click', ev => {
+          const set = v => { L.meals[k] = Object.assign({}, L.meals[k], { [sl]: v }); if (!v) delete L.meals[k][sl]; save(); s.close(); paint(); };
+          const m = ev.target.closest('[data-meal]'); if (m) return set(m.dataset.meal);
+          const a = ev.target.closest('[data-a]'); if (!a) return;
+          if (a.dataset.a === 'clear') return set(null);
+          const v = $('#mown', s.el).value.trim(); if (v) set(v);
+        });
+      });
+    });
+  }
+  function makeShopping() {
+    const need = {};
+    for (let i = 0; i < 7; i++) { const m = L.meals[dkey(addDays(today0(), i))] || {}; Object.values(m).forEach(n => (MEALS[n] || []).forEach(x => { need[x] = (need[x] || 0) + 1; })); }
+    const items = Object.keys(need); if (!items.length) { toast('Plan a few meals first (custom meals have no ingredients)'); return; }
+    let l = L.lists.find(x => /grocer|shopping/i.test(x.name)); if (!l) { l = { id: uid(), name: 'Groceries', items: [] }; L.lists.push(l); }
+    let added = 0; items.forEach(t => { if (!l.items.some(i => !i.d && i.t.toLowerCase() === t.toLowerCase())) { l.items.push({ id: uid(), t, d: false }); added++; } });
+    save(); toast(`${added} item${added === 1 ? '' : 's'} added to ${l.name}`); listScreen(l.id);
+  }
+
+  /* ---- Import a list someone shared ---- */
+  async function importList() {
+    let txt = '';
+    try { txt = await navigator.clipboard.readText(); } catch (e) { /* no clipboard access */ }
+    if (!/vyora-list:/.test(txt || '')) txt = await promptText('Paste the shared list', { placeholder: 'Paste the whole message here', ok: 'Import', max: 4000 });
+    const m = String(txt || '').match(/vyora-list:([A-Za-z0-9+/=]+)/);
+    let data = null; try { data = m && JSON.parse(decodeURIComponent(escape(atob(m[1])))); } catch (e) { data = null; }
+    if (!data) {
+      // Plain text: one item per line.
+      const lines = String(txt || '').split('\n').map(x => x.replace(/^[•\-*✓\s]+/, '').trim()).filter(Boolean);
+      if (lines.length < 2) { if (txt) toast('No list found in that text'); return; }
+      data = { n: lines[0], i: lines.slice(1).map(x => [x, '']) };
+    }
+    const l = { id: uid(), name: String(data.n || 'Shared list').slice(0, 40), items: (data.i || []).slice(0, 200).map(([t, q]) => ({ id: uid(), t: String(t).slice(0, 80), q: q || '', d: false })) };
+    L.lists.push(l); save(); toast(`Imported "${l.name}" (${l.items.length} items)`); listScreen(l.id);
+  }
+
+  /* ---- Night review: mood, energy, one line (saved to the private journal) ---- */
+  const ENERGY = ['🪫', '😮‍💨', '🙂', '⚡', '🚀'];
+  function nightReviewHtml() {
+    const h = new Date().getHours(); const k = dkey(new Date());
+    if (h < 19 || S.nightReview === false || secSealed || secFailed || L.journal.some(j => j.date === k) || DB.get('reviewskip', '') === k) return '';
+    return `<div class="review" id="nrev"><b>How was today?</b>
+      <div class="faces">${MOODS.map((m, i) => `<button data-rmood="${i + 1}" aria-label="Mood ${i + 1} of 5">${m}</button>`).join('')}</div>
+      <div class="faces en">${ENERGY.map((m, i) => `<button data-ren="${i + 1}" aria-label="Energy ${i + 1} of 5">${m}</button>`).join('')}</div>
+      <label class="flabel" for="rline">One line about today</label><input class="field" id="rline" maxlength="140" placeholder="e.g. Good gym session, long meeting">
+      <div class="btns two"><button class="btn" data-rv="skip">Not today</button><button class="btn primary" data-rv="save">Save to journal</button></div></div>`;
+  }
+  function nightReviewClick(e) {
+    const box = e.target.closest('#nrev'); if (!box) return false;
+    const m = e.target.closest('[data-rmood]'); if (m) { box.dataset.mood = m.dataset.rmood; $$('[data-rmood]', box).forEach(x => x.classList.toggle('on', x === m)); return true; }
+    const en = e.target.closest('[data-ren]'); if (en) { box.dataset.en = en.dataset.ren; $$('[data-ren]', box).forEach(x => x.classList.toggle('on', x === en)); return true; }
+    const b = e.target.closest('[data-rv]'); if (!b) return true;
+    if (b.dataset.rv === 'skip') { DB.set('reviewskip', dkey(new Date())); box.remove(); return true; }
+    if (!box.dataset.mood) { toast('Tap a face for your mood'); return true; }
+    const line = $('#rline', box).value.trim();
+    L.journal.push({ id: uid(), date: dkey(new Date()), mood: +box.dataset.mood, energy: +(box.dataset.en || 0), text: line, photos: [], at: Date.now(), review: true });
+    save(); box.remove(); toast('Saved to your journal'); return true;
+  }
+
+  /* ---- Agenda extras: important dates coming up, place reminders ---- */
+  function agendaExtras() {
+    const out = [];
+    L.dates.forEach(d => { const n = daysTo(d.date); if (n >= 0 && n <= 14) out.push({ t: '00:01', html: `<div class="agi"><span class="agt">${n === 0 ? 'Today' : `${n} d`}</span><span class="agx">${dateIcon(d.kind)} ${esc(d.title)}</span></div>` }); });
+    L.reminders.filter(r => r.on && r.repeat === 'place' && r.place).forEach(r => out.push({ t: '23:58', html: `<div class="agi"><span class="agt">📍</span><span class="agx">${esc(r.title)} <small>at ${esc(r.place.name)}</small></span></div>` }));
+    return out;
+  }
 
   return {
     agendaHtml: n => agenda(n),
+    _parse: t => parseVoice(t), nightReviewHtml, nightReviewClick, syncPlaces, weatherHere, importList, datesTool, mealsTool, dates: () => L.dates, journalMoods: () => L.journal.map(j => ({ date: j.date, mood: j.mood, energy: j.energy })),
     habitsInfo: () => { const k = dkey(new Date()); return { total: L.habits.length, done: L.habits.filter(h => (h.log || {})[k]).length }; },
     openTasks: seg => { taskSeg = seg || 'todo'; go('l-tasks'); },
     openAdd: k => add(k),

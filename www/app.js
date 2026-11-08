@@ -37,6 +37,7 @@ const shortDate = t => new Date(t).toLocaleDateString(undefined, { day: 'numeric
 
 /* ---------- icons ---------- */
 const I = {
+  file: '<path d="M7 3.5h7l4.5 4.5v11.5a1.5 1.5 0 0 1-1.5 1.5H7a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 7 3.5Z"/><path d="M14 3.5V8h4.5M9 12.5h6M9 16h6"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20.5 20.5"/>',
   info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r="1.2" fill="currentColor" stroke="none"/>',
   share: '<circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="M8.7 10.8l6.6-4M8.7 13.2l6.6 4"/>',
@@ -116,7 +117,7 @@ const Cap = window.Capacitor;
 const isNative = !!(Cap && Cap.isNativePlatform && Cap.isNativePlatform());
 const P = {};
 if (isNative) {
-  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget', 'Alarm', 'Speech', 'Vault']) {
+  for (const n of ['LocalNotifications', 'Haptics', 'App', 'TextToSpeech', 'KeepAwake', 'Filesystem', 'Share', 'AudioDuck', 'Steps', 'Ocr', 'AppLock', 'Widget', 'Alarm', 'Speech', 'Vault', 'Place', 'Sms']) {
     try { if (Cap.isPluginAvailable(n)) P[n] = Cap.registerPlugin(n); } catch (e) { /* plugin missing */ }
   }
 }
@@ -131,7 +132,7 @@ const DB = {
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, suggest: true, artPhotos: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
+  background: true, suggest: true, artPhotos: true, streakFreeze: true, restTips: true, nightReview: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
@@ -155,7 +156,7 @@ if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() =
 // 7.0 Prism Flow: one cobalt colour for actions everywhere (sections are told apart by the dock and headings).
 const PRISM = '#3F51D9';
 // One source for the version: the installed APK reports its own (e.g. 7.0.23); the web preview uses this.
-const APP_VERSION = '7.0';
+const APP_VERSION = '7.1';
 let appBuild = null;
 const SECTION_COLORS = {}, SECTION_INK = {}, SECTION_TEXT = {};
 const curAccent = () => S.accent || PRISM;
@@ -458,6 +459,7 @@ async function scheduleReminders(silent) {
 /* ---------- home-screen widget ---------- */
 var widgetTimer = 0;
 function pushWidget(now) {
+  setTimeout(pushTodayWidget, 50);
   if (!P.Widget) return;
   clearTimeout(widgetTimer);
   widgetTimer = setTimeout(async () => {
@@ -667,7 +669,7 @@ function stepBars(arr) {
     }).join('')}
   </svg>`;
 }
-let stepsRange = 'week';
+let stepsRange = 'week', prShowAll = false;
 
 /* ---------- UI primitives ---------- */
 const layer = $('#layer');
@@ -1164,12 +1166,19 @@ function viewHome() {
         <button class="htile sm" data-a="habits"><span class="hic hab">${ic('check')}</span><span><b>${hab.total ? `${hab.done} of ${hab.total}` : 'Habits'}</b><small>${hab.total ? 'habits today' : 'Build a habit'}</small></span></button>
       </div>
     </div>
+    ${Life.nightReviewHtml ? Life.nightReviewHtml() : ''}
     <div class="sect"><span>Next up</span><button class="linkbtn" data-a="addrem">+ Reminder</button></div>
     <div class="block agenda">${agenda || '<div class="empty" style="padding:16px"><b>Nothing scheduled</b>Reminders, tasks, medicines and bills for today show up here.</div>'}</div>
     ${money ? `<div class="sect"><span>Money</span></div>${money}` : ''}
+    ${weekGoalsHtml()}
+    ${goalsHtml()}
+    <button class="nudge" data-a="insights" style="margin-top:12px">${ic('chart')}<span><b>${new Date().getDay() === 0 ? "This week's insights are ready." : 'Weekly insights.'}</b> How your sleep, workouts, spending and mood connect.</span></button>
     <button class="tcustom" data-a="fitover">${ic('dumbbell')}Open Fitness overview</button>
   </div>`;
+  checkGoalMilestones(); pushTodayWidget();
   view.querySelector('.page').addEventListener('click', async e => {
+    if (Life.nightReviewClick && Life.nightReviewClick(e)) return;
+    const gl = e.target.closest('[data-goal]'); if (gl) return goalSheet((S.goals || []).find(g => g.id === gl.dataset.goal));
     const b = e.target.closest('[data-a]');
     if (!b) { if (e.target.closest('.agenda')) { await Life.handleClick(e); setTimeout(() => { if (currentTab === 'home' && !$('#layer > .screen')) rerenderKeepScroll(); }, 200); } return; }
     switch (b.dataset.a) {
@@ -1186,9 +1195,257 @@ function viewHome() {
       case 'addrem': return Life.openAdd ? Life.openAdd('reminder') : Life.quickAdd();
       case 'money': return Money.openMoney('home');
       case 'fitover': return setMode('muscle');
+      case 'wgoals': return weekGoalsSheet();
+      case 'goalnew': return goalSheet(null);
+      case 'insights': return insightsSheet();
       default: if (e.target.closest('.agenda')) { await Life.handleClick(e); setTimeout(() => { if (currentTab === 'home' && !$('#layer > .screen')) rerenderKeepScroll(); }, 200); }
     }
   });
+}
+
+/* ---------- Outdoor walk / run with GPS ---------- */
+const Route = (() => {
+  let timer = null, scr = null;
+  const km = m => (m / 1000).toFixed(2);
+  const pace = (m, secs) => m > 30 ? (() => { const p = secs / (m / 1000); return `${Math.floor(p / 60)}:${pad(Math.round(p % 60))} /km`; })() : '–';
+  function pathSvg(pts, w = 320, h = 200) {
+    if (!pts || pts.length < 2) return `<div class="empty" style="padding:24px">Waiting for GPS… stand in the open for a moment.</div>`;
+    const lat = pts.map(p => p[0]), lng = pts.map(p => p[1]);
+    const mnLa = Math.min(...lat), mxLa = Math.max(...lat), mnLn = Math.min(...lng), mxLn = Math.max(...lng);
+    const k = Math.cos(((mnLa + mxLa) / 2) * Math.PI / 180);
+    const sx = (mxLn - mnLn) * k || 1e-5, sy = (mxLa - mnLa) || 1e-5, sc = Math.min((w - 24) / sx, (h - 24) / sy);
+    const X = v => 12 + ((v - mnLn) * k) * sc + ((w - 24) - sx * sc) / 2, Y = v => h - 12 - (v - mnLa) * sc - ((h - 24) - sy * sc) / 2;
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[1]).toFixed(1)},${Y(p[0]).toFixed(1)}`).join(' ');
+    const a = pts[0], z = pts[pts.length - 1];
+    return `<svg class="routesvg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Route shape"><path d="${d}"/><circle class="s" cx="${X(a[1]).toFixed(1)}" cy="${Y(a[0]).toFixed(1)}" r="5"/><circle class="e" cx="${X(z[1]).toFixed(1)}" cy="${Y(z[0]).toFixed(1)}" r="6"/></svg>`;
+  }
+  async function start(kind) {
+    if (!P.Place) { toast('GPS walks work in the installed app'); return; }
+    let st = await P.Place.status();
+    if (!st.granted) { st = await P.Place.requestPermission(); if (!st.granted) { toast('Location is needed to track the route. Allow it in phone Settings → Apps → Vyora.'); return; } }
+    if (!st.routeRunning) { try { await P.Place.startRoute({ kind }); } catch (e) { toast(String(e.message || e)); return; } }
+    open(kind);
+  }
+  function open(kind) {
+    if (scr) return;
+    scr = el(`<section class="screen routescr"><div class="topbar"><button class="round-btn" data-a="min" aria-label="Minimise">${ic('chevL')}</button><h1>${kind === 'run' ? 'Outdoor run' : 'Outdoor walk'}</h1></div>
+      <div class="page"><div class="rstats"><div><b id="rkm">0.00</b><span>km</span></div><div><b id="rtime">0:00</b><span>time</span></div><div><b id="rpace">–</b><span>pace</span></div></div>
+      <div class="chart-card" id="rmap">${pathSvg([])}</div>
+      <p class="hint">Tracking keeps going with the screen off. A notification shows the distance.</p>
+      <button class="btn primary" data-a="stop" style="margin-top:12px">${ic('check')}Finish and save</button>
+      <button class="btn ghost" data-a="discard" style="margin-top:8px">Discard</button></div></section>`);
+    layer.appendChild(scr);
+    const unback = pushBack(() => close());
+    const close = () => { clearInterval(timer); timer = null; unback(); if (scr) scr.remove(); scr = null; };
+    const tick = async () => { try { const r = await P.Place.routeStatus(); const x = JSON.parse(r.route || '{}'); if (!scr) return; $('#rkm', scr).textContent = km(x.dist || 0); const secs = Math.round((Date.now() - (x.start || Date.now())) / 1000); $('#rtime', scr).textContent = fmt(secs); $('#rpace', scr).textContent = pace(x.dist || 0, secs); $('#rmap', scr).innerHTML = pathSvg(x.pts); } catch (e) { /* not native */ } };
+    tick(); timer = setInterval(tick, 3000);
+    scr.addEventListener('click', async e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'min') return close();
+      if (b.dataset.a === 'discard') { if (await confirmBox('Discard this walk?', 'The route is not saved.', [{ label: 'Discard walk', cls: 'danger', value: 1 }, { label: 'Keep tracking', cls: 'ghost', value: 0 }])) { try { await P.Place.stopRoute(); } catch (e2) { /* ignore */ } close(); paintCtxAct(); } return; }
+      if (b.dataset.a === 'stop') {
+        const r = await P.Place.stopRoute(); const x = JSON.parse(r.route || '{}'); close();
+        const secs = x.secs || Math.round((Date.now() - x.start) / 1000);
+        if (!(x.dist > 20)) { toast('Too short to save'); return; }
+        const pts = (x.pts || []).filter((p, i, a) => i % Math.max(1, Math.ceil(a.length / 400)) === 0);
+        const entry = { id: uid(), date: dkey(new Date(x.start)), at: x.start, title: `${x.kind === 'run' ? 'Run' : 'Walk'} · ${km(x.dist)} km`, kind: 'route', dur: secs, dist: x.dist, route: pts, notes: pace(x.dist, secs) };
+        log.push(entry); saveLog(); rerenderKeepScroll(); toast(`Saved: ${km(x.dist)} km in ${fmt(secs)}`);
+      }
+    });
+  }
+  function view(id) {
+    const x = log.find(e => e.id === id); if (!x) return;
+    sheet(`<h2>${esc(x.title)}</h2><p class="sub">${esc(new Date(x.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))} · ${fmt(x.dur)} · ${esc(x.notes || '')}</p><div class="chart-card">${pathSvg(x.route)}</div>`);
+  }
+  async function resumeIfRunning() { try { if (P.Place) { const st = await P.Place.status(); if (st.routeRunning) open('walk'); } } catch (e) { /* ignore */ } }
+  return { start, open, view, pathSvg, resumeIfRunning };
+})();
+function routesHtml() {
+  const rs = log.filter(x => x.kind === 'route').sort((a, b) => b.at - a.at).slice(0, 5);
+  if (!rs.length) return '';
+  return `<div class="sect">Walks & runs</div><div class="block" style="padding:0">${rs.map(x => `<button class="mini-row" data-route="${x.id}" style="width:100%;text-align:left"><span>${esc(x.title)}<small>${esc(shortDate(x.at))} · ${fmt(x.dur)} · ${esc(x.notes || '')}</small></span>${ic('chevR', 'chev')}</button>`).join('')}</div>`;
+}
+
+/* ---------- Weekly goals ---------- */
+function weekGoalsHtml() {
+  const g = Object.assign({ workouts: 4, steps: 50000, minutes: 150 }, S.weekGoals || {});
+  const st = computeStats();
+  let steps = 0; for (let i = 0; i < 7; i++) steps += stepsOn(dkey(addDays(st.weekStart, i)));
+  const rows = [['Workouts', st.wkCount, g.workouts, ''], ['Steps', steps, g.steps, ''], ['Active minutes', Math.round(st.wkMin / 60), g.minutes, ' min']];
+  return `<div class="sect"><span>This week</span><button class="linkbtn" data-a="wgoals">Edit goals</button></div>
+    <div class="block wgoals">${rows.map(([n, v, t, u]) => `<div class="wg"><span><b>${n}</b><small>${fmtN(v)}${u} of ${fmtN(t)}${u}</small></span><span class="sbar"><i style="width:${Math.min(100, t ? v / t * 100 : 0).toFixed(1)}%"></i></span></div>`).join('')}</div>`;
+}
+function weekGoalsSheet() {
+  const g = Object.assign({ workouts: 4, steps: 50000, minutes: 150 }, S.weekGoals || {});
+  const s = sheet(`<h2>Weekly goals</h2><p class="sub">Shown on Today. The week starts on ${DAYN(S.weekStart)}.</p>
+    <label class="flabel" for="gw">Workout days</label><input class="field" id="gw" inputmode="numeric" value="${g.workouts}">
+    <label class="flabel" for="gs">Steps</label><input class="field" id="gs" inputmode="numeric" value="${g.steps}">
+    <label class="flabel" for="gm">Active minutes (WHO suggests 150)</label><input class="field" id="gm" inputmode="numeric" value="${g.minutes}">
+    <button class="btn primary" data-a="ok" style="margin-top:12px">Save goals</button>`);
+  s.el.addEventListener('click', e => { if (!e.target.closest('[data-a="ok"]')) return; S.weekGoals = { workouts: Math.max(1, parseInt($('#gw', s.el).value) || 4), steps: Math.max(1000, parseInt($('#gs', s.el).value) || 50000), minutes: Math.max(10, parseInt($('#gm', s.el).value) || 150) }; saveSettings(); s.close(); rerenderKeepScroll(); });
+}
+
+/* ======================= 7.1 Across the app ======================= */
+
+/* ---- Goals with milestones ---- */
+const GOAL_TYPES = [['weight', '⚖️', 'Body weight'], ['savings', '💰', 'Savings'], ['steps', '👣', 'Steps'], ['workouts', '🏋️', 'Workouts'], ['custom', '🎯', 'Anything else']];
+function goalNow(g) {
+  if (g.type === 'weight') { const lb = body.filter(x => x.kg).sort((a, b) => b.at - a.at)[0]; return lb ? lb.kg : g.startVal; }
+  if (g.type === 'steps') { let n = 0; for (let d = parseKey(g.start); d <= today0(); d = addDays(d, 1)) n += stepsOn(dkey(d)); return n; }
+  if (g.type === 'workouts') return log.filter(x => x.date >= g.start).length;
+  return g.value || 0; // savings & custom: you update it
+}
+function goalState(g) {
+  const now = goalNow(g), down = g.type === 'weight' && g.target < g.startVal;
+  const span = Math.abs(g.target - g.startVal) || 1;
+  const done = down ? g.startVal - now : now - g.startVal;
+  const pct = Math.max(0, Math.min(1, done / span));
+  const t0 = parseKey(g.start), t1 = parseKey(g.deadline), tn = today0();
+  const timePct = Math.max(0, Math.min(1, (tn - t0) / Math.max(1, t1 - t0)));
+  const expect = g.startVal + (down ? -1 : 1) * span * timePct;
+  const ahead = down ? now <= expect : now >= expect;
+  const weeksLeft = Math.max(0, Math.ceil((t1 - tn) / (7 * 864e5)));
+  const perWeek = weeksLeft ? Math.abs(g.target - now) / weeksLeft : 0;
+  return { now, pct, timePct, expect, ahead, weeksLeft, perWeek, done: pct >= 1 };
+}
+const goalFmt = (g, v) => g.type === 'weight' ? `${wOut(v)} ${wUnit()}` : g.type === 'savings' ? `₹${fmtN(Math.round(v))}` : `${fmtN(Math.round(v))}${g.unit ? ' ' + g.unit : ''}`;
+function goalsHtml() {
+  const gs = (S.goals || []).filter(g => !g.archived);
+  if (!gs.length) return `<div class="sect"><span>Goals</span><button class="linkbtn" data-a="goalnew">+ Add</button></div><button class="nudge" data-a="goalnew">${ic('target')}<span><b>Set a goal with milestones.</b> e.g. "Lose 5 kg by March" or "Save ₹1 lakh". Weekly checkpoints tell you if you're on track.</span></button>`;
+  return `<div class="sect"><span>Goals</span><button class="linkbtn" data-a="goalnew">+ Add</button></div>
+    <div class="block" style="padding:0">${gs.map(g => { const x = goalState(g); return `<button class="goalrow" data-goal="${g.id}"><span class="gl"><b>${(GOAL_TYPES.find(t => t[0] === g.type) || GOAL_TYPES[4])[1]} ${esc(g.title)}</b>
+      <small>${x.done ? '🎉 Reached!' : `${goalFmt(g, x.now)} of ${goalFmt(g, g.target)} · ${x.ahead ? 'On track' : `Behind: aim for ${goalFmt(g, x.expect)} by now`}${x.weeksLeft && !x.done ? ` · ${goalFmt(g, x.perWeek)}/week to go` : ''}`}</small>
+      <span class="gbar"><i style="width:${(x.pct * 100).toFixed(1)}%"></i>${[25, 50, 75].map(m => `<em style="left:${m}%" class="${x.pct * 100 >= m ? 'hit' : ''}"></em>`).join('')}<u style="left:${(x.timePct * 100).toFixed(1)}%" title="Where you should be today"></u></span></span></button>`; }).join('')}</div>`;
+}
+function checkGoalMilestones() {
+  (S.goals || []).forEach(g => {
+    if (g.archived) return; const x = goalState(g); const m = Math.floor(x.pct * 4) * 25;
+    if (m > (g.hit || 0)) { g.hit = m; saveSettings(); setTimeout(() => toast(m >= 100 ? `🎉 Goal reached: ${g.title}!` : `🏁 ${m}% of "${g.title}" done`), 400); }
+  });
+}
+function goalSheet(g0) {
+  const g = g0 ? clone(g0) : { id: uid(), title: '', type: 'weight', start: dkey(new Date()), deadline: dkey(addDays(new Date(), 90)), target: '', startVal: '', value: 0, unit: '' };
+  const lb = body.filter(x => x.kg).sort((a, b) => b.at - a.at)[0];
+  const s = sheet(`<h2>${g0 ? 'Edit goal' : 'New goal'}</h2>
+    <div class="presets" style="justify-content:flex-start">${GOAL_TYPES.map(([k, e, n]) => `<button class="chip small ${g.type === k ? 'on' : ''}" data-gt="${k}">${e} ${n}</button>`).join('')}</div>
+    <label class="flabel" for="gtt">Goal</label><input class="field" id="gtt" value="${esc(g.title)}" placeholder="e.g. Lose 5 kg by March" maxlength="50">
+    <div class="mrow2"><div><label class="flabel" for="gsv" id="gsvl">Starting value</label><input class="field" id="gsv" inputmode="decimal" value="${g.startVal !== '' ? g.startVal : ''}"></div><div><label class="flabel" for="gtv">Target</label><input class="field" id="gtv" inputmode="decimal" value="${g.target}"></div></div>
+    <div class="mrow2"><div><label class="flabel" for="gst">Start</label><input class="field" type="date" id="gst" value="${g.start}"></div><div><label class="flabel" for="gdl">By</label><input class="field" type="date" id="gdl" value="${g.deadline}"></div></div>
+    <div id="gman" ${['savings', 'custom'].includes(g.type) ? '' : 'hidden'}><label class="flabel" for="gval">Progress so far</label><input class="field" id="gval" inputmode="decimal" value="${g.value || 0}"></div>
+    <p class="hint" id="gauto"></p>
+    <div class="btns ${g0 ? 'two' : ''}">${g0 ? '<button class="btn danger" data-a="del">Delete goal</button>' : ''}<button class="btn primary" data-a="ok">Save goal</button></div>`);
+  const hint = () => { $('#gman', s.el).hidden = !['savings', 'custom'].includes(g.type); $('#gauto', s.el).textContent = g.type === 'weight' ? 'Progress comes from your weigh-ins (Progress → Body weight).' : g.type === 'steps' ? 'Counts steps from the start date.' : g.type === 'workouts' ? 'Counts workouts from the start date.' : 'Update "Progress so far" whenever it changes.'; if (g.type === 'weight' && !$('#gsv', s.el).value && lb) $('#gsv', s.el).value = wOut(lb.kg); if (['steps', 'workouts'].includes(g.type) && !$('#gsv', s.el).value) $('#gsv', s.el).value = 0; };
+  hint();
+  s.el.addEventListener('click', async e => {
+    const t = e.target.closest('[data-gt]'); if (t) { g.type = t.dataset.gt; $$('[data-gt]', s.el).forEach(x => x.classList.toggle('on', x === t)); $('#gsv', s.el).value = ''; return hint(); }
+    const b = e.target.closest('[data-a]'); if (!b) return;
+    if (b.dataset.a === 'del') { if (await confirmBox(`Delete goal "${g.title}"?`, '', [{ label: 'Delete goal', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { S.goals = S.goals.filter(x => x.id !== g.id); saveSettings(); s.close(); rerenderKeepScroll(); } return; }
+    const num2 = v => parseFloat(String(v).replace(/,/g, ''));
+    g.title = $('#gtt', s.el).value.trim(); g.startVal = num2($('#gsv', s.el).value); g.target = num2($('#gtv', s.el).value); g.start = $('#gst', s.el).value; g.deadline = $('#gdl', s.el).value; g.value = num2(($('#gval', s.el) || {}).value || 0) || 0;
+    if (g.type === 'weight' && S.unit === 'lb') { g.startVal /= 2.20462; g.target /= 2.20462; }
+    if (!g.title || isNaN(g.target) || isNaN(g.startVal) || !g.deadline || g.deadline <= g.start) { toast('Fill in the goal, start value, target and a date after the start'); return; }
+    S.goals = (S.goals || []).filter(x => x.id !== g.id).concat(g); saveSettings(); s.close(); rerenderKeepScroll(); toast('Goal saved. Checkpoints at 25%, 50% and 75%.');
+  });
+}
+
+/* ---- Weekly insights: links between your sleep, workouts, money and mood ---- */
+const DAYN = i => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][i];
+function weeklyInsights() {
+  const out = []; const days = []; for (let i = 1; i <= 28; i++) days.push(dkey(addDays(new Date(), -i)));
+  const wset = new Set(log.map(x => x.date));
+  const avg = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
+  // Sleep vs workouts
+  try {
+    const H = Health.data; const sl = k => { const e = H.sleep[k]; if (!e) return null; const [bh, bm] = e.bed.split(':').map(Number), [wh, wm] = e.wake.split(':').map(Number); return (((wh * 60 + wm) - (bh * 60 + bm) + 1440) % 1440) / 60; };
+    const a = avg(days.filter(k => wset.has(k)).map(sl).filter(v => v != null)), b = avg(days.filter(k => !wset.has(k)).map(sl).filter(v => v != null));
+    if (a != null && b != null && Math.abs(a - b) >= 0.3) out.push(['😴', a > b ? `You sleep ${trim1(a - b)} h more on workout days.` : `You sleep ${trim1(b - a)} h less on workout days. Try training earlier.`]);
+  } catch (e) { /* no sleep data */ }
+  // Spending vs workouts (only while Money is open)
+  try {
+    if (!Money.isLocked() && !Money.isSealed()) {
+      const tx = Money.data.txns.filter(t => t.type === 'expense' && days.includes(t.date));
+      const food = k => tx.filter(t => t.date === k && /food|dining|swiggy|zomato|eat/i.test(t.catId + ' ' + (t.payee || ''))).reduce((a, t) => a + t.amount, 0);
+      const a = avg(days.filter(k => wset.has(k)).map(food)), b = avg(days.filter(k => !wset.has(k)).map(food));
+      if (a != null && b != null && b - a >= 50) out.push(['🍔', `Food spending is about ₹${fmtN(Math.round(b - a))} higher on days you skip workouts.`]);
+      const tot = k => tx.filter(t => t.date === k).reduce((a2, t) => a2 + t.amount, 0);
+      const byDow = [0, 0, 0, 0, 0, 0, 0]; days.forEach(k => { byDow[parseKey(k).getDay()] += tot(k); });
+      const mx = byDow.indexOf(Math.max(...byDow)); if (byDow[mx] > 0) out.push(['📅', `${DAYN(mx)} is your biggest spending day.`]);
+    }
+  } catch (e) { /* Money locked */ }
+  // Steps this week vs last week
+  const sum = (from, n) => { let s0 = 0; for (let i = 0; i < n; i++) s0 += stepsOn(dkey(addDays(new Date(), -(from + i)))); return s0; };
+  const tw = sum(0, 7), lw = sum(7, 7);
+  if (tw && lw) out.push(['👣', tw >= lw ? `Steps are up ${Math.round((tw - lw) / lw * 100)}% on last week (${fmtN(tw)}).` : `Steps are down ${Math.round((lw - tw) / lw * 100)}% on last week. A 15-minute walk a day closes the gap.`]);
+  // Mood vs workouts
+  try {
+    const moods = Life.journalMoods().filter(j => j.mood && days.includes(j.date));
+    const a = avg(moods.filter(j => wset.has(j.date)).map(j => j.mood)), b = avg(moods.filter(j => !wset.has(j.date)).map(j => j.mood));
+    if (a != null && b != null && a - b >= 0.4) out.push(['🙂', 'Your mood is better on days you work out.']);
+  } catch (e) { /* journal locked */ }
+  // Most active day
+  const byDay = [0, 0, 0, 0, 0, 0, 0]; log.filter(x => days.includes(x.date)).forEach(x => { byDay[parseKey(x.date).getDay()]++; });
+  const best = byDay.indexOf(Math.max(...byDay)); if (byDay[best] >= 2) out.push(['🏋️', `${DAYN(best)} is your most consistent workout day.`]);
+  if (!out.length) out.push(['📈', 'Keep logging workouts, sleep, steps and spending. Insights appear after a week or two.']);
+  return out;
+}
+function insightsSheet() {
+  const ins = weeklyInsights();
+  sheet(`<h2>Your week, connected</h2><p class="sub">Patterns from the last 4 weeks across Fitness, Money and Life. Everything is worked out on your phone.</p>
+    <div class="block" style="padding:0">${ins.map(([e, t]) => `<div class="insrow"><span>${e}</span><p>${esc(t)}</p></div>`).join('')}</div>`);
+}
+
+/* ---- Location: asked once, after you've set up the app ---- */
+async function askLocationOnce(force) {
+  if (!isNative || !P.Place || (S.locAsked && !force)) return;
+  S.locAsked = true; saveSettings();
+  let st; try { st = await P.Place.status(); } catch (e) { return; }
+  if (st.granted && !force) return;
+  const ok = await confirmBox('Use your location?', 'Vyora uses it only on your phone for:\n• Weather for where you are\n• Place reminders ("Buy milk" when you reach the shop)\n• Where each expense was made\n• Walk and run routes\n\nNothing is uploaded. You can change this anytime in Settings.', [{ label: 'Allow location', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }]);
+  if (!ok) return;
+  try { st = await P.Place.requestPermission(); } catch (e) { return; }
+  if (st.granted) { toast('Location on. Weather now follows you.'); try { Life.weatherHere(false); } catch (e) { /* ignore */ } }
+  else toast('Location was not allowed. You can turn it on in Settings later.');
+}
+
+/* ---- Automatic weekly backup (encrypted) ---- */
+async function autoBackupSetup() {
+  if (!P.Filesystem || !P.Vault) { toast('Automatic backup works in the installed app'); return; }
+  const pw = await promptText('Password for automatic backups', { placeholder: 'At least 6 characters', ok: 'Next', type: 'password' }); if (!pw) return;
+  if (pw.length < 6) { toast('Use at least 6 characters'); return; }
+  const pw2 = await promptText('Type it again', { placeholder: 'Same password', ok: 'Turn on', type: 'password' }); if (pw2 !== pw) { toast('Passwords did not match'); return; }
+  try { const r = await P.Vault.encrypt({ text: pw }); DB.set('autobk', { blob: r.data }); } catch (e) { toast('Could not store the password safely on this phone'); return; }
+  S.autoBackup = true; saveSettings(); await runAutoBackup(true);
+}
+async function runAutoBackup(now) {
+  if (!S.autoBackup || !P.Filesystem || !P.Vault) return;
+  if (!now && S.autoBackupAt && Date.now() - S.autoBackupAt < 7 * 864e5) return;
+  try {
+    const k = DB.get('autobk', null); if (!k) return;
+    const pw = (await P.Vault.decrypt({ data: k.blob })).text;
+    const money = !Money.isLocked() && !Money.isSealed();
+    const json = JSON.stringify(await encryptText(JSON.stringify(await backupData({ photos: false, money })), pw));
+    const name = `Vyora/vyora-auto-${dkey(new Date())}.json`;
+    await P.Filesystem.writeFile({ path: name, data: json, directory: 'DOCUMENTS', encoding: 'utf8', recursive: true });
+    // Keep the newest 4.
+    try { const ls = await P.Filesystem.readdir({ path: 'Vyora', directory: 'DOCUMENTS' }); const names = (ls.files || []).map(f => (f.name || f)).filter(n => /^vyora-auto-/.test(n)).sort(); for (const n of names.slice(0, Math.max(0, names.length - 4))) await P.Filesystem.deleteFile({ path: `Vyora/${n}`, directory: 'DOCUMENTS' }); } catch (e) { /* listing not allowed */ }
+    S.autoBackupAt = Date.now(); S.autoBackupFile = name; S.autoBackupMoney = money; saveSettings();
+    if (now) toast(`Backup saved to Documents/${name}${money ? '' : ' (Money was locked, so it is not included)'}`);
+  } catch (e) { logProblem('Automatic backup failed: ' + String(e && e.message || e), 'backup'); if (now) toast('Automatic backup failed. Check storage space.'); }
+}
+async function shareAutoBackup() {
+  if (!S.autoBackupFile) { toast('No automatic backup yet'); return; }
+  try { const r = await P.Filesystem.getUri({ path: S.autoBackupFile, directory: 'DOCUMENTS' }); await P.Share.share({ title: 'Vyora backup', text: 'Vyora automatic backup (password protected)', files: [r.uri], dialogTitle: 'Save to Google Drive' }); }
+  catch (e) { toast('Could not open the backup file'); }
+}
+
+/* ---- Today widget ---- */
+function pushTodayWidget() {
+  if (!P.Widget || !P.Widget.updateToday) return;
+  try {
+    const st = computeStats(); const day = plan && plan[new Date().getDay()]; const nu = nextUp(st, day, DB.get('gymdraft', null));
+    const ag = (Life.agendaHtml ? Life.agendaHtml(1) : '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    P.Widget.updateToday({ workout: nu.done ? `✓ ${nu.title}` : nu.title, steps: STP.today || 0, goal: S.stepGoal || 8000, next: ag ? `Next: ${ag}` : 'Nothing scheduled' });
+  } catch (e) { /* widget optional */ }
 }
 
 /* ---------- Start sheet (centre button) ---------- */
@@ -1203,12 +1460,15 @@ function openStartSheet() {
     <div class="sgrid">
       <button data-s="workouts">${ic('play')}<b>Guided workout</b></button><button data-s="gym">${ic('dumbbell')}<b>Gym log</b></button><button data-s="yoga">${ic('lotus')}<b>Yoga</b></button>
       <button data-s="rest">${ic('pausebars')}<b>Rest timer</b></button><button data-s="sw">${ic('stopwatch')}<b>Stopwatch</b></button><button data-s="timers">${ic('timer')}<b>My timers</b></button>
+      <button data-s="walk">${ic('run')}<b>Outdoor walk</b></button><button data-s="runr">${ic('run')}<b>Outdoor run</b></button>
     </div>`);
   s.el.addEventListener('click', e => {
     const b = e.target.closest('[data-s]'); if (!b) return; s.close(); tap();
     setTimeout(() => {
       switch (b.dataset.s) {
         case 'nu': if (nu.act === 'resume') return openGym({}); return startPlanItem(day.items[nu.idx]);
+        case 'walk': return Route.start('walk');
+        case 'runr': return Route.start('run');
         case 'wk': return Coach.openDetail(Coach.byId(b.dataset.id));
         case 'workouts': timersSeg = 'wk'; if (moneyMode()) setMode('muscle', true); return go('timers');
         case 'timers': timersSeg = 'mine'; return go('timers');
@@ -1290,7 +1550,7 @@ function openOnboarding() {
   const scr = el(`<section class="screen onb"><div class="onb-top"><div class="qprog"><i id="obar"></i></div><button class="linkbtn" data-a="skip">Skip</button></div><div class="scroll"><div class="page" id="ob"></div></div>
     <div class="gym-bar"><button class="btn" data-a="back">Back</button><button class="btn primary" data-a="next" id="onext">Next</button></div></section>`);
   layer.appendChild(scr);
-  const close = () => { unback(); scr.remove(); S.onboarded = true; saveSettings(); render(); };
+  const close = () => { unback(); scr.remove(); S.onboarded = true; saveSettings(); render(); setTimeout(() => askLocationOnce(), 700); };
   const unback = pushBack(() => {});
   const chip = (k, v, label, sub) => `<button class="qopt ${a[k] === v ? 'on' : ''}" data-k="${k}" data-v="${v}"><span class="qt"><b>${label}</b>${sub ? `<span>${sub}</span>` : ''}</span><span class="qc">${ic('check')}</span></button>`;
   const paint = () => {
@@ -1360,7 +1620,15 @@ function computeStats() {
   const today = today0();
   let cur = 0; let d = new Date(today);
   if (!days.has(dkey(d))) d = addDays(d, -1);
-  while (days.has(dkey(d))) { cur++; d = addDays(d, -1); }
+  // Streak freeze: one missed day per week doesn't break the streak (Settings → Streak freeze).
+  const wkOf = x => dkey(addDays(x, -((x.getDay() - S.weekStart + 7) % 7)));
+  const frozen = new Set(); let freezes = 0;
+  for (let guard = 0; guard < 4000; guard++) {
+    if (days.has(dkey(d))) { cur++; d = addDays(d, -1); continue; }
+    const prev = addDays(d, -1);
+    if (S.streakFreeze !== false && cur > 0 && days.has(dkey(prev)) && !frozen.has(wkOf(d))) { frozen.add(wkOf(d)); freezes++; d = prev; continue; }
+    break;
+  }
   let best = 0, run = 0, prev = null;
   [...days].sort().forEach(k => { const dt = parseKey(k); run = prev && Math.round((dt - prev) / 864e5) === 1 ? run + 1 : 1; best = Math.max(best, run); prev = dt; });
   const offset = (today.getDay() - S.weekStart + 7) % 7;
@@ -1371,7 +1639,7 @@ function computeStats() {
   const mo = inRange(mStart, mEnd);
   const sum = a => a.reduce((s, x) => s + (x.dur || 0), 0);
   const bars = []; for (let i = 0; i < 7; i++) { const dt = addDays(weekStart, i); const k = dkey(dt); bars.push({ k, dt, label: WD[dt.getDay()][0], mins: Math.round(sum(log.filter(x => x.date === k)) / 60), today: k === dkey(today), future: dt > today }); }
-  return { days, cur, best, weekStart, wkCount: new Set(wk.map(x => x.date)).size, wkSessions: wk.length, wkMin: sum(wk), moCount: mo.length, moDays: new Set(mo.map(x => x.date)).size, moMin: sum(mo), bars, doneToday: days.has(dkey(today)) };
+  return { days, cur, freezes, best, weekStart, wkCount: new Set(wk.map(x => x.date)).size, wkSessions: wk.length, wkMin: sum(wk), moCount: mo.length, moDays: new Set(mo.map(x => x.date)).size, moMin: sum(mo), bars, doneToday: days.has(dkey(today)) };
 }
 
 function itemDoneToday(it) {
@@ -1409,11 +1677,23 @@ function ringsHtml() {
     ${miniRing('sleep', 'Sleep', h.slept ? `${Math.floor(h.sleepH)}h${pad(Math.round((h.sleepH % 1) * 60))}` : 'Log', h.ready ? `ready ${h.ready.score}` : 'last night', h.sleepH / 8, '#9D8CFF', !h.slept)}
   </div>`;
 }
+// Suggest an easier day after short sleep or a very hard day yesterday (only before you've trained today).
+function restAdvice(st) {
+  if (st.doneToday || S.restTips === false || DB.get('easyskip', '') === dkey(new Date())) return null;
+  let h = 0; try { h = Health.today().sleepH || 0; } catch (e) { /* no sleep data */ }
+  const y = dkey(addDays(new Date(), -1)); const yd = log.filter(x => x.date === y);
+  const ymin = Math.round(yd.reduce((a, x) => a + (x.dur || 0), 0) / 60);
+  const ysets = yd.reduce((a, x) => a + (x.exercises || []).reduce((b, ex) => b + (ex.sets || []).length, 0), 0);
+  const why = h && h < 6 ? `You slept ${Math.round(h * 10) / 10} h last night` : ysets >= 25 || ymin >= 90 ? `Yesterday was a big session (${ysets ? ysets + ' sets' : ymin + ' min'})` : '';
+  if (!why) return null;
+  return { tag: 'Take it easier today', title: 'Mobility & light movement', sub: `${why}. A gentle session helps you recover and keeps the streak.`, btn: 'Gentle yoga', act: 'yoga', icon: 'lotus', more: 'Or train lighter than usual' };
+}
 function nextUp(st, day, draft) {
   const dow = new Date().getDay();
   const cs = Coach.pendingSession();
   if (cs) { const n = Object.values(cs.done || {}).reduce((a, x) => a + (x || []).filter(y => y && !y.skipped && (y.r > 0 || y.t > 0)).length, 0); return { tag: 'Unfinished workout', title: cs.w.name, sub: `${n} set${n === 1 ? '' : 's'} done so far`, btn: 'Resume', act: 'coachresume', icon: 'play' }; }
   if (draft) return { tag: 'In progress', title: draft.title || 'Gym workout', sub: `${draft.exercises.length} exercises logged so far`, btn: 'Resume', act: 'resume', icon: 'dumbbell' };
+  const easy = restAdvice(st); if (easy) return easy;
   if (hasPlan() && day && !day.rest && day.items.length) {
     const i = day.items.findIndex(it => !itemDoneToday(it));
     if (i >= 0) {
@@ -2121,6 +2401,25 @@ function exerciseStats(name, excludeId) {
   sessions.forEach(s => s.sets.forEach(st => { const w = st.w || 0; if (w > maxW || (w === maxW && st.r > (bestSet ? bestSet.r : 0))) { maxW = w; bestSet = st; } maxR = Math.max(maxR, st.r); maxE = Math.max(maxE, e1rm(w, st.r)); }));
   return { sessions, last: sessions[sessions.length - 1] || null, maxW, maxR, maxE, bestSet };
 }
+/* ---------- Personal records ---------- */
+// Heaviest weight (or most reps for bodyweight moves) per exercise, with the date it happened.
+function prBoard() {
+  const best = {};
+  log.slice().sort((a, b) => a.at - b.at).forEach(x => (x.exercises || []).forEach(ex => (ex.sets || []).forEach(st => {
+    if (!(st.r > 0) || st.skipped) return; const w = st.w || 0; const b = best[ex.name];
+    if (!b || w > b.w || (w === b.w && st.r > b.r)) best[ex.name] = { w, r: st.r, date: x.date, e: e1rm(w, st.r) };
+  })));
+  return Object.entries(best).map(([name, b]) => Object.assign({ name }, b)).sort((a, b) => b.e - a.e);
+}
+function celebratePRs(entry) {
+  if (!entry || !(entry.exercises || []).length) return;
+  const before = {}; log.filter(x => x.id !== entry.id && x.at < entry.at).forEach(x => (x.exercises || []).forEach(ex => (ex.sets || []).forEach(st => { if (st.r > 0) { const b = before[ex.name] || { w: 0, r: 0 }; const w = st.w || 0; if (w > b.w || (w === b.w && st.r > b.r)) before[ex.name] = { w, r: st.r }; } })));
+  const prs = [];
+  entry.exercises.forEach(ex => { const b0 = before[ex.name]; if (!b0) return; const top = bestOf(ex.sets || []); if (!top) return; const w = top.w || 0; if (w > b0.w || (w === b0.w && top.r > b0.r)) prs.push(`${ex.name} ${setStr(top)}`); });
+  if (!prs.length) return;
+  try { if (P.Haptics) P.Haptics.notification({ type: 'SUCCESS' }); } catch (e) { /* ignore */ }
+  confirmBox(`🏆 New personal record${prs.length > 1 ? 's' : ''}!`, prs.join('\n'), [{ label: 'Keep going', cls: 'primary', value: 1 }]);
+}
 const setStr = s => (s.w ? `${wOut(s.w)} ${wUnit()} × ${s.r}` : `${s.r} reps`);
 function summarizeSets(sets) {
   const timed = (sets || []).filter(s => s.t > 0);
@@ -2352,6 +2651,7 @@ async function finishGym(d, { editing, live, close }) {
       entry.dur = dur; entry.notes = $('#fn', s.el).value.trim();
       const i = log.findIndex(x => x.id === entry.id);
       if (i >= 0) log[i] = entry; else log.push(entry);
+      if (i < 0) setTimeout(() => celebratePRs(entry), 900);
       saveLog(); if (!editing) DB.del('gymdraft');
       s.close(); close(true);
       toast(prs.length ? `Saved · ${prs.length} new PR${prs.length > 1 ? 's' : ''} 🏆` : 'Workout saved');
@@ -2551,6 +2851,9 @@ function viewProgress() {
     <div class="sect"><span>Muscles trained</span><span style="text-transform:none;letter-spacing:0">Last 7 days</span></div>
     ${Health.muscleMapHtml()}
     <button class="nudge" data-h="score" style="margin-top:12px">${ic('chart')}<span><b>Weekly scorecard.</b> Workouts, steps, protein, water, sleep and money, day by day.</span></button>
+    ${(() => { const prs = prBoard().slice(0, prShowAll ? 60 : 6); return prs.length ? `<div class="sect"><span>Personal records</span>${prBoard().length > 6 ? `<button class="linkbtn" data-a="prall">${prShowAll ? 'Show less' : 'See all'}</button>` : ''}</div>
+      <div class="block" style="padding:0">${prs.map(x => `<div class="mini-row"><span>🏆 ${esc(x.name)}<small>${esc(shortDate(parseKey(x.date).getTime()))}</small></span><b>${x.w ? `${wOut(x.w)} ${wUnit()} × ${x.r}` : `${x.r} reps`}</b></div>`).join('')}</div>` : ''; })()}
+    ${routesHtml()}
     <div class="sect"><span>Progress photos</span></div>
     ${Health.photosHtml()}
     <div class="sect">${today.getFullYear()} so far</div>
@@ -2594,6 +2897,8 @@ function viewProgress() {
     const b = e.target.closest('[data-a]'); if (!b) return;
     if (b.dataset.a === 'bw') return openBodyEntry(null);
     if (b.dataset.a === 'bwhist') return bodyHistory();
+    if (b.dataset.a === 'prall') { prShowAll = !prShowAll; return rerenderKeepScroll(); }
+    if (b.dataset.route) return Route.view(b.dataset.route);
   });
 }
 
@@ -2947,7 +3252,10 @@ function viewSettings() {
     </div>
     <div class="sect">Training safety</div>
     <div class="block">
-      ${row('suggest', 'Weight suggestions', 'Suggest the next weight from what you actually lifted last time. Turn off to only see your last numbers.')}
+      ${row('suggest', 'Weight suggestions', 'Goes up by 2.5 kg (or 2 reps) after you hit every set twice in a row. Turn off to only see your last numbers.')}
+      ${row('streakFreeze', 'Streak freeze', 'One missed day a week does not break your workout streak.')}
+      ${row('restTips', 'Easy-day suggestions', 'After short sleep or a very hard day, Today suggests a lighter session.')}
+      ${row('nightReview', 'Night review', 'At 9:30 pm: mood, energy and one line about your day, saved to your private journal.')}
       ${row('backSafe', 'Back-friendly mode', 'Swaps heavy hinges (deadlifts, bent-over rows, swings) and twisting core work for options that load the lower back less')}
       <div class="set-row"><span class="st"><div class="t">Moves that hurt</div><div class="s">${(S.painMoves || []).length ? esc(S.painMoves.join(', ')) : 'None. Mark a move from its how-to or tap "This hurts" during a workout.'}</div></span>${(S.painMoves || []).length ? '<button class="btn sm" data-a="painclear">Clear</button>' : ''}</div>
       <p class="hint" style="padding:0 16px 14px;margin:0">This is a cautious default, not medical advice. If back pain lasts, gets worse, or comes with weakness, numbness, bladder or bowel changes, or numbness around the groin, see a doctor or physiotherapist.</p>
@@ -2955,6 +3263,7 @@ function viewSettings() {
     <div class="sect">Privacy</div>
     <div class="block">
       ${row('notifDetails', 'Show details in private reminders', 'Off: medicine, bill and document reminders just say "Medicine reminder" or "A bill is due". On: they show the name and amount (still hidden on the lock screen).')}
+      <button class="set-row" data-a="locperm"><span class="st"><div class="t">Location</div><div class="s" id="locst">Weather for where you are, place reminders, where expenses were made, and walk/run routes. Only used on this phone.</div></span>${ic('chevR', 'chev')}</button>
       ${row('artPhotos', 'Photos on quote cards', 'Free photos from Unsplash, downloaded when you are online and kept for offline. Off: the animated figure shows instead and nothing is downloaded.')}
       <button class="set-row" data-a="features"><span class="st"><div class="t">Phone features check</div><div class="s">See which features work on this phone, with fixes</div></span>${ic('chevR', 'chev')}</button>
       <button class="set-row" data-a="mlock"><span class="st"><div class="t">Money lock & auto-lock</div><div class="s">${Money.lockOn() ? 'On' : 'Off'} · set in Money → Settings</div></span>${ic('chevR', 'chev')}</button>
@@ -2998,6 +3307,8 @@ function viewSettings() {
     </div>
     <div class="sect">Your data</div>
     <div class="block">
+      <button class="set-row" data-a="autobk"><span class="st"><div class="t">Automatic weekly backup</div><div class="s">${S.autoBackup ? `On · password protected · saved to Documents/Vyora${S.autoBackupAt ? ` · last ${esc(shortDate(S.autoBackupAt))}` : ''}` : 'Off. Saves an encrypted backup to Documents/Vyora every week; keeps the last 4.'}</div></span><span class="toggle ${S.autoBackup ? 'on' : ''}"></span></button>
+      ${S.autoBackup ? `<button class="set-row" data-a="autobkshare"><span class="st"><div class="t">Save latest backup to Google Drive</div><div class="s">Opens the share sheet; pick Drive</div></span>${ic('chevR', 'chev')}</button>` : ''}
       <button class="set-row" data-a="backup"><span class="st"><div class="t">Back up now</div><div class="s">${since === null ? 'No backup yet. Save one to Google Drive or WhatsApp.' : `Last backup ${since === 0 ? 'today' : since === 1 ? 'yesterday' : since + ' days ago'}${S.lastBackupInfo ? ` · ${S.lastBackupInfo.kb} KB${S.lastBackupInfo.photos ? ' · with photos' : ''}${S.lastBackupInfo.locked ? ' · password' : ''}${S.lastBackupInfo.money ? '' : ' · without Money'}` : ''}`}${S.lastBackupError ? `<br><span class="badt">Last attempt failed: ${esc(S.lastBackupError.msg)}</span>` : ''}</div></span>${ic('upload')}</button>
       ${DB.get('errlog', []).length ? `<button class="set-row" data-a="errlog"><span class="st"><div class="t">Problem log</div><div class="s">${DB.get('errlog', []).length} problem${DB.get('errlog', []).length === 1 ? '' : 's'} recorded. Tap to view or copy for support.</div></span>${ic('info')}</button>` : ''}
       <button class="set-row" data-a="restore"><span class="st"><div class="t">Restore from backup</div><div class="s">Pick a backup file. You can merge or replace.</div></span>${ic('download')}</button>
@@ -3039,6 +3350,9 @@ function viewSettings() {
       case 'restore': return importBackup();
       case 'steps': return STP.enabled ? (await confirmBox('Turn off step counting?', 'Steps already saved stay in your history.', [{ label: 'Turn off', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) && disableSteps() : enableSteps();
       case 'goal': return pickStepGoal();
+      case 'locperm': return askLocationOnce(true);
+      case 'autobk': if (S.autoBackup) { S.autoBackup = false; saveSettings(); toast('Automatic backup is off'); return rerenderKeepScroll(); } await autoBackupSetup(); return rerenderKeepScroll();
+      case 'autobkshare': return shareAutoBackup();
       case 'steplive': { const on = !STP.live; try { if (P.Steps.setLive) { const r = await P.Steps.setLive({ on }); STP.live = r.live !== false; } } catch (e) { /* ignore */ } toast(STP.live ? 'Always-on counting is on' : 'Always-on counting is off. Steps are saved every 15 minutes.'); return rerenderKeepScroll(); }
       case 'stepreset': if (await confirmBox('Reset today\'s steps?', `Today shows ${fmtN(STP.today)} steps. This sets today to 0 and counts from now.`, [{ label: 'Reset', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) await resetTodaySteps(); return;
       case 'height': await askHeight(); return rerenderKeepScroll();
@@ -3066,6 +3380,10 @@ window.addEventListener('DOMContentLoaded', () => {
   Health.scheduleScorecard();
   setTimeout(maybeOnboard, 300);
   setTimeout(() => { if (S.onboarded && !$('#layer > .screen')) Coach.offerResume(); }, 900);
+  // 7.1: ask for location once (after setup), weekly automatic backup, Today widget, walk/run in progress.
+  setTimeout(() => { if (S.onboarded && !$('#layer > .screen') && !$('.backdrop')) askLocationOnce(); }, 2600);
+  setTimeout(() => runAutoBackup(false), 8000);
+  setTimeout(() => Route.resumeIfRunning(), 1500);
   pushWidget();
 });
 BG.init().then(() => { if (hasPlan()) scheduleReminders(true); });

@@ -90,15 +90,24 @@ const Coach = (() => {
     if (S.suggest === false) { const sets0 = st.last.sets; return { text: `Last: ${sets0.map(x => (x.w ? `${wOut(x.w)}×${x.r}` : `${x.r}`)).join(', ')}${sets0.some(x => x.w) ? ' ' + wUnit() : ' reps'}`, tip: '', w: null, up: false }; }
     st.lastPain = (() => { const x = log.slice().reverse().find(e => (e.exercises || []).some(q => q.name === name) || (e.pain || []).includes(name)); return !!(x && (x.pain || []).includes(name)); })();
     const sets = st.last.sets; const top = sets.reduce((m, s) => Math.max(m, s.w || 0), 0);
-    if (!top) return { text: `Last: ${sets.map(s => s.r).join(', ')} reps`, w: null };
-    const hitAll = sets.filter(s => (s.w || 0) === top).every(s => s.r >= (reps || 0));
+    const prev = st.sessions.length > 1 ? st.sessions[st.sessions.length - 2].sets : null;
+    if (!top) {
+      // Bodyweight: after hitting every set twice in a row, add 2 reps.
+      const all = ss => ss && ss.length && ss.every(x => x.r >= (reps || 0));
+      const twice = all(sets) && all(prev);
+      return { text: `Last: ${sets.map(s => s.r).join(', ')} reps`, tip: twice && reps ? `Try ${reps + 2} reps a set` : '', w: null, up: twice };
+    }
+    // Go heavier only after hitting every set at this weight in two sessions in a row.
+    const hitAt = (ss, w) => ss && ss.filter(x => (x.w || 0) === w).length && ss.filter(x => (x.w || 0) === w).every(x => x.r >= (reps || 0));
+    const hitAll = hitAt(sets, top) && hitAt(prev, top);
+    const hitOnce = hitAt(sets, top) && !hitAll;
     const m = Moves.get(name);
     const step = m.eq === 'B' ? 2.5 : 2;
     // Only go heavier when every set hit the target, the last set wasn't an all-out effort, and the move doesn't hurt.
     const maxed = sets.some(s => s.e === 0), hurt = Moves.isPainful(name) || (st.lastPain);
     const up = hitAll && !maxed && !hurt;
     const next = up ? Math.round((top + step) * 2) / 2 : top;
-    const tip = hurt ? `Stay light at ${wOut(top)} ${wUnit()} or lighter. It hurt before` : up ? `Try ${wOut(next)} ${wUnit()}` : maxed && hitAll ? `Stay at ${wOut(top)} ${wUnit()}. Last set was all-out` : `Stay at ${wOut(top)} ${wUnit()}`;
+    const tip = hurt ? `Stay light at ${wOut(top)} ${wUnit()} or lighter. It hurt before` : up ? `Try ${wOut(next)} ${wUnit()}: you hit every set twice` : hitOnce ? `Hit all reps once more at ${wOut(top)} ${wUnit()}, then go up` : maxed && hitAll ? `Stay at ${wOut(top)} ${wUnit()}. Last set was all-out` : `Stay at ${wOut(top)} ${wUnit()}`;
     return { text: `Last: ${wOut(top)} ${wUnit()} × ${sets.filter(s => (s.w || 0) === top).map(s => s.r).join(', ')}`, tip, w: next, up };
   }
 
@@ -566,7 +575,7 @@ const Coach = (() => {
       const prs = [];
       exercises.forEach(ex => { if (!ex.sets.length) return; const s0 = exerciseStats(ex.name); const top = Math.max(...ex.sets.map(x => x.w || 0)); if (s0.sessions.length && top > s0.maxW && top > 0) prs.push(`${ex.name}: ${wOut(top)} ${wUnit()} (heaviest)`); });
       const entry = { id: uid(), date: dkey(new Date()), at: st.start, title: w.name, kind: 'gym', cat: 'Strength', dur, exercises: exercises.filter(x => x.sets.length || x.skipped), notes: '', feel: 0, color: w.color || S.accent, auto: true, prs, wk: w.id, pain: pain.size ? [...pain] : undefined };
-      log.push(entry);
+      log.push(entry); setTimeout(() => celebratePRs(entry), 900);
       if (saveLog() === false) {
         // Storage is full: keep the session so nothing is lost, and say so instead of claiming success.
         log.pop(); persist();

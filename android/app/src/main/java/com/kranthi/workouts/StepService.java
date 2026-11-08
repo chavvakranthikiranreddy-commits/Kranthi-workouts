@@ -151,6 +151,11 @@ public class StepService extends Service implements SensorEventListener {
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setContentIntent(pi)
+            // Quick actions, also on the lock screen (the phone asks to unlock before opening Vyora).
+            .addAction(0, "Water", LifeWidget.action(this, "water", 7051))
+            .addAction(0, "Expense", LifeWidget.action(this, "expense", 7052))
+            .addAction(0, "Start", LifeWidget.action(this, "start", 7053))
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build();
     }
 }

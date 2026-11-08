@@ -23,6 +23,16 @@ const Health = (() => {
     ['Paneer 100 g', 18, '🧀'], ['Tofu 100 g', 12, '⬜'], ['Soya chunks 50 g (dry)', 26, '🟤'], ['Dal, 1 bowl', 9, '🥣'], ['Chana / rajma, 1 bowl', 12, '🫘'],
     ['Curd, 1 bowl', 8, '🥛'], ['Greek yogurt 100 g', 10, '🥛'], ['Milk, 1 glass', 8, '🥛'], ['Whey, 1 scoop', 24, '💪'], ['Peanuts 30 g', 7, '🥜'],
     ['Sprouts, 1 bowl', 7, '🌱'], ['Roti (1)', 3, '🫓'], ['Rice, 1 cup cooked', 4, '🍚'],
+    // Common Indian meals and snacks (typical home portions)
+    ['Idli (2) + sambar', 8, '🍥'], ['Dosa (1) + sambar', 6, '🫓'], ['Masala dosa', 7, '🫓'], ['Upma, 1 plate', 5, '🍲'], ['Poha, 1 plate', 4, '🍲'], ['Pesarattu (1)', 8, '🫓'],
+    ['Paratha (1)', 4, '🫓'], ['Aloo paratha (1)', 5, '🫓'], ['Paneer paratha (1)', 10, '🫓'], ['Chole bhature', 14, '🍛'], ['Rajma chawal', 13, '🍛'], ['Dal chawal', 11, '🍛'],
+    ['Curd rice, 1 bowl', 7, '🍚'], ['Sambar rice, 1 plate', 8, '🍛'], ['Veg biryani, 1 plate', 9, '🍛'], ['Chicken biryani, 1 plate', 28, '🍗'], ['Egg biryani, 1 plate', 18, '🥚'],
+    ['Chicken curry, 1 bowl', 24, '🍗'], ['Fish curry, 1 bowl', 20, '🐟'], ['Egg curry (2 eggs)', 14, '🥚'], ['Paneer butter masala, 1 bowl', 16, '🧀'], ['Palak paneer, 1 bowl', 14, '🧀'],
+    ['Mixed veg sabzi, 1 bowl', 4, '🥗'], ['Bhindi / aloo sabzi', 3, '🥔'], ['Pongal, 1 bowl', 7, '🍲'], ['Khichdi, 1 bowl', 9, '🍲'], ['Pav bhaji', 9, '🍞'], ['Vada (2)', 6, '🍩'],
+    ['Samosa (1)', 4, '🥟'], ['Omelette (2 eggs)', 13, '🍳'], ['Boiled eggs (2)', 12, '🥚'], ['Chicken tikka, 6 pcs', 30, '🍢'], ['Tandoori chicken, 2 pcs', 28, '🍗'], ['Chicken 65, 1 plate', 26, '🍗'],
+    ['Paneer tikka, 6 pcs', 20, '🧀'], ['Buttermilk, 1 glass', 3, '🥛'], ['Lassi, 1 glass', 8, '🥛'], ['Badam milk', 9, '🥛'], ['Roasted chana, 30 g', 6, '🫘'], ['Makhana, 30 g', 3, '⚪'],
+    ['Peanut butter, 2 tbsp', 8, '🥜'], ['Almonds, 20 pcs', 6, '🌰'], ['Oats with milk, 1 bowl', 11, '🥣'], ['Moong dal chilla (2)', 12, '🫓'], ['Besan chilla (2)', 10, '🫓'], ['Sprouts chaat', 9, '🌱'],
+    ['Protein bar', 20, '🍫'], ['Soya milk, 1 glass', 7, '🥛'], ['Tuna, 1 can', 25, '🐟'], ['Prawns 100 g', 24, '🦐'], ['Keema, 1 bowl', 22, '🍖'], ['Hung curd 100 g', 9, '🥛'],
   ];
   function addP(g, name) {
     const k = todayK(); const n = H.nut[k] = nutOn(k);
@@ -53,9 +63,11 @@ const Health = (() => {
   const fuelHtml = () => `<div class="fuel" id="fuel"><div class="ph"><span class="t">PROTEIN &amp; WATER</span><button data-h="nut">Details</button></div>${fuelInner()}</div>`;
   function paintFuel() { const f = $('#fuel'); if (f) f.innerHTML = `<div class="ph"><span class="t">PROTEIN &amp; WATER</span><button data-h="nut">Details</button></div>${fuelInner()}`; }
   function foodsSheet() {
-    const s = sheet(`<h2>Add protein</h2><p class="sub">Typical amounts. Tap to add.</p>
+    const s = sheet(`<h2>Add protein</h2><p class="sub">Typical home portions. Search or tap to add.</p>
+      <input class="search" id="fq" type="search" aria-label="Search foods" placeholder="Search: dosa, paneer, chicken…" style="margin-bottom:10px">
       <div class="foods">${FOODS.map(([n, g, e], i) => `<button data-f="${i}"><span>${e}</span><b>${esc(n)}</b><em>${g} g</em></button>`).join('')}</div>
       <div class="sect">Custom</div><div class="unit-in"><input class="field" id="cg" inputmode="decimal" placeholder="25" style="text-align:center"><span>g</span><button class="btn primary sm" data-a="add" style="width:auto;padding:0 18px">Add</button></div>`);
+    $('#fq', s.el).addEventListener('input', e => { const q = e.target.value.trim().toLowerCase(); $$('[data-f]', s.el).forEach(b => { b.hidden = q && !FOODS[+b.dataset.f][0].toLowerCase().includes(q); }); });
     s.el.addEventListener('click', e => {
       const f = e.target.closest('[data-f]'); if (f) { const [n, g] = FOODS[+f.dataset.f]; addP(g, n); s.close(); toast(`+${g} g · ${n}`); return; }
       if (e.target.closest('[data-a="add"]')) { const g = parseFloat($('#cg', s.el).value); if (!(g > 0 && g < 300)) { toast('Enter grams of protein'); return; } addP(g); s.close(); }
@@ -412,6 +424,6 @@ const Health = (() => {
     openSleep(pre) { if (pre && (pre.bed || pre.wake)) { const k = todayK(); if (!H.sleep[k]) H.lastSleep = { bed: pre.bed || H.lastSleep.bed, wake: pre.wake || H.lastSleep.wake }; } return sleepSheet(); },
     replacePhotos(list) { H.photos = (list || []).filter(ph => ph && ph.id); imgCache.clear(); save(); },
     addPhotos(list) { (list || []).forEach(ph => { if (ph && ph.id && !H.photos.some(x => x.id === ph.id)) H.photos.push(ph); }); save(); },
-    _addP: addP, _addW: addW,
+    _addP: addP, _addW: addW, addWater: ml => addW(ml),
   };
 })();

@@ -42,6 +42,16 @@ public class WidgetPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Data for the Today widget: {workout, steps, goal, next}. */
+    @PluginMethod
+    public void updateToday(PluginCall call) {
+        JSObject d = call.getData();
+        try { d.put("day", StepStore.todayKey()); } catch (Exception ignored) { /* keep going */ }
+        getContext().getSharedPreferences(TodayWidget.PREFS, android.content.Context.MODE_PRIVATE).edit().putString("data", d.toString()).apply();
+        TodayWidget.refreshAll(getContext());
+        call.resolve();
+    }
+
     /** The widget button that opened the app (note, voice, task, life), read once. */
     @PluginMethod
     public void pendingAction(PluginCall call) {

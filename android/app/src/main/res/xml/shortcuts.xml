@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the Vyora icon for these quick actions -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="expense" android:enabled="true" android:icon="@drawable/ic_stat_kw" android:shortcutShortLabel="@string/sc_expense">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kranthi.workouts" android:targetClass="com.kranthi.workouts.MainActivity">
+            <extra android:name="mm_action" android:value="expense" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="water" android:enabled="true" android:icon="@drawable/ic_stat_kw" android:shortcutShortLabel="@string/sc_water">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kranthi.workouts" android:targetClass="com.kranthi.workouts.MainActivity">
+            <extra android:name="mm_action" android:value="water" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="start" android:enabled="true" android:icon="@drawable/ic_stat_kw" android:shortcutShortLabel="@string/sc_timer">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kranthi.workouts" android:targetClass="com.kranthi.workouts.MainActivity">
+            <extra android:name="mm_action" android:value="start" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="note" android:enabled="true" android:icon="@drawable/ic_stat_kw" android:shortcutShortLabel="@string/sc_note">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="com.kranthi.workouts" android:targetClass="com.kranthi.workouts.MainActivity">
+            <extra android:name="mm_action" android:value="note" />
+        </intent>
+    </shortcut>
+</shortcuts>

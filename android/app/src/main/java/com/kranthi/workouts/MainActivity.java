@@ -15,6 +15,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AlarmPlugin.class);
         registerPlugin(SpeechPlugin.class);
         registerPlugin(VaultPlugin.class);
+        registerPlugin(PlacePlugin.class);
+        registerPlugin(SmsPlugin.class);
         super.onCreate(savedInstanceState);
         applyFontScale();
     }

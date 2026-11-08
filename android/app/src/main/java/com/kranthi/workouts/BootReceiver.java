@@ -11,6 +11,7 @@ public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent intent) {
         AlarmStore.scheduleAll(c);
+        PlaceStore.registerAll(c.getApplicationContext());
         final Context ctx = c.getApplicationContext();
         if (!StepStore.canCount(ctx)) return;
         StepWorker.schedule(ctx);

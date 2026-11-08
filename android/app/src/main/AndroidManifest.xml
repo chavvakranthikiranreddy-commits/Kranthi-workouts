@@ -22,6 +22,7 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
 
             <!-- PhonePe / Google Pay -> Share -> Muscle & Money -->
             <intent-filter android:label="Add to Money">
@@ -60,6 +61,24 @@
                 android:resource="@xml/mm_widget_info" />
         </receiver>
 
+        <!-- Today widget -->
+        <receiver
+            android:name=".TodayWidget"
+            android:exported="false"
+            android:label="@string/today_widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/today_widget_info" />
+        </receiver>
+        <!-- Place reminders and walk/run routes -->
+        <receiver android:name=".PlaceReceiver" android:exported="false" />
+        <service
+            android:name=".RouteService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
         <!-- Life widget -->
         <receiver
             android:name=".LifeWidget"
@@ -143,6 +162,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- Location: weather for where you are, place reminders, expense places, walk/run routes -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Read bank/UPI SMS on the phone to suggest expenses (nothing is sent anywhere) -->
+    <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

@@ -146,8 +146,8 @@ const Money = (() => {
   function salarySheet(off = mOff) {
     const st0 = cycleStart(new Date(), off), key = dkey(st0), cur = M.salaries[key];
     const s = sheet(`<h2>Salary for ${esc(periodName(st0))}</h2><p class="sub">Enter what you actually received this ${pWord()} (after leave deductions). Every expense this ${pWord()} is taken from it.</p>
-      <label class="flabel" for="salv">Salary received</label><div class="amt"><span>₹</span><input id="salv" inputmode="decimal" placeholder="${Math.round(lastSalary() || 0)}" value="${cur ? cur.amount : ''}" aria-describedby="salerr"></div><span class="ferr" id="salerr" hidden></span>
-      <p class="hint">Last ${pWord()}: ${inr(lastSalary() || 0)}. Got a bonus or other money? Use "Add more money" after saving.</p>
+      <label class="flabel" for="salv">Salary received</label><div class="amt"><span>₹</span><input id="salv" inputmode="decimal" placeholder="${Math.round(expectedSalary(st0) || lastSalary() || 0)}" value="${cur ? cur.amount : (expectedSalary(st0) || '')}" aria-describedby="salerr"></div><span class="ferr" id="salerr" hidden></span>
+      <p class="hint">${expectedSalary(st0) ? `Expected after leaves: ${inr(expectedSalary(st0))}. ` : ''}Last ${pWord()}: ${inr(lastSalary() || 0)}. Got a bonus or other money? Use "Add more money" after saving.</p>
       <div class="btns ${cur ? 'two' : ''}">${cur ? '<button class="btn" data-a="clear">Use usual amount</button>' : ''}<button class="btn primary" data-a="ok">Save salary</button></div>`);
     const inp = $('#salv', s.el), err = $('#salerr', s.el);
     const bad = m => { err.textContent = m; err.hidden = !m; inp.closest('.amt').classList.toggle('invalid', !!m); };
@@ -602,6 +602,7 @@ const Money = (() => {
         if (remember && d.payee && d.type === 'expense') M.rules[norm(d.payee)] = d.catId;
         const i = M.txns.findIndex(t => t.id === d.id);
         if (i >= 0) M.txns[i] = d; else M.txns.push(d);
+        if (!existing && d.type === 'expense') tagPlace(d.id);
         const linked = !existing && d.type === 'expense' ? autoLinkBill(d) : null;
         save(); s.close(); refresh();
         const st = stats();
@@ -743,6 +744,7 @@ const Money = (() => {
     if (tab) mTab = tab;
     currentTab = 'm-' + mTab;
     renderTabs(); paintModebar(); render(); view.scrollTop = 0;
+    if (!openMoney._x) { openMoney._x = 1; setTimeout(() => { scheduleSalaryReminder(); scheduleDebtReminders(); checkSms().then(f => { if (f && f.length && S.mode === "money") refresh(); }); }, 800); }
     return true;
   }
   function onHide() { lastHidden = Date.now(); }
@@ -819,6 +821,7 @@ const Money = (() => {
     const pct = st.budget ? Math.min(100, st.total / st.budget * 100) : 0;
     view.innerHTML = topbarM('Money, made clear.', `<button class="round-btn" data-a="hideamt" aria-label="${M.hide ? 'Show amounts' : 'Hide amounts'}">${ic(M.hide ? 'lock' : 'unlock')}</button>`) + `<div class="page">
       ${monthBar(st.s)}
+      ${st.current ? monthEndCard() : ''}
       ${M.salaryMode && st.current && salaryFor(st.s) == null ? `<button class="nudge salnudge" data-a="salary">${ic('wallet')}<span><b>Add your ${esc(periodName(st.s))} salary.</b> It changes with leaves, so enter what you actually got. Until then the usual ${inr(M.budget)} is used.</span></button>` : ''}
       <div class="mhero">
         <div class="k">${st.current ? `${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} left · starts from ₹0 each ${pWord()}` : `Finished · ${st.tx.length} entr${st.tx.length === 1 ? 'y' : 'ies'}`}</div>
@@ -868,7 +871,7 @@ const Money = (() => {
     const byDay = {}; tx.forEach(t => { (byDay[t.date] = byDay[t.date] || []).push(t); });
     const total = tx.filter(t => !isIncome(t)).reduce((a, t) => a + own(t), 0);
     view.innerHTML = topbarM('Transactions') + `<div class="page">
-      ${monthBar(s)}
+      ${smsNudge()}${monthBar(s)}
       <input class="search" id="txq" type="search" aria-label="Search transactions" placeholder="Search payee, category or note" value="${esc(txQuery)}">
       <div class="chips" style="margin-bottom:12px">${[['all', 'All'], ['needs', 'Needs'], ['wants', 'Wants'], ['savings', 'Savings'], ['income', 'Income']].map(([k, n]) => `<button class="chip small ${txFilter === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
       <p class="hint" style="margin:0 2px 10px">${tx.length} entr${tx.length === 1 ? 'y' : 'ies'}${total ? ` · ${inr(total)} spent` : ''}</p>
@@ -898,8 +901,10 @@ const Money = (() => {
         <div class="sect"><span><i class="gdot" style="background:${GROUPS[g].color}"></i>${GROUPS[g].name}</span><span style="text-transform:none;letter-spacing:0">${inr(st.spent[g])} of ${inr(st.target(g))}</span></div>
         <div class="block" style="padding:4px 0">${list.map(({ c, v }) => { const lim = (M.limits || {})[c.id]; const w = lim ? Math.min(100, v / lim * 100) : v / max * 100; return `<button class="catrow tap" data-lim="${c.id}"><span class="ce">${c.icon}</span><span class="cn">${esc(c.name)}<i style="width:${w.toFixed(1)}%;background:${lim && v > lim ? 'var(--danger)' : GROUPS[g].color};opacity:${v ? 1 : 0}"></i></span><span class="cv">${v ? inr(v) : '—'}${lim ? `<small>of ${inr(lim)}</small>` : ''}</span></button>`; }).join('')}</div>`; }).join('')}
       <p class="hint" style="margin:8px 2px 0">Tap a category to set a spending limit. You get a warning at 80% and when you go over.</p>
+      ${extrasBudgetTop(st)}
       <div class="sect"><span>Recurring bills</span><button class="linkbtn" data-a="addbill">+ Add</button></div>
       <div class="block" style="padding:0">${M.bills.map(b => ({ b, nd: nextDue(b) })).sort((x, y) => (x.nd ? x.nd.due : 9e15) - (y.nd ? y.nd.due : 9e15)).map(({ b, nd }) => nd ? billRow(b, nd) : '').join('') || `<div class="empty" style="padding:18px">Add rent, EMIs, SIPs or subscriptions. You get a reminder the day before, and paying them keeps your budget right.</div>`}</div>
+      ${extrasBudget(st)}
     </div>`;
   }
 
@@ -957,6 +962,7 @@ const Money = (() => {
       <div class="chart-card"><div class="hbars" style="grid-template-columns:repeat(${hist.length}, 1fr)">${hist.map(h => `<div class="hb" title="${short(h.s)}: ${inr(h.total)} of ${inr(h.budget)}"><em>${h.total >= 1000 ? Math.round(h.total / 1000) + 'k' : Math.round(h.total)}</em><span class="col"><i style="height:${(h.total / maxH * 100).toFixed(1)}%;${h.total > h.budget ? 'background:var(--danger)' : ''}"></i><b style="bottom:${(h.budget / maxH * 100).toFixed(1)}%"></b></span><span class="hl">${esc(short(h.s))}</span></div>`).join('')}</div>
         <div class="mlegend" style="margin-top:8px"><span><i style="background:var(--accent)"></i>Spent</span><span><i style="background:var(--danger)"></i>Over budget</span><span><i class="tick"></i>Budget</span></div></div>
       ${topP.length ? `<div class="sect">Top payees</div><div class="block" style="padding:0">${topP.map(([n, x]) => `<div class="mini-row"><span>${esc(n)}<small>${x.n} payment${x.n > 1 ? 's' : ''}</small></span><b>${inr(x.v)}</b></div>`).join('')}</div>` : ''}
+      ${extrasInsights(st)}
     </div>`;
     wireChart();
   }
@@ -994,6 +1000,8 @@ const Money = (() => {
         <button class="set-row" data-a="addacc"><span class="st"><div class="t">Accounts</div><div class="s">${M.accounts.length ? M.accounts.map(a => a.name).join(' · ') : 'Bank, cash and cards with live balances'}</div></span>${ic('plus')}</button>
         <button class="set-row" data-a="addgoal"><span class="st"><div class="t">Savings goals</div><div class="s">${M.goals.length ? M.goals.length + ' goal' + (M.goals.length > 1 ? 's' : '') : 'Emergency fund, bike, trip…'}</div></span>${ic('plus')}</button>
         <button class="set-row" data-a="friends"><span class="st"><div class="t">Friends & splits</div><div class="s">${M.people.length ? M.people.length + ' friend' + (M.people.length > 1 ? 's' : '') : 'Who owes what from shared bills'}</div></span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="tagplaces"><span class="st"><div class="t">Save where you spend</div><div class="s">Adds the area (e.g. HSR Layout) to new expenses when location is allowed. Shown in Insights → Top places.</div></span><span class="toggle ${M.tagPlaces !== false ? 'on' : ''}"></span></button>
+        <button class="set-row" data-a="smsimport"><span class="st"><div class="t">Bank SMS</div><div class="s">Suggest expenses from bank and UPI messages on this phone</div></span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="alerts"><span class="st"><div class="t">Spending alerts</div><div class="s">Warn at 80% and 100% of your budget, needs, wants and category limits</div></span><span class="toggle ${M.alertsOn !== false ? 'on' : ''}"></span></button>
       </div>
       <div class="sect">Categories</div>
@@ -1806,6 +1814,7 @@ const Money = (() => {
   function refresh() { if ($('#layer > .screen')) return; if (S.mode === 'money' && currentTab.startsWith('m-')) { const t = view.scrollTop; renderTab(mTab); view.scrollTop = t; } else if (currentTab === 'home') rerenderKeepScroll(); try { paintCtxAct(); } catch (e) { /* shell not ready */ } }
   async function handleClick(e) {
     const t = e.target;
+    const xb = t.closest('[data-a],[data-loan],[data-debt],[data-subbill]'); if (xb && await extrasClick(xb)) return;
     if (t.closest('[data-a="hideamt"]')) { M.hide = !M.hide; save(); refresh(); toast(M.hide ? 'Amounts hidden' : 'Amounts shown'); return; }
     if (t.closest('[data-a="safewhy"]')) {
       const st = stats(); const sp = Math.max(0, st.safe - st.spentToday);
@@ -1837,6 +1846,7 @@ const Money = (() => {
       case 'pdf': return M.setup ? pickScreenshots(true) : setupView();
       case 'txclear': txFilter = 'all'; txQuery = ''; return refresh();
       case 'salary': return salarySheet(mOff);
+      case 'tagplaces': M.tagPlaces = M.tagPlaces === false; save(); refresh(); return toast(M.tagPlaces ? 'New expenses will save the area' : 'Places are not saved');
       case 'extramoney': return extraMoneySheet(mOff);
       case 'salmode': M.salaryMode = !M.salaryMode; save(); refresh(); return toast(M.salaryMode ? 'Each month\'s salary is now that month\'s money' : 'Every month uses the fixed budget');
       case 'cbud': { const st = stats(mOff); return amountSheet(`Budget for ${periodName(st.s)}`, st.budget, v => { M.budgets[dkey(st.s)] = v; save(); refresh(); }, `${short(st.s)} – ${short(st.e)} only`); }
@@ -1873,6 +1883,317 @@ const Money = (() => {
     scheduleBillReminders();
   }
 
+  /* ======================= 7.1 Money additions ======================= */
+  ['loans', 'debts', 'smsSeen'].forEach(k => { if (!Array.isArray(M[k])) M[k] = []; });
+  ['tax', 'leaves'].forEach(k => { if (!M[k] || typeof M[k] !== 'object') M[k] = {}; });
+  const nowK = () => dkey(new Date());
+  const monthsBetween = (a, b) => (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+
+  /* ---- Place of an expense (only when location is allowed) ---- */
+  async function tagPlace(id) {
+    if (M.tagPlaces === false || !P.Place) return;
+    try {
+      const st0 = await P.Place.status(); if (!st0.granted) return;
+      const loc = await P.Place.current(); const nm = await P.Place.name({ lat: loc.lat, lng: loc.lng }).catch(() => ({}));
+      const t = M.txns.find(x => x.id === id); if (!t) return;
+      t.place = { lat: Math.round(loc.lat * 1e4) / 1e4, lng: Math.round(loc.lng * 1e4) / 1e4, area: nm.area || '', city: nm.city || '' };
+      save();
+    } catch (e) { /* no fix: leave untagged */ }
+  }
+  const placeName = p => p ? [p.area, p.city].filter(Boolean).join(', ') || 'Pinned place' : '';
+
+  /* ---- Bank SMS → expense suggestions ---- */
+  const BANK_RX = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/i;
+  function parseSms(m) {
+    const b = String(m.body || ''); const lb = b.toLowerCase();
+    const am = b.match(BANK_RX); if (!am) return null;
+    const amount = parseFloat(am[1].replace(/,/g, '')); if (!(amount > 0)) return null;
+    const income = /credited|received|deposited|refund/.test(lb) && !/debited/.test(lb);
+    if (/otp|one time password|will be debited|due on|statement|minimum due|e-mandate.*registered/.test(lb) && !/debited from|has been debited/.test(lb)) return null;
+    let payee = '';
+    const end = "(?:\\s+(?:on|ref|upi|via|txn|avl|a\\/c|bal|info)\\b|\\s*[.,;]\\s|\\s*[.,;]?$)";
+    const pm = b.match(new RegExp("(?:\\bto|\\bat|towards|\\bfor)\\s+(?:vpa\\s+)?([A-Za-z0-9@._ &'-]{3,40}?)" + end, 'i')) || b.match(new RegExp("\\bfrom\\s+([A-Za-z0-9@._ &'-]{3,40}?)" + end, 'i'));
+    if (pm) payee = pm[1].replace(/@.*$/, '').replace(/[.\s]+$/, '').replace(/\s+/g, ' ').trim();
+    if (/^(a\/c|ac|acct|your)\b/i.test(payee)) payee = '';
+    const bank = String(m.from || '').replace(/^[A-Z]{2}-/, '').replace(/[^A-Za-z]/g, '').slice(0, 6);
+    return { id: 'sms' + m.id, amount, income, payee: payee.slice(0, 40) || (income ? 'Money received' : 'Bank payment'), bank, at: m.at, date: dkey(new Date(m.at)) };
+  }
+  let smsFound = null;
+  async function checkSms(force) {
+    if (!P.Sms || sealed) return [];
+    try {
+      const st0 = await P.Sms.status(); if (!st0.granted) return [];
+      const since = Math.max(Date.now() - 40 * 864e5, M.smsSince || 0);
+      const r = await P.Sms.bankMessages({ since });
+      const seen = new Set(M.smsSeen);
+      const have = new Set(M.txns.map(t => `${t.date}|${Math.round(t.amount)}`));
+      smsFound = (r.messages || []).map(parseSms).filter(x => x && !seen.has(x.id) && !have.has(`${x.date}|${Math.round(x.amount)}`));
+      return smsFound;
+    } catch (e) { return []; }
+  }
+  const smsNudge = () => (smsFound && smsFound.length ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>${smsFound.length} bank payment${smsFound.length > 1 ? 's' : ''} found in your messages.</b> Review and add them in one tap.</span></button>` : (P.Sms && !M.smsAsked ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>Add expenses from bank SMS.</b> Vyora reads debit and UPI messages on this phone and suggests entries. Nothing leaves the phone.</span></button>` : ''));
+  async function smsSheet() {
+    if (!P.Sms) { toast('Reading bank SMS works in the installed app'); return; }
+    let st0 = await P.Sms.status();
+    if (!st0.granted) {
+      M.smsAsked = true; save();
+      const ok = await confirmBox('Read bank messages?', 'Vyora looks only at messages from banks and UPI apps that mention a debit or credit, and suggests entries. Messages stay on your phone.', [{ label: 'Allow SMS access', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }]);
+      if (!ok) return;
+      st0 = await P.Sms.requestPermission(); if (!st0.granted) { toast('SMS access was not allowed. You can allow it in phone Settings → Apps → Vyora.'); return; }
+    }
+    const list = await checkSms(true);
+    if (!list.length) { toast('No new bank payments in your messages'); refresh(); return; }
+    const pick = new Set(list.filter(x => !x.income).map(x => x.id));
+    const s = sheet(`<h2>From your bank messages</h2><p class="sub">Tick the ones to add. Categories are guessed from the payee; you can change them later.</p>
+      <div class="block" style="padding:0">${list.map(x => `<label class="smsrow"><input type="checkbox" data-sid="${x.id}" ${pick.has(x.id) ? 'checked' : ''}><span><b>${esc(x.payee)}</b><small>${esc(short(parseKey(x.date)))} · ${esc(x.bank || 'Bank')}${x.income ? ' · received' : ''}</small></span><em class="${x.income ? 'pos' : ''}">${x.income ? '+' : ''}${inr(x.amount)}</em></label>`).join('')}</div>
+      <div class="btns two"><button class="btn" data-a="skip">Skip all</button><button class="btn primary" data-a="add">Add selected</button></div>`);
+    s.el.addEventListener('change', e => { const c = e.target.closest('[data-sid]'); if (c) { if (c.checked) pick.add(c.dataset.sid); else pick.delete(c.dataset.sid); } });
+    s.el.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      let n = 0;
+      if (b.dataset.a === 'add') list.forEach(x => {
+        if (!pick.has(x.id)) return;
+        const type = x.income ? 'income' : 'expense';
+        M.txns.push({ id: uid(), type, amount: x.amount, catId: x.income ? 'oincome' : guessCat(x.payee, '', type), payee: x.payee, note: 'From bank SMS', date: x.date, at: x.at, src: 'sms', acc: pickAcc({}) });
+        n++;
+      });
+      list.forEach(x => M.smsSeen.push(x.id)); M.smsSeen = M.smsSeen.slice(-600); M.smsSince = Date.now() - 3 * 864e5;
+      smsFound = []; save(); s.close(); refresh(); if (n) toast(`${n} entr${n === 1 ? 'y' : 'ies'} added from bank SMS`);
+    });
+  }
+
+  /* ---- Subscriptions finder: payments that repeat every month or year ---- */
+  function findSubscriptions() {
+    const by = {};
+    M.txns.filter(t => t.type === 'expense' && t.payee).forEach(t => { const k = norm(t.payee); (by[k] = by[k] || []).push(t); });
+    const out = [];
+    Object.values(by).forEach(arr => {
+      if (arr.length < 2) return;
+      arr.sort((a, b) => a.date.localeCompare(b.date));
+      const gaps = []; for (let i = 1; i < arr.length; i++) gaps.push(Math.round((parseKey(arr[i].date) - parseKey(arr[i - 1].date)) / 864e5));
+      const avg = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+      const amts = arr.map(t => t.amount); const mean = amts.reduce((a, b) => a + b, 0) / amts.length;
+      const steady = amts.every(a => Math.abs(a - mean) <= Math.max(20, mean * 0.12));
+      let every = null;
+      if (avg >= 25 && avg <= 35 && gaps.every(g => g >= 20 && g <= 40)) every = 'month';
+      else if (avg >= 350 && avg <= 380) every = 'year';
+      else if (avg >= 6 && avg <= 8 && arr.length >= 3) every = 'week';
+      if (!every || !steady) return;
+      const last = arr[arr.length - 1];
+      const next = addDays(parseKey(last.date), every === 'month' ? 30 : every === 'year' ? 365 : 7);
+      const yearly = every === 'month' ? mean * 12 : every === 'year' ? mean : mean * 52;
+      const isBill = M.bills.some(bl => norm(bl.name) === norm(last.payee));
+      out.push({ name: last.payee, amount: Math.round(mean), every, next, yearly: Math.round(yearly), catId: last.catId, isBill, count: arr.length });
+    });
+    return out.sort((a, b) => b.yearly - a.yearly);
+  }
+
+  /* ---- Loans & EMIs ---- */
+  const emiOf = (P0, rate, n) => { const r = rate / 1200; return r ? P0 * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1) : P0 / n; };
+  function loanState(l) {
+    const r = l.rate / 1200, emi = l.emi || emiOf(l.principal, l.rate, l.months);
+    const paid = Math.max(0, Math.min(l.months, monthsBetween(parseKey(l.start), new Date()) + (new Date().getDate() >= parseKey(l.start).getDate() ? 1 : 0)));
+    let bal = l.principal, interest = 0;
+    for (let i = 0; i < paid; i++) { const it = bal * r; interest += it; bal = Math.max(0, bal - (emi - it)); }
+    const end = new Date(parseKey(l.start)); end.setMonth(end.getMonth() + l.months - 1);
+    const totalInt = emi * l.months - l.principal;
+    return { emi: Math.round(emi), paid, left: l.months - paid, bal: Math.round(bal), interest: Math.round(interest), totalInt: Math.round(totalInt), end, pct: l.months ? paid / l.months : 0 };
+  }
+  function loanSheet(l0) {
+    const l = l0 ? clone(l0) : { id: uid(), name: '', principal: '', rate: '', months: '', start: nowK() };
+    const s = sheet(`<h2>${l0 ? 'Edit loan' : 'Add a loan or EMI'}</h2>
+      <label class="flabel" for="ln">Name</label><input class="field" id="ln" placeholder="e.g. Bike loan" value="${esc(l.name)}" maxlength="30">
+      <div class="mrow2"><div><label class="flabel" for="lp">Loan amount (₹)</label><input class="field" id="lp" inputmode="numeric" value="${l.principal}"></div><div><label class="flabel" for="lr">Interest % a year</label><input class="field" id="lr" inputmode="decimal" value="${l.rate}"></div></div>
+      <div class="mrow2"><div><label class="flabel" for="lm">Months</label><input class="field" id="lm" inputmode="numeric" value="${l.months}"></div><div><label class="flabel" for="ls">First EMI date</label><input class="field" id="ls" type="date" value="${l.start}"></div></div>
+      <p class="hint" id="lemi"></p>
+      <div class="btns ${l0 ? 'two' : ''}">${l0 ? '<button class="btn danger" data-a="del">Delete loan</button>' : ''}<button class="btn primary" data-a="ok">Save loan</button></div>`);
+    const calc = () => { const p0 = num($('#lp', s.el).value), r = num($('#lr', s.el).value), n = Math.round(num($('#lm', s.el).value)); $('#lemi', s.el).textContent = p0 > 0 && n > 0 ? `EMI about ${inr(Math.round(emiOf(p0, r || 0, n)))} a month · total interest ${inr(Math.round(emiOf(p0, r || 0, n) * n - p0))}` : 'Enter amount, interest and months to see the EMI.'; };
+    s.el.addEventListener('input', calc); calc();
+    s.el.addEventListener('click', async e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'del') { if (await confirmBox(`Delete loan "${l.name}"?`, '', [{ label: 'Delete loan', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { M.loans = M.loans.filter(x => x.id !== l.id); save(); s.close(); refresh(); } return; }
+      l.name = $('#ln', s.el).value.trim() || 'Loan'; l.principal = num($('#lp', s.el).value); l.rate = num($('#lr', s.el).value) || 0; l.months = Math.round(num($('#lm', s.el).value)); l.start = $('#ls', s.el).value || nowK();
+      if (!(l.principal > 0) || !(l.months > 0)) { toast('Enter the loan amount and number of months'); return; }
+      l.emi = Math.round(emiOf(l.principal, l.rate, l.months));
+      const i = M.loans.findIndex(x => x.id === l.id); if (i >= 0) M.loans[i] = l; else M.loans.push(l);
+      // Also keep the EMI as a monthly bill so it gets reminders and counts in the budget.
+      if (!M.bills.some(bl => bl.loan === l.id)) M.bills.push({ id: uid(), name: `${l.name} EMI`, amount: l.emi, catId: 'emi', freq: 'monthly', day: parseKey(l.start).getDate(), remind: true, loan: l.id, paid: {}, created: Date.now() });
+      else M.bills.forEach(bl => { if (bl.loan === l.id) { bl.amount = l.emi; bl.name = `${l.name} EMI`; } });
+      save(); s.close(); refresh(); scheduleBillReminders(); toast(`${l.name}: EMI ${inr(l.emi)} added to your bills`);
+    });
+  }
+
+  /* ---- Lend & borrow ---- */
+  function debtSheet(d0) {
+    const d = d0 ? clone(d0) : { id: uid(), person: '', amount: '', dir: 'lent', date: nowK(), due: '', note: '', settled: false };
+    const s = sheet(`<h2>${d0 ? 'Edit' : 'Lent or borrowed'}</h2>
+      <div class="seg"><button data-dir="lent" class="${d.dir === 'lent' ? 'on' : ''}">I lent</button><button data-dir="borrowed" class="${d.dir === 'borrowed' ? 'on' : ''}">I borrowed</button></div>
+      <label class="flabel" for="dp">Person</label><input class="field" id="dp" value="${esc(d.person)}" placeholder="e.g. Ravi" maxlength="30">
+      <div class="mrow2"><div><label class="flabel" for="da">Amount (₹)</label><input class="field" id="da" inputmode="numeric" value="${d.amount}"></div><div><label class="flabel" for="dd">Remind me on</label><input class="field" id="dd" type="date" value="${d.due}"></div></div>
+      <label class="flabel" for="dn">Note (optional)</label><input class="field" id="dn" value="${esc(d.note)}" maxlength="60" placeholder="e.g. Movie tickets">
+      <div class="btns ${d0 ? 'two' : ''}">${d0 ? `<button class="btn" data-a="settle">${d.settled ? 'Mark as open' : 'Mark settled'}</button>` : ''}<button class="btn primary" data-a="ok">Save</button></div>
+      ${d0 ? '<button class="btn danger" data-a="del" style="margin-top:8px">Delete</button>' : ''}`);
+    s.el.addEventListener('click', async e => {
+      const dir = e.target.closest('[data-dir]'); if (dir) { d.dir = dir.dataset.dir; $$('[data-dir]', s.el).forEach(x => x.classList.toggle('on', x === dir)); return; }
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'del') { if (await confirmBox(`Delete ${inr(d.amount)} ${d.dir === 'lent' ? 'lent to' : 'borrowed from'} ${d.person}?`, '', [{ label: 'Delete', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { M.debts = M.debts.filter(x => x.id !== d.id); save(); s.close(); refresh(); scheduleDebtReminders(); } return; }
+      if (b.dataset.a === 'settle') d.settled = !d.settled;
+      d.person = $('#dp', s.el).value.trim(); d.amount = num($('#da', s.el).value); d.due = $('#dd', s.el).value; d.note = $('#dn', s.el).value.trim();
+      if (!d.person || !(d.amount > 0)) { toast('Enter the person and the amount'); return; }
+      const i = M.debts.findIndex(x => x.id === d.id); if (i >= 0) M.debts[i] = d; else M.debts.push(d);
+      save(); s.close(); refresh(); scheduleDebtReminders(); toast(d.settled ? 'Marked settled' : 'Saved');
+    });
+  }
+  async function scheduleDebtReminders() {
+    if (!P.LocalNotifications) return;
+    const ids = []; for (let i = 0; i < 30; i++) ids.push({ id: 760 + i });
+    try { await P.LocalNotifications.cancel({ notifications: ids }); } catch (e) { /* ignore */ }
+    const list = M.debts.filter(d => !d.settled && d.due).slice(0, 30).map((d, i) => { const at = parseKey(d.due); at.setHours(10, 0, 0, 0); return at > new Date() ? { id: 760 + i, title: d.dir === 'lent' ? `${d.person} owes you` : `You owe ${d.person}`, body: S.notifDetails ? `${inr(d.amount)}${d.note ? ' · ' + d.note : ''}` : 'Open Vyora to see the details', channelId: 'kw_remind', schedule: { at, allowWhileIdle: true } } : null; }).filter(Boolean);
+    try { if (list.length) await P.LocalNotifications.schedule({ notifications: list }); } catch (e) { /* ignore */ }
+  }
+
+  /* ---- Tax helper (Indian old regime deductions) ---- */
+  const fyOf = d => { const y = d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; return `${y}-${String(y + 1).slice(2)}`; };
+  const TAX_SECS = [['80C', 'PF, PPF, ELSS, LIC, tuition, home loan principal', 150000], ['80D', 'Health insurance (self & family; +₹25,000–50,000 for parents)', 25000], ['80CCD(1B)', 'Extra NPS contribution', 50000], ['24(b)', 'Home loan interest', 200000], ['HRA', 'Rent paid (keep receipts)', 0]];
+  function taxState() {
+    const fy = fyOf(new Date()); const t = M.tax[fy] = M.tax[fy] || { items: [] };
+    const sums = {}; t.items.forEach(x => { sums[x.sec] = (sums[x.sec] || 0) + x.amount; });
+    return { fy, t, sums };
+  }
+  function taxSheet() {
+    const { fy, t, sums } = taxState();
+    const s = sheet(`<h2>Tax savings · FY ${fy}</h2><p class="sub">Note investments and rent through the year so March isn't a rush. Limits are the usual old-regime caps; check with your CA before filing.</p>
+      <div class="block" style="padding:0">${TAX_SECS.map(([k, d, cap]) => `<div class="taxrow"><span><b>${k}</b><small>${d}</small>${cap ? `<span class="sbar"><i style="width:${Math.min(100, (sums[k] || 0) / cap * 100).toFixed(1)}%"></i></span>` : ''}</span><em>${inr(sums[k] || 0)}${cap ? `<small>of ${inr(cap)}</small>` : ''}</em></div>`).join('')}</div>
+      <div class="sect">Add</div>
+      <div class="mrow2"><div><label class="flabel" for="tsec">Section</label><select class="field" id="tsec">${TAX_SECS.map(([k]) => `<option>${k}</option>`).join('')}</select></div><div><label class="flabel" for="tamt">Amount (₹)</label><input class="field" id="tamt" inputmode="numeric"></div></div>
+      <label class="flabel" for="tnm">What</label><input class="field" id="tnm" placeholder="e.g. PPF deposit, March rent" maxlength="40">
+      <button class="btn primary" data-a="add" style="margin-top:12px">Add to FY ${fy}</button>
+      ${t.items.length ? `<div class="sect">This year</div><div class="block" style="padding:0">${t.items.slice().reverse().map(x => `<div class="mini-row"><span>${esc(x.name || x.sec)}<small>${esc(x.sec)} · ${esc(short(parseKey(x.date)))}</small></span><b>${inr(x.amount)}</b><button class="round-btn sm" data-rm="${x.id}" aria-label="Remove ${esc(x.name || x.sec)}">${ic('x')}</button></div>`).join('')}</div>` : ''}`);
+    s.el.addEventListener('click', async e => {
+      const rm = e.target.closest('[data-rm]'); if (rm) { if (await confirmBox('Remove this tax entry?', '', [{ label: 'Remove entry', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) { t.items = t.items.filter(x => x.id !== rm.dataset.rm); save(); s.close(); taxSheet(); } return; }
+      if (!e.target.closest('[data-a="add"]')) return;
+      const a = num($('#tamt', s.el).value); if (!(a > 0)) { toast('Enter the amount'); return; }
+      t.items.push({ id: uid(), sec: $('#tsec', s.el).value, amount: a, name: $('#tnm', s.el).value.trim(), date: nowK() }); save(); s.close(); taxSheet();
+    });
+  }
+
+  /* ---- "Can I afford it?" ---- */
+  function affordSheet() {
+    const st = stats();
+    const s = sheet(`<h2>Can I afford it?</h2><p class="sub">See what a purchase does to this ${pWord()} before you buy.</p>
+      <label class="flabel" for="afv">Price</label><div class="amt"><span>₹</span><input id="afv" inputmode="numeric" placeholder="0"></div>
+      <div id="afout" class="afout"></div>`);
+    const out = $('#afout', s.el);
+    const paint = () => {
+      const v = num($('#afv', s.el).value); if (!(v > 0)) { out.innerHTML = `<p class="hint">You have ${inr(st.left)} left with ${st.daysLeft} day${st.daysLeft === 1 ? '' : 's'} to go.</p>`; return; }
+      const left = st.left - v, daily = st.daysLeft ? left / st.daysLeft : left;
+      const goal = M.goals.find(g => goalSaved(g) < g.target);
+      const verdict = left < 0 ? ['bad', `It would put you ${inr(-left)} over this ${pWord()}'s money.`] : daily < (st.budget / st.totalDays) * 0.5 ? ['warn', `Possible, but only ${inr(daily)} a day would be left for the rest of the ${pWord()}.`] : ['ok', `Yes. You'd still have ${inr(left)} (${inr(daily)} a day).`];
+      out.innerHTML = `<div class="mwarn ${verdict[0]}">${verdict[1]}</div>
+        <div class="mini-row"><span>Left after buying</span><b>${inr(left)}</b></div>
+        <div class="mini-row"><span>Share of this ${pWord()}'s money</span><b>${Math.round(v / Math.max(1, st.budget) * 100)}%</b></div>
+        ${goal ? `<div class="mini-row"><span>Or towards "${esc(goal.name)}"</span><b>${Math.round(v / goal.target * 100)}% of the goal</b></div>` : ''}
+        <div class="mini-row"><span>Hours of work (at your salary)</span><b>${Math.max(0.1, Math.round(v / (Math.max(1, budgetFor(st.s)) / 176) * 10) / 10)} h</b></div>`;
+    };
+    s.el.addEventListener('input', paint); paint(); setTimeout(() => $('#afv', s.el).focus(), 250);
+  }
+
+  /* ---- Leaves and expected salary ---- */
+  function leaveSheet(off = mOff) {
+    const st0 = cycleStart(new Date(), off), key = dkey(st0); const lv = M.leaves[key] = M.leaves[key] || { unpaid: [], paid: [] };
+    const gross = M.grossSalary || M.budget, wd = M.workDays || 30;
+    const s = sheet(`<h2>Leaves · ${esc(periodName(st0))}</h2><p class="sub">Unpaid leaves reduce your salary. Vyora estimates the deduction so you know what to expect.</p>
+      <div class="mrow2"><div><label class="flabel" for="lg">Full monthly salary (₹)</label><input class="field" id="lg" inputmode="numeric" value="${Math.round(gross)}"></div><div><label class="flabel" for="lw">Days used to calculate</label><select class="field" id="lw">${[30, 26, 22].map(n => `<option ${n === wd ? 'selected' : ''} value="${n}">${n} days</option>`).join('')}</select></div></div>
+      <div class="mrow2"><div><label class="flabel" for="lu">Unpaid leave days</label><input class="field" id="lu" inputmode="decimal" value="${lv.unpaid.length || lv.n || 0}"></div><div><label class="flabel" for="lpd">Paid leave days</label><input class="field" id="lpd" inputmode="decimal" value="${lv.paidN || 0}"></div></div>
+      <div class="mwarn ok" id="lout"></div>
+      <div class="btns two"><button class="btn" data-a="cancel">Close</button><button class="btn primary" data-a="ok">Save</button></div>`);
+    const calc = () => { const g = num($('#lg', s.el).value), d = +$('#lw', s.el).value, u = num($('#lu', s.el).value); const ded = Math.round(g / d * u); $('#lout', s.el).innerHTML = `Expected salary: <b>${inr(g - ded)}</b>${u ? ` (${inr(ded)} less for ${u} unpaid day${u === 1 ? '' : 's'})` : ''}`; return g - ded; };
+    s.el.addEventListener('input', calc); s.el.addEventListener('change', calc); calc();
+    s.el.addEventListener('click', e => {
+      const b = e.target.closest('[data-a]'); if (!b) return; if (b.dataset.a === 'cancel') return s.close();
+      M.grossSalary = num($('#lg', s.el).value); M.workDays = +$('#lw', s.el).value; lv.n = num($('#lu', s.el).value); lv.paidN = num($('#lpd', s.el).value); lv.expected = calc();
+      save(); s.close(); refresh(); toast(`Expected salary for ${periodName(st0)}: ${inr(lv.expected)}`);
+    });
+  }
+  const expectedSalary = st0 => { const lv = M.leaves[dkey(st0)]; return lv && lv.expected ? lv.expected : null; };
+
+  /* ---- Salary-day reminder ---- */
+  async function scheduleSalaryReminder() {
+    if (!P.LocalNotifications || sealed || !M.salaryMode) return;
+    try { await P.LocalNotifications.cancel({ notifications: [{ id: 701 }, { id: 702 }] }); } catch (e) { /* ignore */ }
+    const day = M.payday || 1; const now = new Date();
+    let at = new Date(now.getFullYear(), now.getMonth(), Math.min(day, dim(now.getFullYear(), now.getMonth())), 10, 0, 0);
+    if (at <= now) at = new Date(now.getFullYear(), now.getMonth() + 1, Math.min(day, dim(now.getFullYear(), now.getMonth() + 1)), 10, 0, 0);
+    try { await P.LocalNotifications.schedule({ notifications: [{ id: 701, title: 'Salary received? 💼', body: 'Enter this month\'s amount so your budget is right (it changes with leaves).', channelId: 'kw_remind', schedule: { at, allowWhileIdle: true }, extra: { go: 'm-home' } }] }); } catch (e) { /* ignore */ }
+  }
+
+  /* ---- Month-end summary (shown in the first days of a new month) ---- */
+  function monthEndCard() {
+    const prev = cycleStart(new Date(), -1), key = dkey(prev);
+    if (new Date().getDate() > 7 || M.summarySeen === key || !M.txns.some(t => t.date >= key && t.date < dkey(cycleStart(new Date())))) return '';
+    return `<button class="nudge" data-a="monthsum">${ic('pie')}<span><b>${esc(periodName(prev))} in review.</b> What you spent and saved, top categories, steps and workouts.</span></button>`;
+  }
+  function monthSummarySheet() {
+    const st = stats(-1); const key = dkey(st.s); M.summarySeen = key; save();
+    const byCat = {}; st.tx.forEach(t => { if (!isIncome(t)) byCat[t.catId] = (byCat[t.catId] || 0) + own(t); });
+    const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const e = cycleEnd(st.s); const days = []; for (let d = new Date(st.s); d <= e; d = addDays(d, 1)) days.push(dkey(d));
+    const stepAvg = (() => { const v = days.map(k => (typeof stepsOn === 'function' ? stepsOn(k) : 0)).filter(x => x > 0); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : 0; })();
+    const wk = (typeof log !== 'undefined' ? log : []).filter(x => x.date >= days[0] && x.date <= days[days.length - 1]);
+    const saved = (st.income || budgetFor(st.s)) - st.total;
+    sheet(`<h2>${esc(periodName(st.s))} in review</h2>
+      <div class="stats"><div class="stat"><div class="k">Spent</div><div class="v">${inr(st.total)}</div><div class="s">of ${inr(st.budget)}</div></div><div class="stat"><div class="k">${saved >= 0 ? 'Saved' : 'Overspent'}</div><div class="v">${inr(Math.abs(saved))}</div><div class="s">${st.income ? 'from income' : 'from budget'}</div></div></div>
+      <div class="sect">Top spending</div><div class="block" style="padding:0">${top.map(([id, v]) => `<div class="mini-row"><span>${cat(id).icon} ${esc(cat(id).name)}</span><b>${inr(v)}</b></div>`).join('') || '<div class="empty" style="padding:16px">No spending</div>'}</div>
+      <div class="sect">Health</div><div class="block" style="padding:0"><div class="mini-row"><span>Workouts</span><b>${wk.length} on ${new Set(wk.map(x => x.date)).size} days</b></div><div class="mini-row"><span>Average steps</span><b>${stepAvg ? fmtN(stepAvg) : '—'}</b></div></div>
+      <p class="hint">${saved >= 0 ? 'Nice work. Consider moving what you saved into a goal.' : 'Next month: set a category limit for your top spend.'}</p>`);
+    refresh();
+  }
+
+  /* ---- Budget & bills: loans, lend/borrow, leaves ---- */
+  function extrasBudgetTop(st) {
+    if (!M.salaryMode) return '';
+    const lv = M.leaves[dkey(st.s)];
+    return `<button class="set-row" data-a="leaves"><span class="st"><div class="t">Leaves this ${pWord()}</div><div class="s">${lv && lv.n ? `${lv.n} unpaid day${lv.n === 1 ? '' : 's'} · expected salary ${inr(lv.expected)}` : 'Track unpaid leave and see the expected salary'}</div></span>${ic('chevR', 'chev')}</button>
+      <button class="set-row" data-a="payday"><span class="st"><div class="t">Salary-day reminder</div><div class="s">Day ${M.payday || 1} each month at 10 am</div></span><span class="val">${M.payday || 1}</span>${ic('chevR', 'chev')}</button>`;
+  }
+  function extrasBudget(st) {
+    const open = M.debts.filter(d => !d.settled);
+    const owed = open.filter(d => d.dir === 'lent').reduce((a, d) => a + d.amount, 0), owe = open.filter(d => d.dir === 'borrowed').reduce((a, d) => a + d.amount, 0);
+    return `<div class="sect"><span>Loans & EMIs</span><button class="linkbtn" data-a="addloan">+ Add</button></div>
+      <div class="block" style="padding:0">${M.loans.map(l => { const x = loanState(l); return `<button class="loanrow" data-loan="${l.id}"><span><b>${esc(l.name)}</b><small>EMI ${inr(x.emi)} · ${x.left} of ${l.months} left · ends ${x.end.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</small><span class="sbar"><i style="width:${(x.pct * 100).toFixed(1)}%"></i></span></span><em>${inr(x.bal)}<small>to pay · interest paid ${inr(x.interest)}</small></em></button>`; }).join('') || '<div class="empty" style="padding:16px"><b>No loans</b>Add a loan to see the balance left, interest and payoff date. Its EMI is added to your bills.</div>'}</div>
+      <div class="sect"><span>Lent & borrowed</span><button class="linkbtn" data-a="adddebt">+ Add</button></div>
+      ${open.length ? `<div class="mini-row" style="padding:0 4px 8px"><span>Others owe you <b>${inr(owed)}</b></span><span>You owe <b>${inr(owe)}</b></span></div>` : ''}
+      <div class="block" style="padding:0">${M.debts.slice().sort((a, b) => a.settled - b.settled).map(d => `<button class="loanrow ${d.settled ? 'done' : ''}" data-debt="${d.id}"><span><b>${esc(d.person)}</b><small>${d.dir === 'lent' ? 'Owes you' : 'You owe'}${d.note ? ' · ' + esc(d.note) : ''}${d.due ? ' · remind ' + esc(short(parseKey(d.due))) : ''}${d.settled ? ' · settled' : ''}</small></span><em class="${d.dir === 'lent' ? 'pos' : ''}">${inr(d.amount)}</em></button>`).join('') || '<div class="empty" style="padding:16px"><b>Nothing owed</b>Keep track of money you lend or borrow, with a reminder.</div>'}</div>`;
+  }
+  function extrasInsights(st) {
+    const subs = findSubscriptions(); const subYear = subs.reduce((a, x) => a + x.yearly, 0);
+    const places = {}; st.tx.forEach(t => { if (t.place && !isIncome(t)) { const n = placeName(t.place); places[n] = (places[n] || 0) + own(t); } });
+    const topPl = Object.entries(places).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    const { fy, sums } = taxState(); const c80 = sums['80C'] || 0;
+    return `<div class="mactions"><button class="btn" data-a="afford">${ic('wallet')}Can I afford it?</button><button class="btn" data-a="tax">${ic('file')}Tax savings</button></div>
+      <div class="sect"><span>Subscriptions & repeats</span>${subs.length ? `<span>${inr(subYear)} a year</span>` : ''}</div>
+      <div class="block" style="padding:0">${subs.map(x => `<div class="mini-row"><span>${esc(x.name)}<small>${inr(x.amount)} every ${x.every} · next about ${esc(short(x.next))}</small></span><b>${inr(x.yearly)}/yr</b>${x.isBill ? '' : `<button class="btn sm" data-subbill="${esc(x.name)}|${x.amount}|${x.catId}|${x.next.getDate()}" style="width:auto;padding:0 12px">Remind me</button>`}</div>`).join('') || '<div class="empty" style="padding:16px"><b>No repeating payments yet</b>Payments to the same place for about the same amount every month show up here.</div>'}</div>
+      ${topPl.length ? `<div class="sect">Top places this ${pWord()}</div><div class="block" style="padding:0">${topPl.map(([n, v]) => `<div class="mini-row"><span>📍 ${esc(n)}</span><b>${inr(v)}</b></div>`).join('')}</div>` : ''}
+      <button class="nudge" data-a="tax" style="margin-top:12px">${ic('file')}<span><b>Tax FY ${fy}:</b> 80C ${inr(c80)} of ${inr(150000)} used. Tap to add PF, PPF, insurance or rent.</span></button>`;
+  }
+  async function extrasClick(b) {
+    const a = b.dataset.a;
+    if (b.dataset.loan) { loanSheet(M.loans.find(x => x.id === b.dataset.loan)); return true; }
+    if (b.dataset.debt) { debtSheet(M.debts.find(x => x.id === b.dataset.debt)); return true; }
+    if (b.dataset.subbill) { const [name, amount, catId, day] = b.dataset.subbill.split('|'); M.bills.push({ id: uid(), name, amount: +amount, catId, freq: 'monthly', day: +day, remind: true, paid: {}, created: Date.now() }); save(); refresh(); scheduleBillReminders(); toast(`${name} added to bills with a reminder`); return true; }
+    switch (a) {
+      case 'smsimport': smsSheet(); return true;
+      case 'addloan': loanSheet(null); return true;
+      case 'adddebt': debtSheet(null); return true;
+      case 'tax': taxSheet(); return true;
+      case 'afford': affordSheet(); return true;
+      case 'leaves': leaveSheet(mOff); return true;
+      case 'monthsum': monthSummarySheet(); return true;
+      case 'payday': { const s = sheet(`<h2>Salary day</h2><p class="sub">Vyora reminds you at 10 am to enter what you received.</p><div class="daygrid">${Array.from({ length: 31 }, (_, i) => `<button class="${(M.payday || 1) === i + 1 ? 'on' : ''}" data-day="${i + 1}">${i + 1}</button>`).join('')}</div>`); s.el.addEventListener('click', e => { const d = e.target.closest('[data-day]'); if (!d) return; M.payday = +d.dataset.day; save(); s.close(); refresh(); scheduleSalaryReminder(); toast(`Reminder on day ${M.payday}`); }); return true; }
+    }
+    return false;
+  }
+
   return {
     get data() { return M; },
     set data(v) { const keep = { lockOn: M.lockOn, pin: M.pin, enc: M.enc }; M = Object.assign(fresh(), v || {}, keep); sealed = false; save(); },
@@ -1880,6 +2201,8 @@ const Money = (() => {
     async ensureOpen() { if (!M.lockOn && !sealed) return true; return unlock(); },
     isSealed: () => sealed,
     rescheduleBills: () => scheduleBillReminders(),
+    checkSms, smsSheet, affordSheet, findSubscriptions, debts: () => M.debts, loans: () => M.loans.map(l => Object.assign({ name: l.name }, loanState(l))),
+    afterUnlock: () => { scheduleSalaryReminder(); scheduleDebtReminders(); checkSms().then(f => { if (f && f.length && mTab === 'txns') refresh(); }); },
     renderTab, handleClick, openMoney, onHide, onShow, todayChip, boot, refresh, parseReceipt, parseHistory, stats, inr, widgetData, own, dayOnPace, weekSpend,
     isLocked: () => M.lockOn && !unlocked, lockOn: () => M.lockOn,
     async quickAdd() { if (!(await openMoney())) return; return M.setup ? entrySheet({}) : setupView(); },
@@ -1893,6 +2216,7 @@ const Money = (() => {
         .map(({ b, nd }) => ({ id: b.id, name: b.name, amount: b.amount, due: nd.due, overdue: nd.overdue }));
     },
     payBill(id, dueKey) { const b = M.bills.find(x => x.id === id); if (!b) return null; markPaid(b, parseKey(dueKey)); const st = stats(); return { name: b.name, left: st.left }; },
+    async addDebt(pre) { if (!(await openMoney('budget'))) return; debtSheet(null); setTimeout(() => { const b = document.querySelector('.backdrop:last-child'); if (!b) return; $('#dp', b).value = pre.person || ''; $('#da', b).value = pre.amount || ''; const dir = b.querySelector(`[data-dir="${pre.dir}"]`); if (dir) dir.click(); }, 80); },
     async quickAddPre(pre) { if (!(await openMoney())) return; return M.setup ? entrySheet(pre || {}) : setupView(); },
     _cycleStart: cycleStart, _cycleEnd: cycleEnd, _guess: guessCat, _handleOcr: handleOcr,
   };
