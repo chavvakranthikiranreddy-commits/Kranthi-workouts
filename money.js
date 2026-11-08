@@ -1001,7 +1001,7 @@ const Money = (() => {
         <button class="set-row" data-a="addgoal"><span class="st"><div class="t">Savings goals</div><div class="s">${M.goals.length ? M.goals.length + ' goal' + (M.goals.length > 1 ? 's' : '') : 'Emergency fund, bike, trip…'}</div></span>${ic('plus')}</button>
         <button class="set-row" data-a="friends"><span class="st"><div class="t">Friends & splits</div><div class="s">${M.people.length ? M.people.length + ' friend' + (M.people.length > 1 ? 's' : '') : 'Who owes what from shared bills'}</div></span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="tagplaces"><span class="st"><div class="t">Save where you spend</div><div class="s">Adds the area (e.g. HSR Layout) to new expenses when location is allowed. Shown in Insights → Top places.</div></span><span class="toggle ${M.tagPlaces !== false ? 'on' : ''}"></span></button>
-        <button class="set-row" data-a="smsimport"><span class="st"><div class="t">Bank SMS</div><div class="s">Suggest expenses from bank and UPI messages on this phone</div></span>${ic('chevR', 'chev')}</button>
+        <button class="set-row" data-a="smsimport"><span class="st"><div class="t">Bank SMS</div><div class="s">Paste bank or UPI messages to add expenses</div></span>${ic('chevR', 'chev')}</button>
         <button class="set-row" data-a="alerts"><span class="st"><div class="t">Spending alerts</div><div class="s">Warn at 80% and 100% of your budget, needs, wants and category limits</div></span><span class="toggle ${M.alertsOn !== false ? 'on' : ''}"></span></button>
       </div>
       <div class="sect">Categories</div>
@@ -1914,7 +1914,7 @@ const Money = (() => {
     const end = "(?:\\s+(?:on|ref|upi|via|txn|avl|a\\/c|bal|info)\\b|\\s*[.,;]\\s|\\s*[.,;]?$)";
     const pm = b.match(new RegExp("(?:\\bto|\\bat|towards|\\bfor)\\s+(?:vpa\\s+)?([A-Za-z0-9@._ &'-]{3,40}?)" + end, 'i')) || b.match(new RegExp("\\bfrom\\s+([A-Za-z0-9@._ &'-]{3,40}?)" + end, 'i'));
     if (pm) payee = pm[1].replace(/@.*$/, '').replace(/[.\s]+$/, '').replace(/\s+/g, ' ').trim();
-    if (/^(a\/c|ac|acct|your)\b/i.test(payee)) payee = '';
+    if (/^(a\/c|ac|acct|your)\b/i.test(payee)) { const fm = b.match(new RegExp("\\bfrom\\s+([A-Za-z0-9@._ &'-]{3,40}?)" + end, 'i')); payee = fm && !/^(a\/c|ac|acct|your)\b/i.test(fm[1]) ? fm[1].replace(/@.*$/, '').trim() : ''; }
     const bank = String(m.from || '').replace(/^[A-Z]{2}-/, '').replace(/[^A-Za-z]/g, '').slice(0, 6);
     return { id: 'sms' + m.id, amount, income, payee: payee.slice(0, 40) || (income ? 'Money received' : 'Bank payment'), bank, at: m.at, date: dkey(new Date(m.at)) };
   }
@@ -1931,18 +1931,29 @@ const Money = (() => {
       return smsFound;
     } catch (e) { return []; }
   }
-  const smsNudge = () => (smsFound && smsFound.length ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>${smsFound.length} bank payment${smsFound.length > 1 ? 's' : ''} found in your messages.</b> Review and add them in one tap.</span></button>` : (P.Sms && !M.smsAsked ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>Add expenses from bank SMS.</b> Vyora reads debit and UPI messages on this phone and suggests entries. Nothing leaves the phone.</span></button>` : ''));
+  const smsNudge = () => (smsFound && smsFound.length ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>${smsFound.length} bank payment${smsFound.length > 1 ? 's' : ''} found in your messages.</b> Review and add them in one tap.</span></button>` : (P.Sms && !M.smsAsked ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>Add expenses from bank SMS.</b> Copy a bank or UPI message and paste it here. Vyora fills in the amount and payee.</span></button>` : ''));
+  function parsePasted(txt) {
+    const parts = String(txt || '').split(/\n\s*\n|(?=\b(?:Dear Customer|Your A\/c|A\/c\s|Acct\s|INR\s|Rs\.?\s?\d|Sent Rs)[^\n]*(?:debited|credited|sent|paid))/i).map(x => x.trim()).filter(x => x.length > 12);
+    const now = Date.now();
+    return parts.map((body, i) => {
+      const dm = body.match(/\b(\d{1,2})[-\/ ](\d{1,2}|[A-Za-z]{3})[-\/ ](\d{4}|\d{2})\b/);
+      let at = now;
+      if (dm) { const MO = 'janfebmaraprmayjunjulaugsepoctnovdec'; const mo = /\d/.test(dm[2]) ? +dm[2] - 1 : MO.indexOf(dm[2].toLowerCase()) / 3; const y = +dm[3] < 100 ? 2000 + +dm[3] : +dm[3]; const t = new Date(y, mo, +dm[1], 12).getTime(); if (mo >= 0 && mo < 12 && t && Math.abs(t - now) < 400 * 864e5) at = t; }
+      return parseSms({ id: 'p' + now + i + body.length, body, from: '', at });
+    }).filter(Boolean);
+  }
   async function smsSheet() {
-    if (!P.Sms) { toast('Reading bank SMS works in the installed app'); return; }
-    let st0 = await P.Sms.status();
-    if (!st0.granted) {
-      M.smsAsked = true; save();
-      const ok = await confirmBox('Read bank messages?', 'Vyora looks only at messages from banks and UPI apps that mention a debit or credit, and suggests entries. Messages stay on your phone.', [{ label: 'Allow SMS access', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }]);
-      if (!ok) return;
-      st0 = await P.Sms.requestPermission(); if (!st0.granted) { toast('SMS access was not allowed. You can allow it in phone Settings → Apps → Vyora.'); return; }
-    }
-    const list = await checkSms(true);
-    if (!list.length) { toast('No new bank payments in your messages'); refresh(); return; }
+    M.smsAsked = true; save();
+    const s0 = sheet(`<h2>Add from bank SMS</h2><p class="sub">In your Messages app, long-press a bank or UPI message, tap Copy, then paste it here. You can paste several at once. Nothing leaves your phone.</p>
+      <label class="fld"><span>Bank messages</span><textarea id="smsPaste" rows="6" placeholder="Rs.450.00 debited from A/c XX1234 to SWIGGY on 08-11-26…"></textarea></label>
+      <div class="btns two"><button class="btn" data-a="clip">Paste from clipboard</button><button class="btn primary" data-a="read">Find payments</button></div>`);
+    const ta = s0.el.querySelector('#smsPaste');
+    const list = await new Promise(res => s0.el.addEventListener('click', async e => {
+      const b = e.target.closest('[data-a]'); if (!b) return;
+      if (b.dataset.a === 'clip') { try { ta.value = (ta.value ? ta.value + '\n\n' : '') + await navigator.clipboard.readText(); } catch (_) { toast('Long-press the box and tap Paste'); } return; }
+      const l = parsePasted(ta.value); if (!l.length) { toast('No payment found. Paste the full bank message.'); return; }
+      s0.close(); res(l);
+    }));
     const pick = new Set(list.filter(x => !x.income).map(x => x.id));
     const s = sheet(`<h2>From your bank messages</h2><p class="sub">Tick the ones to add. Categories are guessed from the payee; you can change them later.</p>
       <div class="block" style="padding:0">${list.map(x => `<label class="smsrow"><input type="checkbox" data-sid="${x.id}" ${pick.has(x.id) ? 'checked' : ''}><span><b>${esc(x.payee)}</b><small>${esc(short(parseKey(x.date)))} · ${esc(x.bank || 'Bank')}${x.income ? ' · received' : ''}</small></span><em class="${x.income ? 'pos' : ''}">${x.income ? '+' : ''}${inr(x.amount)}</em></label>`).join('')}</div>
