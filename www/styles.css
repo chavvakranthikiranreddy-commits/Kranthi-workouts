@@ -374,9 +374,9 @@ textarea.field { resize: none; min-height: 90px; }
 .ring-wrap svg.ring circle { fill: none; stroke-width: 5; }
 .ring-wrap svg.ring .trk { stroke: rgba(0, 0, 0, .14); }
 .ring-wrap svg.ring .bar { stroke: rgba(0, 0, 0, .82); stroke-linecap: round; transition: stroke-dashoffset .1s linear; }
-.ring-wrap .run-label { font-size: calc(var(--rs) * .13); max-width: 78%; }
-.ring-wrap .run-digits { font-size: calc(var(--rs) * .33); margin-top: 0; line-height: .92; }
-.ring-wrap .run-digits.long { font-size: calc(var(--rs) * .22); }
+.ring-wrap .run-label { font-size: calc(var(--rs) * .11); max-width: 78%; }
+.ring-wrap .run-digits { font-size: calc(var(--rs) * .26); margin-top: 0; line-height: .92; }
+.ring-wrap .run-digits.long { font-size: calc(var(--rs) * .18); }
 .ring-wrap .run-sub { font-size: calc(var(--rs) * .036); max-width: 76%; text-align: center; }
 .run-hint { font-size: 12px; font-weight: 600; letter-spacing: .08em; opacity: .55; margin-top: 8px; text-transform: uppercase; }
 .run-tools .lockbtn { padding: 8px 12px; border-radius: 999px; }
