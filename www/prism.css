@@ -346,3 +346,32 @@ body:not(.has-ctxact) #view .page { padding-bottom: 112px; }
 .applock b { font-size: 20px; color: var(--text); }
 .applock span { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
 .applock .btn { min-width: 200px; }
+/* 7.3: live route map + recap */
+.routescr.live { background: #0f1115; }
+.routescr.live .rmapbox { position: absolute; inset: 0 0 auto 0; height: 62%; background: #e8ebf3; }
+.routescr.live .rfallback { padding: 80px 16px 0; }
+.routescr.live .rtop { position: absolute; top: calc(env(safe-area-inset-top) + 10px); left: 12px; right: 12px; z-index: 500; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(15,17,21,.88); color: #fff; border-radius: 18px; padding: 8px; }
+.routescr.live .rtop b { font-size: 15px; letter-spacing: .06em; text-transform: uppercase; }
+.routescr.live .rtop .round-btn { background: rgba(255,255,255,.12); color: #fff; }
+.routescr.live .rpanel { position: absolute; left: 0; right: 0; bottom: 0; min-height: 38%; background: #0f1115; color: #fff; border-radius: 22px 22px 0 0; padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px); z-index: 500; display: flex; flex-direction: column; gap: 14px; }
+.routescr.live .rmsg { margin: 0; color: #c9cdd8; font-size: 14px; }
+.routescr.live .rbig { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; align-items: end; }
+.routescr.live .rbig b { display: block; font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.05; }
+.routescr.live .rbig div:first-child b { font-size: 46px; }
+.routescr.live .rbig span { color: #B5BFFF; font-size: 12px; font-weight: 700; letter-spacing: .06em; }
+.routescr.live .rbig small { display: block; color: #9aa0ad; font-size: 11px; font-weight: 700; letter-spacing: .06em; margin-bottom: 4px; }
+.routescr.live .btns { margin-top: auto; }
+.routescr.live .btn.ghost { background: rgba(255,255,255,.1); color: #fff; }
+.routescr .rcmap { height: 260px; border-radius: 18px; overflow: hidden; background: var(--surface); margin-bottom: 14px; }
+.routescr .splits { padding: 6px 14px; }
+.routescr .split { display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; gap: 10px; padding: 8px 0; }
+.routescr .split i { display: block; height: 8px; border-radius: 4px; background: var(--accent, #3F51D9); }
+.routescr .split b { text-align: right; font-variant-numeric: tabular-nums; }
+.routego button svg { width: 18px; height: 18px; }
+.leaflet-container { font: inherit; }
+.wxcmp { display: grid; grid-template-columns: 1fr 1fr; gap: 0; padding: 0; }
+.wxcmp .wxsrc { padding: 14px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.wxcmp .wxsrc + .wxsrc { border-left: 1px solid var(--line, rgba(0,0,0,.08)); }
+.wxcmp .wxsrc small { font-weight: 700; color: var(--accent-text, #3F51D9); letter-spacing: .04em; }
+.wxcmp .wxsrc b { font-size: 28px; line-height: 1.1; }
+.wxcmp .wxsrc span { font-size: 13px; color: var(--muted); }

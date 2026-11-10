@@ -708,10 +708,25 @@ const Life = (() => {
       const u = `https://api.open-meteo.com/v1/forecast?latitude=${L.weather.lat}&longitude=${L.weather.lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=7`;
       const r = await fetch(u); if (!r.ok) throw new Error('http');
       L.weather.data = await r.json(); L.weather.at = Date.now(); save();
+      try {
+        const r2 = await fetch(`https://wttr.in/${L.weather.lat},${L.weather.lon}?format=j1`); const j2 = await r2.json();
+        const c2 = (j2.current_condition || [])[0] || {}, d2 = (j2.weather || [])[0] || {};
+        L.weather.alt = { temp: +c2.temp_C, feels: +c2.FeelsLikeC, desc: ((c2.weatherDesc || [])[0] || {}).value || '', hi: +d2.maxtempC, lo: +d2.mintempC, rain: Math.max(0, ...((d2.hourly || []).map(h => +h.chanceofrain || 0))), hum: +c2.humidity, at: Date.now() };
+        save();
+      } catch (e2) { /* second source is optional */ }
       if (tab === 'home') refresh();
       const ws = $('#wxbox'); if (ws) ws.innerHTML = weatherHtml();
       L.weather.offline = false;
     } catch (e) { if (L.weather) { L.weather.offline = true; save(); const ws = $('#wxbox'); if (ws && L.weather.data) ws.innerHTML = weatherHtml(); } if (!quiet) toast('Could not load weather. Check your internet.'); }
+  }
+  function wxCompare() {
+    const w = L.weather && L.weather.data, a = L.weather && L.weather.alt; if (!w) return '';
+    const d = w.daily || {}; const rainA = d.precipitation_probability_max ? d.precipitation_probability_max[0] : null;
+    const col = (src, t, f, hi, lo, rain, desc) => `<div class="wxsrc"><small>${src}</small><b>${Math.round(t)}°</b><span>${esc(desc)}</span><span>Feels ${Math.round(f)}° · ${Math.round(hi)}° / ${Math.round(lo)}°</span><span>Rain chance ${rain == null ? '–' : Math.round(rain) + '%'}</span></div>`;
+    return `<div class="sect">Two weather reports</div><div class="block wxcmp">
+      ${col('Open-Meteo', w.current.temperature_2m, w.current.apparent_temperature, d.temperature_2m_max ? d.temperature_2m_max[0] : w.current.temperature_2m, d.temperature_2m_min ? d.temperature_2m_min[0] : w.current.temperature_2m, rainA, wx(w.current.weather_code)[1] || '')}
+      ${a && !isNaN(a.temp) ? col('wttr.in', a.temp, a.feels, a.hi, a.lo, a.rain, a.desc) : '<div class="wxsrc"><small>wttr.in</small><span>Not loaded yet. It loads with the next refresh when you are online.</span></div>'}
+    </div>`;
   }
   function weatherHtml() {
     const w = L.weather && L.weather.data; if (!w) return '<div class="skelwx" aria-busy="true" aria-label="Loading weather"><span class="skel" style="width:40%;height:32px"></span><span class="skel" style="width:70%"></span><span class="skelrow">' + '<span class="skel"></span>'.repeat(7) + '</span></div>';
@@ -724,17 +739,25 @@ const Life = (() => {
     for (let i = start; i < start + 24 && i < w.hourly.time.length; i += 2) hrs.push(i);
     return `${stale ? `<div class="mwarn">${ic('info')}<span>${L.weather.offline ? 'You seem to be offline. ' : ''}Showing weather from ${agoTxt}. Pull down or reopen to refresh when you're online.</span></div>` : ''}<div class="wxhero"><span class="wxbig">${wx(c.weather_code)[0]}</span><b>${Math.round(c.temperature_2m)}°</b><span>${esc(wx(c.weather_code)[1])}</span><small>Feels like ${Math.round(c.apparent_temperature)}° · Humidity ${c.relative_humidity_2m}% · Wind ${Math.round(c.wind_speed_10m)} km/h</small></div>
       <div class="wxhours">${hrs.map(i => `<div><small>${new Date(w.hourly.time[i]).toLocaleTimeString(undefined, { hour: 'numeric' })}</small><span>${wx(w.hourly.weather_code[i])[0]}</span><b>${Math.round(w.hourly.temperature_2m[i])}°</b><small>${w.hourly.precipitation_probability[i] || 0}%</small></div>`).join('')}</div>
+      ${wxCompare()}
       <div class="sect">7 days</div><div class="block" style="padding:0">${w.daily.time.map((d, i) => `<div class="wxday"><span>${i ? new Date(d).toLocaleDateString(undefined, { weekday: 'short' }) : 'Today'}</span><span>${wx(w.daily.weather_code[i])[0]}</span><small>${w.daily.precipitation_probability_max[i] || 0}%</small><span class="wxr"><em>${Math.round(w.daily.temperature_2m_min[i])}°</em><i></i><b>${Math.round(w.daily.temperature_2m_max[i])}°</b></span></div>`).join('')}</div>
       <p class="hint">Sunrise ${new Date(w.daily.sunrise[0]).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · Sunset ${new Date(w.daily.sunset[0]).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })} · UV ${Math.round(w.daily.uv_index_max[0] || 0)}${w.daily.uv_index_max[0] >= 8 ? ' (very high, use sunscreen)' : ''}. Data from Open-Meteo.</p>`;
   }
   function weatherTool() {
-    toolScreen('Weather', `<div class="qadd"><input class="field body" id="wq" placeholder="Search your city" value="${esc(L.weather ? L.weather.name : '')}"><button class="round-btn accent" data-a="wsearch" aria-label="Search">${ic('search')}</button></div><div id="wres"></div><div id="wxbox">${L.weather ? weatherHtml() : '<div class="empty"><b>Pick your city</b>Type a city name above, like Bengaluru or Guntur.</div>'}</div>`, (scr) => {
+    toolScreen('Weather', `<div class="qadd"><input class="field body" id="wq" placeholder="Search area, town or city" value="${esc(L.weather ? L.weather.name : '')}"><button class="round-btn accent" data-a="wsearch" aria-label="Search">${ic('search')}</button></div><div id="wres"></div><div id="wxbox">${L.weather ? weatherHtml() : '<div class="empty"><b>Pick your city</b>Type a city name above, like Bengaluru or Guntur.</div>'}</div>`, (scr) => {
       if (L.weather && (!L.weather.data || Date.now() - L.weather.at > 15 * 60000)) refreshWeather();
       const search = async () => {
         const q = $('#wq', scr).value.trim(); if (!q) return;
-        try { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en`); const j = await r.json();
-          $('#wres', scr).innerHTML = (j.results || []).map((c, i) => `<button class="srow" data-wc="${i}"><span class="wkt"><b>${esc(c.name)}</b><span>${esc([c.admin1, c.country].filter(Boolean).join(', '))}</span></span></button>`).join('') || '<p class="hint">No city found.</p>';
-          scr._res = j.results || [];
+        try {
+          let res = [];
+          try {
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=8&countrycodes=in&q=${encodeURIComponent(q)}`, { headers: { 'Accept-Language': 'en' } });
+            const j = await r.json();
+            res = (j || []).map(c => { const a = c.address || {}; const nm = a.suburb || a.neighbourhood || a.village || a.town || a.city_district || a.city || c.name || q; return { name: nm, sub: [a.city || a.town || a.county || a.state_district, a.state].filter(x => x && x !== nm).join(', '), latitude: +c.lat, longitude: +c.lon }; });
+          } catch (e1) { res = []; }
+          if (!res.length) { const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en`); const j = await r.json(); res = (j.results || []).map(c => ({ name: c.name, sub: [c.admin1, c.country].filter(Boolean).join(', '), latitude: c.latitude, longitude: c.longitude })); }
+          $('#wres', scr).innerHTML = res.map((c, i) => `<button class="srow" data-wc="${i}"><span class="wkt"><b>${esc(c.name)}</b><span>${esc(c.sub)}</span></span></button>`).join('') || '<p class="hint">No place found. Try the area and city, e.g. HSR Layout Bengaluru.</p>';
+          scr._res = res;
         } catch (e) { toast('Could not search. Check your internet.'); }
       };
       $('#wq', scr).addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
@@ -1441,8 +1464,8 @@ const Life = (() => {
     try {
       const st = await P.Place.status(); if (!st.granted) return false;
       const loc = await P.Place.current(); const nm = await P.Place.name({ lat: loc.lat, lng: loc.lng }).catch(() => ({}));
-      const moved = !L.weather || Math.abs((L.weather.lat || 0) - loc.lat) > 0.05 || Math.abs((L.weather.lon || 0) - loc.lng) > 0.05;
-      L.weather = Object.assign(L.weather || {}, { lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lng * 100) / 100, name: nm.city || nm.area || (L.weather && L.weather.name) || 'Your location', auto: true });
+      const moved = !L.weather || Math.abs((L.weather.lat || 0) - loc.lat) > 0.01 || Math.abs((L.weather.lon || 0) - loc.lng) > 0.01;
+      L.weather = Object.assign(L.weather || {}, { lat: Math.round(loc.lat * 100) / 100, lon: Math.round(loc.lng * 100) / 100, name: (nm.area && nm.city && nm.area !== nm.city ? `${nm.area}, ${nm.city}` : nm.area || nm.city) || (L.weather && L.weather.name) || 'Your location', auto: true });
       if (moved) L.weather.at = 0;
       save(); refreshWeather(quiet); return true;
     } catch (e) { return false; }

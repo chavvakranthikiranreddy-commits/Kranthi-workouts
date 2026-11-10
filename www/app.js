@@ -96,6 +96,7 @@ const I = {
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor"/>',
   scan: '<path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/><path d="M8 12h8"/>',
   clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M5 4 2.5 6.5M19 4l2.5 2.5"/>',
+  locate: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/>',
   pin: '<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v7"/>',
   camera: '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h3L9 5h6l1.5 2h3A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><circle cx="12" cy="13" r="3.5"/>',
   pill: '<rect x="3" y="8.5" width="18" height="7" rx="3.5" transform="rotate(-45 12 12)"/><path d="m8.5 8.5 7 7"/>',
@@ -1221,6 +1222,26 @@ const Route = (() => {
     const a = pts[0], z = pts[pts.length - 1];
     return `<svg class="routesvg" viewBox="0 0 ${w} ${h}" role="img" aria-label="Route shape"><path d="${d}"/><circle class="s" cx="${X(a[1]).toFixed(1)}" cy="${Y(a[0]).toFixed(1)}" r="5"/><circle class="e" cx="${X(z[1]).toFixed(1)}" cy="${Y(z[0]).toFixed(1)}" r="6"/></svg>`;
   }
+  /* Live map (OpenStreetMap through Leaflet, bundled in www/vendor). Falls back to the route shape when offline. */
+  const Lf = () => window.Leaf || null;
+  function mkMap(box, opts = {}) {
+    const LL = Lf(); if (!LL || !box) return null;
+    try {
+      const m = LL.map(box, { zoomControl: false, attributionControl: true, dragging: opts.drag !== false, tap: true });
+      LL.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(m);
+      m.attributionControl.setPrefix(false);
+      return m;
+    } catch (e) { return null; }
+  }
+  function dist2(a, b) { const R = 6371000, r = Math.PI / 180, dLa = (b[0] - a[0]) * r, dLn = (b[1] - a[1]) * r; const h = Math.sin(dLa / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(dLn / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); }
+  function splits(pts) {
+    const out = []; let d = 0, lastT = 0, next = 1000;
+    for (let i = 1; i < (pts || []).length; i++) {
+      d += dist2(pts[i - 1], pts[i]);
+      if (d >= next && pts[i][2] != null) { out.push(Math.round((pts[i][2] - lastT) / 1000)); lastT = pts[i][2]; next += 1000; }
+    }
+    return out;
+  }
   async function start(kind) {
     if (!P.Place) { toast('GPS walks work in the installed app'); return; }
     let st = await P.Place.status();
@@ -1230,34 +1251,85 @@ const Route = (() => {
   }
   function open(kind) {
     if (scr) return;
-    scr = el(`<section class="screen routescr"><div class="topbar"><button class="round-btn" data-a="min" aria-label="Minimise">${ic('chevL')}</button><h1>${kind === 'run' ? 'Outdoor run' : 'Outdoor walk'}</h1></div>
-      <div class="page"><div class="rstats"><div><b id="rkm">0.00</b><span>km</span></div><div><b id="rtime">0:00</b><span>time</span></div><div><b id="rpace">–</b><span>pace</span></div></div>
-      <div class="chart-card" id="rmap">${pathSvg([])}</div>
-      <p class="hint">Tracking keeps going with the screen off. A notification shows the distance.</p>
-      <button class="btn primary" data-a="stop" style="margin-top:12px">${ic('check')}Finish and save</button>
-      <button class="btn ghost" data-a="discard" style="margin-top:8px">Discard</button></div></section>`);
+    scr = el(`<section class="screen routescr live"><div class="rmapbox" id="rmapbox"><div class="rfallback" id="rmap">${pathSvg([])}</div></div>
+      <div class="rtop"><button class="round-btn" data-a="min" aria-label="Minimise">${ic('chevL')}</button><b>${kind === 'run' ? 'Outdoor run' : 'Outdoor walk'}</b><button class="round-btn" data-a="centre" aria-label="Centre on me">${ic('locate')}</button></div>
+      <div class="rpanel"><p class="rmsg" id="rmsg">Finding your location. Head outdoors for a clearer signal.</p>
+        <div class="rbig"><div><b id="rkm">0.00</b><span>KILOMETRES</span></div><div><small>TIME</small><b id="rtime">0:00</b></div><div><small>AVG PACE</small><b id="rpace">–</b></div></div>
+        <div class="btns two"><button class="btn ghost" data-a="discard">Discard</button><button class="btn primary" data-a="stop">${ic('check')}Finish</button></div></div></section>`);
     layer.appendChild(scr);
+    let map = null, line = null, dot = null, follow = true;
+    setTimeout(() => {
+      map = mkMap($('#rmapbox', scr));
+      if (map) {
+        $('#rmap', scr).style.display = 'none';
+        const LL = Lf();
+        line = LL.polyline([], { color: '#3F51D9', weight: 6, opacity: .9 }).addTo(map);
+        dot = LL.circleMarker([12.97, 77.59], { radius: 8, color: '#fff', weight: 3, fillColor: '#2F80ED', fillOpacity: 1 });
+        map.setView([12.97, 77.59], 16);
+        map.on('dragstart', () => { follow = false; });
+        P.Place.current().then(c => { if (map && c && c.lat && !line.getLatLngs().length) { dot.setLatLng([c.lat, c.lng]).addTo(map); if (follow) map.setView([c.lat, c.lng], 17); } }).catch(() => {});
+      }
+      tick();
+    }, 60);
     const unback = pushBack(() => close());
-    const close = () => { clearInterval(timer); timer = null; unback(); if (scr) scr.remove(); scr = null; };
-    const tick = async () => { try { const r = await P.Place.routeStatus(); const x = JSON.parse(r.route || '{}'); if (!scr) return; $('#rkm', scr).textContent = km(x.dist || 0); const secs = Math.round((Date.now() - (x.start || Date.now())) / 1000); $('#rtime', scr).textContent = fmt(secs); $('#rpace', scr).textContent = pace(x.dist || 0, secs); $('#rmap', scr).innerHTML = pathSvg(x.pts); } catch (e) { /* not native */ } };
+    const close = () => { clearInterval(timer); timer = null; unback(); if (map) { try { map.remove(); } catch (e) { /* ignore */ } } if (scr) scr.remove(); scr = null; };
+    const tick = async () => {
+      try {
+        const r = await P.Place.routeStatus(); const x = JSON.parse(r.route || '{}'); if (!scr) return;
+        $('#rkm', scr).textContent = km(x.dist || 0);
+        const secs = Math.round((Date.now() - (x.start || Date.now())) / 1000);
+        $('#rtime', scr).textContent = fmt(secs); $('#rpace', scr).textContent = pace(x.dist || 0, secs).replace(' /km', '');
+        const pts = x.pts || [];
+        $('#rmsg', scr).textContent = pts.length ? (pts.length < 3 ? 'GPS found. Start moving.' : 'Tracking keeps going with the screen off.') : 'Finding your location. Head outdoors for a clearer signal.';
+        if (map && pts.length) {
+          const ll = pts.map(p => [p[0], p[1]]); line.setLatLngs(ll); dot.setLatLng(ll[ll.length - 1]).addTo(map);
+          if (follow) map.panTo(ll[ll.length - 1]);
+        } else if (!map) $('#rmap', scr).innerHTML = pathSvg(pts);
+      } catch (e) { /* ignore */ }
+    };
     tick(); timer = setInterval(tick, 3000);
     scr.addEventListener('click', async e => {
       const b = e.target.closest('[data-a]'); if (!b) return;
       if (b.dataset.a === 'min') return close();
-      if (b.dataset.a === 'discard') { if (await confirmBox('Discard this walk?', 'The route is not saved.', [{ label: 'Discard walk', cls: 'danger', value: 1 }, { label: 'Keep tracking', cls: 'ghost', value: 0 }])) { try { await P.Place.stopRoute(); } catch (e2) { /* ignore */ } close(); paintCtxAct(); } return; }
+      if (b.dataset.a === 'centre') { follow = true; const ll = dot && dot.getLatLng(); if (map && ll) map.setView(ll, 17); return; }
+      if (b.dataset.a === 'discard') { if (await confirmBox('Discard this walk?', 'The route is not saved.', [{ label: 'Discard walk', cls: 'danger', value: 1 }, { label: 'Keep tracking', cls: 'ghost', value: 0 }])) { try { await P.Place.stopRoute(); } catch (e2) { /* ignore */ } close(); paintCtxAction(); } return; }
       if (b.dataset.a === 'stop') {
         const r = await P.Place.stopRoute(); const x = JSON.parse(r.route || '{}'); close();
         const secs = x.secs || Math.round((Date.now() - x.start) / 1000);
-        if (!(x.dist > 20)) { toast('Too short to save'); return; }
-        const pts = (x.pts || []).filter((p, i, a) => i % Math.max(1, Math.ceil(a.length / 400)) === 0);
-        const entry = { id: uid(), date: dkey(new Date(x.start)), at: x.start, title: `${x.kind === 'run' ? 'Run' : 'Walk'} · ${km(x.dist)} km`, kind: 'route', dur: secs, dist: x.dist, route: pts, notes: pace(x.dist, secs) };
-        log.push(entry); saveLog(); rerenderKeepScroll(); toast(`Saved: ${km(x.dist)} km in ${fmt(secs)}`);
+        if (!(x.dist > 20)) { toast('Too short to save. Walk at least 20 m with GPS on.'); return; }
+        const all = x.pts || [];
+        const pts = all.filter((p, i, a) => i === a.length - 1 || i % Math.max(1, Math.ceil(a.length / 400)) === 0);
+        const entry = { id: uid(), date: dkey(new Date(x.start)), at: x.start, title: `${x.kind === 'run' ? 'Run' : 'Walk'} · ${km(x.dist)} km`, kind: 'route', rkind: x.kind, dur: secs, dist: x.dist, route: pts, splits: splits(all), notes: pace(x.dist, secs) };
+        log.push(entry); saveLog(); rerenderKeepScroll(); view(entry.id);
       }
     });
   }
+  /* Recap: map of the route, km, time, pace and per-km splits. */
   function view(id) {
     const x = log.find(e => e.id === id); if (!x) return;
-    sheet(`<h2>${esc(x.title)}</h2><p class="sub">${esc(new Date(x.at).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }))} · ${fmt(x.dur)} · ${esc(x.notes || '')}</p><div class="chart-card">${pathSvg(x.route)}</div>`);
+    const sp = x.splits || splits(x.route);
+    const best = sp.length ? Math.min(...sp) : 0;
+    const r = el(`<section class="screen routescr recap"><div class="topbar"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button><h1>${x.rkind === 'run' || /^Run/.test(x.title) ? 'Run recap' : 'Walk recap'}</h1></div>
+      <div class="page"><p class="sub" style="margin:0 0 10px">${esc(new Date(x.at).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }))}</p>
+      <div class="rcmap" id="rcmap"><div class="rfallback">${pathSvg(x.route)}</div></div>
+      <div class="rstats"><div><b>${km(x.dist || 0)}</b><span>km</span></div><div><b>${fmt(x.dur)}</b><span>time</span></div><div><b>${esc((x.notes || '–').replace(' /km', ''))}</b><span>avg pace /km</span></div></div>
+      ${sp.length ? `<div class="sect">Splits</div><div class="block splits">${sp.map((t, i) => `<div class="split"><span>Km ${i + 1}</span><i style="width:${Math.max(18, Math.round(best / t * 100))}%"></i><b>${Math.floor(t / 60)}:${pad(t % 60)}</b></div>`).join('')}</div>` : '<p class="hint">Splits appear for routes longer than 1 km.</p>'}
+      </div></section>`);
+    layer.appendChild(r);
+    let map = null;
+    const close = () => { unback(); if (map) { try { map.remove(); } catch (e) { /* ignore */ } } r.remove(); };
+    const unback = pushBack(close);
+    r.addEventListener('click', e => { if (e.target.closest('[data-a="close"]')) close(); });
+    setTimeout(() => {
+      if (!x.route || x.route.length < 2) return;
+      map = mkMap($('#rcmap', r)); if (!map) return;
+      const LL = Lf(); r.querySelector('#rcmap .rfallback').style.display = 'none';
+      const ll = x.route.map(p => [p[0], p[1]]);
+      const pl = LL.polyline(ll, { color: '#3F51D9', weight: 5 }).addTo(map);
+      LL.circleMarker(ll[0], { radius: 7, color: '#fff', weight: 3, fillColor: '#16A34A', fillOpacity: 1 }).addTo(map);
+      LL.circleMarker(ll[ll.length - 1], { radius: 7, color: '#fff', weight: 3, fillColor: '#DC2626', fillOpacity: 1 }).addTo(map);
+      map.fitBounds(pl.getBounds(), { padding: [24, 24] });
+    }, 80);
   }
   async function resumeIfRunning() { try { if (P.Place) { const st = await P.Place.status(); if (st.routeRunning) open('walk'); } } catch (e) { /* ignore */ } }
   return { start, open, view, pathSvg, resumeIfRunning };
@@ -1890,7 +1962,7 @@ function viewTimers() {
     ${trainSeg(timersSeg)}
     ${mine ? `
     <div class="sect">Outdoor with GPS</div>
-    <div class="routego"><button class="btn" data-route="walk">${ic('run')}Outdoor walk</button><button class="btn primary" data-route="run">${ic('run')}Outdoor run</button></div>
+    <div class="routego"><button class="btn" data-rgo="walk">${ic('run')}Outdoor walk</button><button class="btn primary" data-rgo="run">${ic('run')}Outdoor run</button></div>
     <div class="sect">Quick rest</div>
     <div class="chips" id="quick">${[30, 45, 60, 90, 120, 180].map(s => `<button class="chip" data-s="${s}">${fmtShort(s)}</button>`).join('')}</div>
     <div class="sect">Timers</div>
@@ -3372,7 +3444,7 @@ function viewSettings() {
 }
 
 /* ---------- 7.1: outdoor buttons + whole-app lock ---------- */
-document.addEventListener('click', e => { const b = e.target.closest('[data-route]'); if (b) { e.stopPropagation(); Route.start(b.dataset.route); } }, true);
+document.addEventListener('click', e => { const b = e.target.closest('[data-rgo]'); if (b) { e.stopPropagation(); Route.start(b.dataset.rgo); } }, true);
 const AppGate = {
   hiddenAt: 0, authing: false,
   on: () => !!S.appLock && isNative && !!P.AppLock,
