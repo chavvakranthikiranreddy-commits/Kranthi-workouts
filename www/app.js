@@ -1948,7 +1948,7 @@ function startPlanItem(it) {
 /* ---------- Timers ---------- */
 const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Program'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
 function viewWorkouts() {
-  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}${Coach.listHtml()}</div>`;
+  view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}<div class="sect">Outdoor with GPS</div><div class="routego"><button class="btn" data-rgo="walk">${ic('run')}Outdoor walk</button><button class="btn primary" data-rgo="run">${ic('run')}Outdoor run</button></div>${Coach.listHtml()}</div>`;
   view.querySelector('.page').addEventListener('click', e => {
     const sg = e.target.closest('[data-seg]'); if (sg) { timersSeg = sg.dataset.seg; return render(); }
     Coach.handleList(e);
