@@ -480,6 +480,7 @@ function onBackground() {
   if (!appVisible) return;
   appVisible = false;
   Money.onHide();
+  AppGate.hide();
   pushWidget(true);
   if (Run.cur && Run.cur.running) BG.schedule();
 }
@@ -491,6 +492,7 @@ function onForeground() {
   if (Run.cur) { Run.cur.resync = true; Run.tick(); if (Run.cur && Run.cur.running) Awake.on(); }
   if (Gym.cur) Gym.tickClock();
   stepsRefresh();
+  AppGate.resume();
   Money.onShow();
   Life.onResume();
   if (lifeMode() && !$('#layer > .screen')) Life.refresh();
@@ -1887,6 +1889,8 @@ function viewTimers() {
   view.innerHTML = topbar('Train') + `<div class="page">
     ${trainSeg(timersSeg)}
     ${mine ? `
+    <div class="sect">Outdoor with GPS</div>
+    <div class="routego"><button class="btn" data-route="walk">${ic('run')}Outdoor walk</button><button class="btn primary" data-route="run">${ic('run')}Outdoor run</button></div>
     <div class="sect">Quick rest</div>
     <div class="chips" id="quick">${[30, 45, 60, 90, 120, 180].map(s => `<button class="chip" data-s="${s}">${fmtShort(s)}</button>`).join('')}</div>
     <div class="sect">Timers</div>
@@ -3263,6 +3267,7 @@ function viewSettings() {
     <div class="sect">Privacy</div>
     <div class="block">
       ${row('notifDetails', 'Show details in private reminders', 'Off: medicine, bill and document reminders just say "Medicine reminder" or "A bill is due". On: they show the name and amount (still hidden on the lock screen).')}
+      <button class="set-row" data-a="applock"><span class="st"><div class="t">App lock</div><div class="s">Ask for fingerprint or phone screen lock every time Vyora opens. Locks again ${(S.lockAfter ?? 60) === 0 ? 'as soon as you leave' : (S.lockAfter ?? 60) === 300 ? '5 min after you leave' : '1 min after you leave'}.</div></span><span class="toggle ${S.appLock ? 'on' : ''}"></span></button>
       <button class="set-row" data-a="locperm"><span class="st"><div class="t">Location</div><div class="s" id="locst">Weather for where you are, place reminders, where expenses were made, and walk/run routes. Only used on this phone.</div></span>${ic('chevR', 'chev')}</button>
       ${row('artPhotos', 'Photos on quote cards', 'Free photos from Unsplash, downloaded when you are online and kept for offline. Off: the animated figure shows instead and nothing is downloaded.')}
       <button class="set-row" data-a="features"><span class="st"><div class="t">Phone features check</div><div class="s">See which features work on this phone, with fixes</div></span>${ic('chevR', 'chev')}</button>
@@ -3351,6 +3356,7 @@ function viewSettings() {
       case 'steps': return STP.enabled ? (await confirmBox('Turn off step counting?', 'Steps already saved stay in your history.', [{ label: 'Turn off', cls: 'danger', value: 1 }, { label: 'Cancel', cls: 'ghost', value: 0 }])) && disableSteps() : enableSteps();
       case 'goal': return pickStepGoal();
       case 'locperm': return askLocationOnce(true);
+      case 'applock': return AppGate.toggle();
       case 'autobk': if (S.autoBackup) { S.autoBackup = false; saveSettings(); toast('Automatic backup is off'); return rerenderKeepScroll(); } await autoBackupSetup(); return rerenderKeepScroll();
       case 'autobkshare': return shareAutoBackup();
       case 'steplive': { const on = !STP.live; try { if (P.Steps.setLive) { const r = await P.Steps.setLive({ on }); STP.live = r.live !== false; } } catch (e) { /* ignore */ } toast(STP.live ? 'Always-on counting is on' : 'Always-on counting is off. Steps are saved every 15 minutes.'); return rerenderKeepScroll(); }
@@ -3365,6 +3371,42 @@ function viewSettings() {
   });
 }
 
+/* ---------- 7.1: outdoor buttons + whole-app lock ---------- */
+document.addEventListener('click', e => { const b = e.target.closest('[data-route]'); if (b) { e.stopPropagation(); Route.start(b.dataset.route); } }, true);
+const AppGate = {
+  hiddenAt: 0, authing: false,
+  on: () => !!S.appLock && isNative && !!P.AppLock,
+  show() {
+    if (!AppGate.on() || $('#applock')) return;
+    const g = el(`<div id="applock" class="applock" role="dialog" aria-modal="true" aria-label="Vyora is locked"><div class="al-in"><div class="al-logo">V</div><b>Vyora is locked</b><span>Use your fingerprint or phone screen lock</span><button class="btn primary" data-a="alunlock">Unlock</button></div></div>`);
+    document.body.appendChild(g);
+    try { P.AppLock.setSecure({ on: true }); } catch (e) { /* ignore */ }
+    g.querySelector('[data-a=alunlock]').onclick = () => AppGate.ask();
+    setTimeout(() => AppGate.ask(), 250);
+  },
+  async ask() {
+    if (AppGate.authing) return; AppGate.authing = true;
+    let ok = false;
+    try { ok = !!(await P.AppLock.authenticate({ title: 'Unlock Vyora' })).ok; } catch (e) { ok = false; }
+    setTimeout(() => { AppGate.authing = false; }, 800);
+    if (ok) { const g = $('#applock'); if (g) g.remove(); AppGate.hiddenAt = 0; updateSecure(); }
+  },
+  hide() { if (!AppGate.authing) AppGate.hiddenAt = Date.now(); },
+  resume() { if (AppGate.on() && !AppGate.authing && AppGate.hiddenAt && Date.now() - AppGate.hiddenAt > (S.lockAfter ?? 60) * 1000) AppGate.show(); },
+  async toggle() {
+    if (!P.AppLock || !isNative) return toast('App lock works in the installed app');
+    if (!S.appLock) {
+      const a = await P.AppLock.available().catch(() => ({}));
+      if (!a.available) return toast('Set a screen lock or fingerprint in phone Settings → Security first');
+      AppGate.authing = true;
+      const r = await P.AppLock.authenticate({ title: 'Turn on app lock' }).catch(() => ({ ok: false }));
+      setTimeout(() => { AppGate.authing = false; }, 800);
+      if (!r.ok) return;
+    }
+    S.appLock = !S.appLock; saveSettings(); toast(S.appLock ? 'Vyora will ask for your fingerprint when you open it' : 'App lock is off'); render();
+  },
+};
+
 /* ---------- boot ---------- */
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Awake.want) Awake.on(); });
 // program.js loads after this file, so draw the first screen once every script has run.
@@ -3377,6 +3419,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (wantMoney) Money.openMoney();
   Money.boot();
   Life.boot();
+  AppGate.show();
   Health.scheduleScorecard();
   setTimeout(maybeOnboard, 300);
   setTimeout(() => { if (S.onboarded && !$('#layer > .screen')) Coach.offerResume(); }, 900);

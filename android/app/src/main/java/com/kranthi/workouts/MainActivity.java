@@ -27,11 +27,11 @@ public class MainActivity extends BridgeActivity {
         applyFontScale();
     }
 
-    /** Follow the phone's font size setting (Settings → Display → Font size), capped so layouts still fit. */
+    /** Follow the phone's font size setting (Settings → Display → Font size), capped tightly so big numbers (timers, totals) stay inside their circles and cards. */
     private void applyFontScale() {
         try {
             float scale = getResources().getConfiguration().fontScale;
-            int zoom = Math.max(85, Math.min(135, Math.round(scale * 100)));
+            int zoom = Math.max(90, Math.min(108, Math.round(scale * 100)));
             if (getBridge() != null && getBridge().getWebView() != null) getBridge().getWebView().getSettings().setTextZoom(zoom);
         } catch (Exception ignored) {
             // keep the default size
