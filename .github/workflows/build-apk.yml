@@ -23,6 +23,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Add exercise photo library (offline exercise photos)
+        run: |
+          python3 -m pip install --quiet --break-system-packages pillow || sudo apt-get install -y python3-pil
+          python3 scripts/fetch_exercise_photos.py
+
       - name: Install packages
         run: npm install
 
