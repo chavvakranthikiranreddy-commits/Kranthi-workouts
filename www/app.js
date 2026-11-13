@@ -157,7 +157,7 @@ if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() =
 // 7.0 Prism Flow: one cobalt colour for actions everywhere (sections are told apart by the dock and headings).
 const PRISM = '#3F51D9';
 // One source for the version: the installed APK reports its own (e.g. 7.0.23); the web preview uses this.
-const APP_VERSION = '7.1';
+const APP_VERSION = '7.4';
 let appBuild = null;
 const SECTION_COLORS = {}, SECTION_INK = {}, SECTION_TEXT = {};
 const curAccent = () => S.accent || PRISM;
@@ -181,7 +181,7 @@ if (!S.v6) {
 }
 
 const COLORS = ['#00E5FF', '#22D46A', '#FFD43B', '#FF9F1C', '#FF4057', '#B26BFF', '#FF5FC8', '#4D8DFF'];
-const ACCENTS = [['Prism cobalt', '#3F51D9'], ['Vyora cyan', '#0891B2'], ['Ocean blue', '#2F6BFF'], ['Cyan', '#00E5FF'], ['Lime', '#7CFF2B'], ['Green', '#22D46A'], ['Yellow', '#FFD43B'], ['Orange', '#FF8A1F'], ['Red', '#FF4057'], ['Pink', '#FF4FA3'], ['Purple', '#A06BFF'], ['Blue', '#3D8BFF']];
+const ACCENTS = [['Prism cobalt', '#3F51D9'], ['Teal', '#0891B2'], ['Green', '#16A34A'], ['Violet', '#7C5CD6']];
 const PHASE = { prepare: '#E0A100', work: '#16A36A', rest: '#D64561', cyclerest: '#E07B1F', cooldown: '#3F51D9', stopwatch: '#3F51D9', done: '#3F51D9', flow: '#8E79D6', ease: '#8A96B0' };
 
 const iv = (name, kind, dur) => ({ id: uid(), name, kind, dur });
@@ -619,7 +619,7 @@ function stepsCardHtml() {
     return `<div class="steps-card off"><span class="qi">${ic('feet')}</span><div style="flex:1;min-width:0"><b>Count your steps</b><span>${isNative ? (STP.avail || !P.Steps ? 'Counts in the background all day with almost no battery use.' : 'This phone has no step sensor.') : 'Step counting works in the installed app.'}</span></div><button class="go" data-a="steps-on">Turn on</button></div>`;
   }
   return `<button class="steps-card" data-a="steps-go" id="stepsCard">
-    <div class="sring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle class="bar" id="stRing" cx="50" cy="50" r="44" stroke-dasharray="${SRING}" stroke-dashoffset="${SRING}"/></svg>
+    <div class="sumr"><svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="44"/><circle class="bar" id="stRing" cx="50" cy="50" r="44" stroke-dasharray="${SRING}" stroke-dashoffset="${SRING}"/></svg>
       <div class="sc">${ic('feet')}<b id="stN">0</b><span>of ${fmtN(S.stepGoal)}</span></div></div>
     <div class="sinfo"><div><b id="stKm">0</b><span>${S.unit === 'lb' ? 'miles' : 'km'}</span></div><div><b id="stKc">0</b><span>kcal</span></div><div><b id="stPc">0%</b><span>of goal</span></div><small id="stUp"></small></div>
   </button><div id="stWarn"></div>`;
@@ -1023,8 +1023,8 @@ const DESTS = [
   { id: 'life', label: 'Life', icon: 'leaf', root: 'l-home' },
 ];
 const CTX = {
-  muscle: [['today', 'Overview'], ['timers', 'Train'], ['calendar', 'Calendar'], ['progress', 'Progress']],
-  money: [['m-home', 'Overview'], ['m-txns', 'Transactions'], ['m-budget', 'Budget & bills'], ['m-insights', 'Insights']],
+  muscle: [['today', 'Overview'], ['timers', 'Train'], ['calendar', 'Week'], ['progress', 'Progress']],
+  money: [['m-home', 'Overview'], ['m-txns', 'Spends'], ['m-budget', 'Budget'], ['m-insights', 'Insights']],
   life: [['l-home', 'Overview'], ['l-notes', 'Notes'], ['l-tasks', 'Tasks'], ['l-clock', 'Clock']],
 };
 const destOf = t => (t === 'home' ? 'home' : t.startsWith('m-') ? 'money' : t.startsWith('l-') ? 'life' : t === 'settings' ? (S.mode || 'muscle') : 'muscle');
@@ -1032,7 +1032,7 @@ const isSettingsTab = t => t === 'settings' || t === 'm-settings';
 const scrollMem = {};
 function renderTabs() {
   const d = isSettingsTab(currentTab) ? '' : destOf(currentTab);
-  $('#tabs').innerHTML = `<div class="dock" role="tablist" aria-label="Main sections">${DESTS.map(x => `<button class="dk ${x.id === d ? 'on' : ''}" data-dest="${x.id}" role="tab" aria-selected="${x.id === d}"><span class="dki">${ic(x.icon)}</span><span class="dkl">${x.label}</span></button>`).join('')}<span class="dkpill" aria-hidden="true"></span></div>`;
+  $('#tabs').innerHTML = `<div class="dock" role="tablist" aria-label="Main sections">${DESTS.map((x, i) => `${i === 2 ? `<button class="dkplus" data-plus aria-label="Add something">${ic('plus')}</button>` : ''}<button class="dk ${x.id === d ? 'on' : ''}" data-dest="${x.id}" role="tab" aria-selected="${x.id === d}"><span class="dki">${ic(x.icon)}</span><span class="dkl">${x.label}</span></button>`).join('')}<span class="dkpill" aria-hidden="true"></span></div>`;
   const ctx = $('#ctx'), list = !isSettingsTab(currentTab) && CTX[destOf(currentTab)];
   if (ctx) {
     ctx.hidden = !list;
@@ -1059,9 +1059,6 @@ function paintCtxAct() {
   const d = isSettingsTab(currentTab) ? '' : destOf(currentTab);
   let html = '';
   if ((draft || cs) && !inPlayer) html = `<button class="sessbar" data-ca="resume">${ic('dumbbell')}<span><b>Workout in progress</b><small>${esc((cs && cs.w && cs.w.name) || (draft && draft.title) || 'Gym workout')}</small></span><span class="sessgo">Resume</span></button>`;
-  else if (d === 'muscle' && currentTab !== 'today') html = `<button class="ctxbtn" data-ca="start">${ic('play')}Start a workout</button>`;
-  else if (d === 'money' && M_SETUP()) html = `<button class="ctxbtn" data-ca="money">${ic('plus')}Add expense</button>`;
-  else if (d === 'life') html = `<button class="ctxbtn" data-ca="life">${ic('plus')}Add note, task or reminder</button>`;
   box.innerHTML = html; box.hidden = !html;
   document.body.classList.toggle('has-ctxact', !!html);
 }
@@ -1069,6 +1066,7 @@ function paintCtxAct() {
 new MutationObserver(() => { clearTimeout(paintCtxAct._t); paintCtxAct._t = setTimeout(paintCtxAct, 60); }).observe($('#layer'), { childList: true });
 const M_SETUP = () => { try { return !!Money.widgetData().money; } catch (e) { return false; } };
 $('#tabs').addEventListener('click', e => {
+  if (e.target.closest('[data-plus]')) { tap('MEDIUM'); return plusSheet(); }
   const b = e.target.closest('[data-dest]'); if (!b) return; tap();
   const d = b.dataset.dest, cur = isSettingsTab(currentTab) ? '' : destOf(currentTab);
   const root = DESTS.find(x => x.id === d).root;
@@ -1160,15 +1158,15 @@ function viewHome() {
       <button class="fbtn" data-a="nu">${ic(nu.icon)}${esc(nu.btn)}</button>
       <span class="fart" aria-hidden="true">${Moves.svgFor(pickMove(nu.done ? 'done' : 'train'), { cls: 'artmv' })}</span>
     </section>
-    <div class="htiles">
-      <button class="htile steps" data-a="steps" aria-label="${STP.enabled || steps ? `${fmtN(steps)} of ${fmtN(S.stepGoal)} steps` : 'Turn on step counting'}">
-        <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="${R}"/><circle class="bar" cx="50" cy="50" r="${R}" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - pct)).toFixed(1)}"/></svg>
-        <span class="hv"><b>${STP.enabled || steps ? fmtN(steps) : 'Off'}</b><small>${STP.enabled || steps ? `of ${fmtN(S.stepGoal)} steps` : 'Tap to count steps'}</small></span></button>
-      <div class="hcol">
-        <button class="htile sm" data-a="water"><span class="hic water">${ic('drop')}</span><span><b>${String(Math.round(hh.w / 100) / 10).replace(/\.0$/, '')} L</b><small>of ${String(hh.tw / 1000).replace(/\.0+$/, '')} L water</small></span></button>
-        <button class="htile sm" data-a="habits"><span class="hic hab">${ic('check')}</span><span><b>${hab.total ? `${hab.done} of ${hab.total}` : 'Habits'}</b><small>${hab.total ? 'habits today' : 'Build a habit'}</small></span></button>
-      </div>
+    <div class="sumcard" role="group" aria-label="Today in numbers">
+      ${(() => { const wd = M_SETUP() ? Money.widgetData() : null; const ring = (a, k, v, sub, f) => { const RR = 20, CC = 2 * Math.PI * RR; return `<button class="sumr" data-a="${a}"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="${RR}"/><circle class="bar" cx="24" cy="24" r="${RR}" stroke-dasharray="${CC.toFixed(1)}" stroke-dashoffset="${(CC * (1 - Math.max(0, Math.min(1, f)))).toFixed(1)}"/></svg><b>${v}</b><small>${sub}</small></button>`; };
+        return ring('steps', 'steps', STP.enabled || steps ? fmtN(steps) : 'Off', STP.enabled || steps ? `of ${fmtN(S.stepGoal)} steps` : 'steps · tap', pct)
+          + ring('water', 'water', `${String(Math.round(hh.w / 100) / 10).replace(/\.0$/, '')} L`, `of ${String(hh.tw / 1000).replace(/\.0+$/, '')} L water`, hh.tw ? hh.w / hh.tw : 0)
+          + ring('protein', 'protein', `${Math.round(hh.p || 0)} g`, `of ${Math.round(hh.tp || 0)} g protein`, hh.tp ? (hh.p || 0) / hh.tp : 0)
+          + (wd && !wd.locked ? ring('money', 'money', fmtINRk(wd.safe), 'safe to spend', wd.left > 0 ? Math.min(1, wd.safe / Math.max(1, wd.left) * 10) : 0)
+            : ring('habits', 'habits', hab.total ? `${hab.done}/${hab.total}` : '0', hab.total ? 'habits done' : 'habits · add', hab.total ? hab.done / hab.total : 0)); })()}
     </div>
+    ${getStartedHtml()}
     ${Life.nightReviewHtml ? Life.nightReviewHtml() : ''}
     <div class="sect"><span>Next up</span><button class="linkbtn" data-a="addrem">+ Reminder</button></div>
     <div class="block agenda">${agenda || '<div class="empty" style="padding:16px"><b>Nothing scheduled</b>Reminders, tasks, medicines and bills for today show up here.</div>'}</div>
@@ -1195,6 +1193,9 @@ function viewHome() {
       case 'steps': return STP.enabled ? go('progress') : enableSteps();
       case 'water': return Health.handle({ dataset: { h: 'nut' } });
       case 'habits': return Life.openTasks ? Life.openTasks('habits') : go('l-tasks');
+      case 'protein': return Health.handle({ dataset: { h: 'nut' } });
+      case 'gs': return getStartedDo(b.dataset.k);
+      case 'gshide': S.gsHide = true; saveSettings(); return rerenderKeepScroll();
       case 'addrem': return Life.openAdd ? Life.openAdd('reminder') : Life.quickAdd();
       case 'money': return Money.openMoney('home');
       case 'fitover': return setMode('muscle');
@@ -1946,7 +1947,7 @@ function startPlanItem(it) {
 }
 
 /* ---------- Timers ---------- */
-const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Program'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
+const trainSeg = cur => `<div class="seg seg4">${[['wk', 'Workouts'], ['mine', 'Timers'], ['prog', 'Programs'], ['tpl', 'Templates']].map(([k, n]) => `<button class="${cur === k ? 'on' : ''}" data-seg="${k}">${n}</button>`).join('')}</div>`;
 function viewWorkouts() {
   view.innerHTML = topbar('Train') + `<div class="page">${trainSeg('wk')}<div class="sect">Outdoor with GPS</div><div class="routego"><button class="btn" data-rgo="walk">${ic('run')}Outdoor walk</button><button class="btn primary" data-rgo="run">${ic('run')}Outdoor run</button></div>${Coach.listHtml()}</div>`;
   view.querySelector('.page').addEventListener('click', e => {
@@ -3440,6 +3441,75 @@ function viewSettings() {
           const v = $('#exv'); if (v) v.textContent = BG.exact ? 'ON' : 'ALLOW';
         }
     }
+  });
+}
+
+/* ---------- 7.4: Get started checklist on Today ---------- */
+const fmtINRk = n => (n >= 100000 ? '₹' + (n / 100000).toFixed(1).replace(/\.0$/, '') + 'L' : n >= 1000 ? '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + Math.round(n || 0));
+function getStartedItems() {
+  let wx = false; try { wx = !!(Life.rawData && Life.rawData.weather); } catch (e) { /* ignore */ }
+  return [
+    ['name', 'Add your name', !!S.name],
+    ['money', 'Set up Money (salary day and budget)', M_SETUP()],
+    ['steps', 'Turn on step counting', !!STP.enabled],
+    ['weather', 'Add your area for weather', wx],
+    ['plan', 'Plan your workout week', !!(plan && plan.some(d => d && d.items && d.items.length))],
+    ['habit', 'Add one daily habit', !!(Life.habitsInfo && Life.habitsInfo().total)],
+  ];
+}
+function getStartedHtml() {
+  if (S.gsHide) return '';
+  const it = getStartedItems(); const done = it.filter(x => x[2]).length;
+  if (done === it.length) return '';
+  return `<section class="gstart" aria-label="Get started"><div class="gshead"><b>Get started</b><span>${done} of ${it.length}</span><button class="linkbtn" data-a="gshide">Hide</button></div>
+    <div class="gsbar"><i style="width:${Math.round(done / it.length * 100)}%"></i></div>
+    ${it.map(([k, t, d]) => `<button class="gsrow ${d ? 'd' : ''}" data-a="gs" data-k="${k}" ${d ? 'disabled' : ''}><i aria-hidden="true">${d ? ic('check') : ''}</i><span>${esc(t)}</span>${d ? '' : ic('chevR', 'chev')}</button>`).join('')}</section>`;
+}
+async function getStartedDo(k) {
+  if (k === 'name') { go('settings'); return; }
+  if (k === 'money') return Money.openMoney('home');
+  if (k === 'steps') return enableSteps();
+  if (k === 'weather') { setMode('life'); setTimeout(() => { const b = document.querySelector('[data-tool="weather"]'); if (b) b.click(); }, 200); return; }
+  if (k === 'plan') return go('calendar');
+  if (k === 'habit') return Life.openTasks ? Life.openTasks('habits') : go('l-tasks');
+}
+
+/* ---------- 7.4: Settings fold into groups ---------- */
+const setOpen = new Set(['Appearance']);
+function foldSettings() {
+  const pg = view.querySelector('.page'); if (!pg) return;
+  [...pg.children].forEach(h => {
+    if (!h.classList.contains('sect') || h.dataset.fold) return;
+    const name = h.textContent.trim(); const body = [];
+    let n = h.nextElementSibling; while (n && !n.classList.contains('sect')) { body.push(n); n = n.nextElementSibling; }
+    if (!body.length) return;
+    h.dataset.fold = '1'; h.classList.add('fold'); h.setAttribute('role', 'button'); h.tabIndex = 0;
+    const set = o => { h.classList.toggle('open', o); h.setAttribute('aria-expanded', o); body.forEach(b => { b.hidden = !o; }); };
+    set(setOpen.has(name));
+    const tgl = () => { const o = !h.classList.contains('open'); if (o) setOpen.add(name); else setOpen.delete(name); set(o); };
+    h.addEventListener('click', tgl); h.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tgl(); } });
+  });
+}
+{ const _vs = viewSettings; viewSettings = function () { _vs.apply(this, arguments); if (currentTab === 'settings') foldSettings(); }; }
+
+/* ---------- 7.4: one + button adds anything ---------- */
+const PLUS = [
+  ['workout', 'dumbbell', 'Workout'], ['run', 'run', 'Walk or run'], ['expense', 'wallet', 'Expense'],
+  ['note', 'note', 'Note'], ['task', 'check', 'Task'], ['reminder', 'bell', 'Reminder'],
+  ['water', 'drop', 'Water'], ['voice', 'mic', 'Speak'], ['alarm', 'clock', 'Alarm'],
+  ['journal', 'book', 'Journal'], ['list', 'list', 'Checklist'], ['event', 'calendar', 'Event'],
+];
+function plusSheet() {
+  const s = sheet(`<h2>Add</h2><div class="plusgrid">${PLUS.map(([k, icn, n]) => `<button data-p="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}</div>`);
+  s.el.addEventListener('click', e => {
+    const b = e.target.closest('[data-p]'); if (!b) return; const k = b.dataset.p; s.close();
+    setTimeout(() => {
+      if (k === 'workout') return openStartSheet();
+      if (k === 'run') return Route.start('walk');
+      if (k === 'water') { try { Health.addWater(250); } catch (e2) { /* ignore */ } toast('+250 ml water'); if (currentTab === 'home') rerenderKeepScroll(); return; }
+      if (k === 'expense') return Money.quickAdd();
+      return Life.openAdd(k);
+    }, 130);
   });
 }
 

@@ -807,6 +807,15 @@ const Money = (() => {
       <span class="txa ${isIncome(t) ? 'in' : ''}">${isIncome(t) ? inr(t.amount, { sign: true, dec: true }) : '−' + inr(own(t), { dec: true })}</span></button>`;
   }
 
+  function spendTrend(st) {
+    if (!st.current) return '';
+    const days = [...Array(14)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - 13 + i); return dkey(d); });
+    const sum = {}; (M.txns || []).forEach(t => { if (!isIncome(t) && days.includes(t.date)) sum[t.date] = (sum[t.date] || 0) + own(t); });
+    const v = days.map(d => sum[d] || 0); const mx = Math.max(1, ...v); const tot = v.reduce((a, b) => a + b, 0);
+    if (!tot) return '';
+    return `<div class="sect"><span>Last 14 days</span><span class="sub2">${inr(Math.round(tot / 14))}/day avg</span></div>
+      <div class="block trend14" role="img" aria-label="Daily spending for the last 14 days">${v.map((x, i) => `<div><i style="height:${Math.max(3, Math.round(x / mx * 100))}%" class="${i === 13 ? 'today' : ''}"></i><small>${i % 2 === 1 ? new Date(days[i]).getDate() : ''}</small></div>`).join('')}</div>`;
+  }
   function homeView() {
     if (!M.setup) {
       view.innerHTML = topbarM('Money') + `<div class="page">${artCard('rings', 'Know where every rupee goes.', { small: true })}
@@ -839,6 +848,9 @@ const Money = (() => {
       <div class="mactions one"><button class="btn" data-a="scan">${ic('scan')}Scan a payment screenshot or import a PDF</button></div>
       ${st.current ? reportCardHtml() : `<button class="nudge" data-a="report">${ic('pie')}<span><b>${esc(periodName(st.s))} report.</b> Plan vs actual and top categories.</span></button>`}
       ${st.current ? alertsHtml(st) : ''}
+      ${st.current && bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
+      ${spendTrend(st)}
+      <details class="more"><summary>Plan, goals, accounts and friends</summary>
       ${accountsHtml()}
       <div class="sect"><span>${M.split.needs}/${M.split.wants}/${M.split.savings} plan</span><button class="linkbtn" data-go="budget">Edit</button></div>
       <div class="block" style="padding:4px 0">${GKEYS.map(g => { const tg = st.target(g); const v = st.spent[g]; const over = g !== 'savings' && v > tg; return `
@@ -847,7 +859,7 @@ const Money = (() => {
       ${goalsHtml() || `<button class="nudge" data-a="addgoal">${ic('plus')}<span><b>Save for something.</b> Set a goal like an emergency fund or a bike and watch it fill up.</span></button>`}
       ${friendsHtml()}
       ${st.income ? `<div class="sect">Income this ${pWord()}</div><div class="block inc"><div><span>Income</span><b>${inr(st.income)}</b></div><div><span>Spent</span><b>${inr(st.spent.needs + st.spent.wants)}</b></div><div><span>Saved</span><b>${st.income ? Math.round((st.income - st.spent.needs - st.spent.wants) / st.income * 100) : 0}%</b></div></div>` : ''}
-      ${st.current && bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
+      </details>
       <div class="sect"><span>${st.current ? `This ${pWord()}` : esc(periodName(st.s))}</span>${st.tx.length ? `<button class="linkbtn" data-go="txns">See all ${st.tx.length}</button>` : ''}</div>
       <div class="block" style="padding:0">${recent.map(txRow).join('') || `<div class="empty" style="padding:18px">${st.current ? `Nothing yet this ${pWord()}. It starts from ₹0. Tap <b style="display:inline;font-family:var(--body);font-size:14px">Add expense</b> or share a payment screenshot.` : `No entries in ${esc(periodName(st.s))}.`}</div>`}</div>
       <p class="hint" style="margin-top:14px">Tip: in PhonePe or Google Pay, open a payment and tap <b>Share</b> → <b>Vyora</b>. You can also share a whole <b>PhonePe statement PDF</b> (History → Download statement) to add a month in one go.</p>

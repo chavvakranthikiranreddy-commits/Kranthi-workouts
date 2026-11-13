@@ -1,4 +1,4 @@
-const CACHE = 'vyora-v11';
+const CACHE = 'vyora-v12';
 const PHOTOS = 'vyora-photos-v1'; // Quote-card photos from Unsplash, kept for offline use
 const FILES = ['./', 'index.html', 'styles.css', 'prism.css', 'app.js', 'quotes.js', 'yoga.js', 'money.js', 'health.js', 'program.js', 'exdb.js', 'moves.js', 'coach.js', 'life.js', 'capacitor.js', 'vendor/leaflet/leaflet.js', 'vendor/leaflet/leaflet.css', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'brand/vyora-logo.png', 'brand/vyora-logo-dark.png', 'brand/vyora-mark.png', 'fonts/bebas.woff2', 'fonts/inter-400.woff2', 'fonts/inter-500.woff2', 'fonts/inter-600.woff2', 'fonts/inter-700.woff2'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));

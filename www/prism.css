@@ -375,3 +375,73 @@ body:not(.has-ctxact) #view .page { padding-bottom: 112px; }
 .wxcmp .wxsrc small { font-weight: 700; color: var(--accent-text, #3F51D9); letter-spacing: .04em; }
 .wxcmp .wxsrc b { font-size: 28px; line-height: 1.1; }
 .wxcmp .wxsrc span { font-size: 13px; color: var(--muted); }
+
+/* ===== 7.4 clean UI ===== */
+.dock { grid-template-columns: 1fr 1fr 64px 1fr 1fr; }
+.dkplus { position: relative; z-index: 2; width: 54px; height: 54px; margin: -18px auto 0; border-radius: 50%; background: var(--accent); color: var(--on-accent, #fff); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(63, 81, 217, .35); border: 3px solid var(--nav); }
+.dkplus svg { width: 26px; height: 26px; stroke-width: 2.4; }
+.dkplus:active { transform: scale(.94); }
+.plusgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 8px; }
+.plusgrid button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 4px; border-radius: 16px; background: var(--surface-2); color: var(--text); }
+.plusgrid button span { width: 40px; height: 40px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: var(--accent-soft, rgba(63,81,217,.12)); color: var(--accent-text, var(--accent)); }
+.plusgrid button svg { width: 22px; height: 22px; }
+.plusgrid button b { font-size: 13px; font-weight: 600; }
+/* Today summary */
+.sumcard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; background: var(--surface); border: 1px solid var(--card-line); border-radius: 20px; padding: 14px 6px; margin: 14px 0 12px; }
+.sumr { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; color: var(--text); }
+.sumr svg { width: 48px; height: 48px; transform: rotate(-90deg); margin-bottom: 4px; }
+.sumr .trk { fill: none; stroke: var(--surface-2); stroke-width: 5; }
+.sumr .bar { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; }
+.sumr b { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sumr small { font-size: 11px; color: var(--muted); text-align: center; line-height: 1.25; }
+.home .feature .fart { display: none; }
+/* Get started */
+.gstart { background: var(--surface); border: 1px solid var(--card-line); border-radius: 20px; padding: 14px 16px 6px; margin-bottom: 12px; }
+.gshead { display: flex; align-items: center; gap: 8px; }
+.gshead b { flex: 1; font-size: 16px; }
+.gshead span { color: var(--accent-text, var(--accent)); font-weight: 700; font-size: 13px; }
+.gsbar { height: 6px; border-radius: 3px; background: var(--surface-2); margin: 10px 0 6px; overflow: hidden; }
+.gsbar i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+.gsrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 10px 0; text-align: left; color: var(--text); font-size: 14px; border-top: 1px solid var(--line); }
+.gsrow i { width: 20px; height: 20px; border-radius: 6px; border: 2px solid var(--accent); display: flex; align-items: center; justify-content: center; flex: none; }
+.gsrow i svg { width: 14px; height: 14px; color: #fff; stroke-width: 3; }
+.gsrow.d i { background: var(--accent); }
+.gsrow.d span { color: var(--muted); text-decoration: line-through; }
+.gsrow span { flex: 1; }
+.gsrow .chev { width: 18px; height: 18px; color: var(--muted); }
+/* Fold sections */
+details.more { margin-top: 14px; }
+details.more > summary { list-style: none; cursor: pointer; text-align: center; padding: 12px; color: var(--accent-text, var(--accent)); font-weight: 600; font-size: 14px; border-radius: 14px; background: var(--surface-2); }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: ' ▾'; }
+details.more[open] > summary::after { content: ' ▴'; }
+details.more[open] > summary { margin-bottom: 8px; }
+.sect.fold { cursor: pointer; display: flex; justify-content: space-between; align-items: center; padding: 14px 4px; margin: 0; border-bottom: 1px solid var(--line); }
+.sect.fold::after { content: '▾'; color: var(--muted); font-size: 13px; transition: transform .2s; }
+.sect.fold.open::after { transform: rotate(180deg); }
+.sect.fold.open { border-bottom: 0; }
+/* Quote cards: one calm style (no figure, no photo) for the small ones */
+figure.art2.small { background: var(--accent-soft, rgba(63,81,217,.1)) !important; color: var(--text); min-height: 0; padding: 16px 18px; }
+figure.art2.small .artfig, figure.art2.small .artblob, figure.art2.small .artph { display: none !important; }
+figure.art2.small figcaption { position: static; color: var(--text); padding: 0; background: none; }
+figure.art2.small q { color: var(--text); font-size: 17px; text-shadow: none; }
+figure.art2.small .tag { background: var(--accent); color: #fff; }
+figure.art2.small .arthint { color: var(--muted); }
+/* Life: mood week */
+.moodweek { display: grid; grid-template-columns: repeat(7, 1fr); padding: 10px 6px; text-align: center; }
+.moodweek span { font-size: 22px; display: block; line-height: 1.3; color: var(--muted); }
+.moodweek small { color: var(--muted); font-size: 11px; }
+/* Money: 14-day trend */
+.trend14 { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; height: 110px; padding: 12px 12px 6px; align-items: end; }
+.trend14 > div { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; }
+.trend14 i { display: block; width: 100%; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.trend14 i.today { background: var(--accent); }
+.trend14 small { font-size: 10px; color: var(--muted); height: 12px; }
+
+.ctabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; overflow: visible; }
+.ctabs .ct { padding: 0 6px; font-size: 13px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.home .feature { min-height: 0; padding: 16px 18px; display: grid; grid-template-columns: 1fr auto; grid-template-areas: "tag btn" "title btn" "sub btn"; align-items: center; column-gap: 12px; }
+.home .feature .ftag { grid-area: tag; }
+.home .feature .ftitle { grid-area: title; font-size: 19px; }
+.home .feature .fsub { grid-area: sub; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.home .feature .fbtn { grid-area: btn; margin: 0; }

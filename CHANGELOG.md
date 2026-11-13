@@ -194,3 +194,9 @@ Tested: all regression suites; every tab at 375 px and 1280 px in light and dark
 - Fitness: smarter weight increase, PR board, rest-day tips, Indian protein food list, streak freeze.
 - Life: night review, focus timer on tasks, meal plan → groceries, important dates, share/import family lists.
 - Home: weekly goals, goals with milestones, weekly insights, voice sentences, Today widget, app shortcuts, notification quick actions, weekly encrypted backup.
+
+## 7.4
+- Cleaner layout: one + button adds anything, short tab names that fit, Today summary rings and a Get started checklist.
+- Settings fold into groups; 4 action colours; calm quote cards.
+- Life: extras folded under More, mood-this-week strip. Money: 14-day spending chart, details folded.
+- 7.3: live run map, run recap with splits, two weather reports, area names.

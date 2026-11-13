@@ -150,6 +150,13 @@ const Life = (() => {
       const o = e.target.closest('[data-open]'); if (o) { s.close(); setTimeout(() => openTool(o.dataset.open), 150); }
     });
   }
+  function moodWeek() {
+    const days = [...Array(7)].map((_, i) => { const d = new Date(); d.setDate(d.getDate() - 6 + i); return d; });
+    const by = {}; L.journal.forEach(j => { if (j.mood) by[j.date] = j.mood; });
+    if (!days.some(d => by[dkey(d)])) return '';
+    return `<div class="sect"><span>Mood this week</span><button class="linkbtn" data-tool="journal">Journal</button></div>
+      <div class="block moodweek">${days.map(d => { const m = by[dkey(d)]; return `<div><span>${m ? MOODS[m - 1] : '·'}</span><small>${d.toLocaleDateString(undefined, { weekday: 'narrow' })}</small></div>`; }).join('')}</div>`;
+  }
   function homeView() {
     const now = new Date(); const h = now.getHours();
     const nextA = nextAlarm();
@@ -158,17 +165,20 @@ const Life = (() => {
     view.innerHTML = `<div class="page life" style="padding-top:12px">
       <div class="hello2"><div><div class="hi">${h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'}${S.name ? ', ' + esc(S.name) : ''}</div><h1 class="ptitle">Find your rhythm.</h1><div class="dt">${now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div></div>
         <button class="lclock" data-go="clock">${ic('clock')}<b>${nextA ? t12(nextA.hm) : 'No alarm'}</b></button></div>
-      <div class="lhero"><button class="lvoice" data-a="voice">${ic('mic')}<span><b>Speak to add</b><small>“Remind me to pay rent on the 5th”</small></span></button><button class="lbrief" data-a="brief">${ic('sun')}<span><b>${h < 12 ? 'Morning' : 'Day'} briefing</b><small>Hear your day</small></span></button></div>
       ${w ? `<button class="wxcard" data-tool="weather"><span class="wxi">${wx(w.current.weather_code)[0]}</span><span class="wxt"><b>${Math.round(w.current.temperature_2m)}°</b><span>${esc(wx(w.current.weather_code)[1])} · ${esc(L.weather.name)}</span><small>H ${Math.round(w.daily.temperature_2m_max[0])}° · L ${Math.round(w.daily.temperature_2m_min[0])}°${w.daily.precipitation_probability_max ? ` · ${w.daily.precipitation_probability_max[0]}% rain` : ''}</small></span>${ic('chevR', 'chev')}</button>`
         : `<button class="nudge" data-tool="weather">${ic('sun')}<span><b>Add your city</b> for today's weather and the 7-day forecast.</span></button>`}
-      ${artCard('summit', pickQuote('life'), { small: true, tag: 'Thought for today' })}
       <div class="sect"><span>Today</span><button class="linkbtn" data-add="reminder">+ Reminder</button></div>
       <div class="block agenda">${agenda() || '<div class="empty" style="padding:16px">Nothing scheduled. Add a reminder, task or medicine and it shows up here.</div>'}</div>
       ${habitsMini()}
       ${(() => { const bl = (billsSafe(7) || []).filter(b => !b.overdue && Math.round((b.due - today0()) / 864e5) > 0); return ev.length || bl.length ? `<div class="sect"><span>Coming up</span><button class="linkbtn" data-tool="events">All</button></div><div class="block" style="padding:0">${ev.map(x => evRow(x.ev, x.d)).join('')}${bl.length ? `<div class="agenda">${bl.map(billRow).join('')}</div>` : ''}</div>` : ''; })()}
       ${docsSoon().length ? `<button class="nudge warn" data-tool="docs">${ic('doc')}<span><b>${esc(docsSoon()[0].name)}</b> ${docExpTxt(docsSoon()[0])}. Tap to see your documents.</span></button>` : ''}
+      ${moodWeek()}
       <div class="sect"><span>Favourite tools</span><button class="linkbtn" data-a="alltools">See all tools</button></div>
       <div class="tools">${favTools().map(k => TOOLS.find(t => t[0] === k)).filter(Boolean).map(([k, icn, n]) => `<button data-tool="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}<button data-a="alltools" aria-label="See all tools"><span>${ic('more')}</span><b>All tools</b></button></div>
+      <details class="more"><summary>More</summary>
+      <div class="lhero"><button class="lvoice" data-a="voice">${ic('mic')}<span><b>Speak to add</b><small>“Remind me to pay rent on the 5th”</small></span></button><button class="lbrief" data-a="brief">${ic('sun')}<span><b>${h < 12 ? 'Morning' : 'Day'} briefing</b><small>Hear your day</small></span></button></div>
+      ${artCard('summit', pickQuote('life'), { small: true, tag: 'Thought for today' })}
+      </details>
     </div>`;
     if (L.weather && (!L.weather.at || Date.now() - L.weather.at > 30 * 60000)) refreshWeather(true);
   }
