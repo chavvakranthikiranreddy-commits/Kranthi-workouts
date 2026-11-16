@@ -120,6 +120,7 @@ const Coach = (() => {
   function listHtml() {
     const groups = {}; tpls().forEach(t => { (groups[t.group] = groups[t.group] || []).push(t); });
     return `<div class="wkactions"><button class="btn primary" data-wa="new">${ic('plus')}Create workout</button><button class="btn" data-wa="import">${ic('download')}Import</button></div>
+      <button class="scanplan" data-wa="scan"><span>${ic('camera')}</span><span class="wkt"><b>Scan a workout plan</b><span>Photo, screenshot or PDF. Vyora reads the exercises, sets and reps.</span></span>${ic('chevR', 'chev')}</button>
       <div class="sect">My workouts</div>
       ${mine.length ? mine.map(card).join('') : `<div class="empty" style="padding:18px 10px"><b>Build your own</b>Type exercise names like "squat, push-ups, curl" and the app fills in sets, reps and rest. Or open a template below and tap Customise.</div>`}
       ${Object.entries(groups).map(([g, list]) => `<div class="sect">${esc(g)}</div>${list.map(card).join('')}`).join('')}
@@ -131,6 +132,7 @@ const Coach = (() => {
     const a = e.target.closest('[data-wa]'); if (!a) return false;
     if (a.dataset.wa === 'new') return openBuilder(null);
     if (a.dataset.wa === 'import') return importSheet();
+    if (a.dataset.wa === 'scan') return PlanScan.open();
     if (a.dataset.wa === 'yoga') return Yoga.openPicker();
     return true;
   }
@@ -373,6 +375,192 @@ const Coach = (() => {
       mine.unshift(w); saveMine(); s.close(); if (currentTab === 'timers') rerenderKeepScroll(); toast(`${w.name} added`); setTimeout(() => openDetail(w), 150);
     });
   }
+
+  /* ---------- scan a plan from a photo or PDF ---------- */
+  const PlanScan = (() => {
+    const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    const DAY_RX = /^(?:day\s*\d+|week\s*\d+\s*[-–:,]?\s*day\s*\d+|(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day|nesday|sday|urday|rsday)?)\b/i;
+    const NUM_WORD = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20 };
+    // Join OCR / PDF pieces that sit on the same printed row (tables put sets and reps in separate columns).
+    function rowsFrom(pieces) {
+      const ps = pieces.filter(p => p.t && p.t.trim()).sort((a, b) => a.y - b.y || a.x - b.x);
+      const rows = [];
+      ps.forEach(p => {
+        const r = rows.find(r0 => Math.abs(r0.y - p.y) < Math.max(6, (p.h || 12) * 0.55));
+        if (r) r.parts.push(p); else rows.push({ y: p.y, parts: [p] });
+      });
+      return rows.sort((a, b) => a.y - b.y).map(r => r.parts.sort((a, b) => a.x - b.x).map(p => p.t.trim()).join('  '));
+    }
+    const secs = (n, u) => (/^m/i.test(u || '') ? n * 60 : n);
+    function parseLine(raw) {
+      let t = ' ' + raw.replace(/[|•▪●◦·]/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+      t = t.replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty)\b/gi, m => NUM_WORD[m.toLowerCase()]);
+      const o = {};
+      let m;
+      if ((m = t.match(/(\d+(?:\.\d+)?)\s*(kg|kgs|lb|lbs)\b/i))) { o.w = Math.round((+m[1]) * (/lb/i.test(m[2]) ? 0.4536 : 1) * 2) / 2; t = t.replace(m[0], ' '); }
+      if ((m = t.match(/rest\s*[:\-]?\s*(\d+)\s*(s|sec|secs|seconds|m|min|mins|minutes)?\b/i)) || (m = t.match(/(\d+)\s*(s|sec|secs|seconds|min|mins)\s*rest/i))) { o.rest = secs(+m[1], m[2]); t = t.replace(m[0], ' '); }
+      if ((m = t.match(/sets?\s*[:\-]?\s*(\d+)/i)) && /reps?\s*[:\-]?\s*\d+/i.test(t)) { o.sets = +m[1]; const r = t.match(/reps?\s*[:\-]?\s*(\d+)/i); o.reps = +r[1]; t = t.replace(m[0], ' ').replace(r[0], ' '); }
+      else if ((m = t.match(/(\d+)\s*(?:sets?|rounds?)?\s*[x×*]\s*(\d+)(?:\s*[-–to]+\s*\d+)?\s*(reps?|s|sec|secs|seconds|min|mins)?\b/i))) { o.sets = +m[1]; if (/^(s|sec|secs|seconds|min|mins)$/i.test(m[3] || '')) o.time = secs(+m[2], m[3]); else o.reps = +m[2]; t = t.replace(m[0], ' '); }
+      else if ((m = t.match(/(\d+)\s*(?:sets?|rounds?)\s*(?:of|x|×|,)?\s*(\d+)(?:\s*[-–to]+\s*\d+)?\s*(reps?|s|sec|secs|seconds|min|mins)?/i))) { o.sets = +m[1]; if (/^(s|sec|secs|seconds|min|mins)$/i.test(m[3] || '')) o.time = secs(+m[2], m[3]); else o.reps = +m[2]; t = t.replace(m[0], ' '); }
+      else if ((m = t.match(/(\d+)\s*(s|sec|secs|seconds|min|mins|minutes)\b/i))) { o.time = secs(+m[1], m[2]); t = t.replace(m[0], ' '); }
+      else if ((m = t.match(/(\d+)\s*reps?\b/i))) { o.reps = +m[1]; t = t.replace(m[0], ' '); }
+      else {
+        // Table row: "Squat 3 12" or "Squat 3 10-12 60"
+        const nums = (t.match(/\s\d+(?:\s*[-–]\s*\d+)?(?=\s)/g) || []).map(x => parseInt(x, 10));
+        if (nums.length >= 2 && nums[0] <= 10) { o.sets = nums[0]; o.reps = nums[1]; if (nums[2] && nums[2] >= 15 && o.rest == null) o.rest = nums[2]; t = t.replace(/\s\d+(?:\s*[-–]\s*\d+)?(?=\s)/g, ' '); }
+      }
+      const name = t.replace(/^\s*(?:\d+\s*[.)\-:]|[a-z]\)|[-*–])\s*/i, '').replace(/\b(sets?|reps?|rounds?|each( side| leg| arm)?|per side|x)\b/gi, ' ').replace(/[\d:–\-()\[\],.;@#]+/g, ' ').replace(/\s+/g, ' ').trim();
+      return { name, ...o, hasNums: Object.keys(o).some(k => ['sets', 'reps', 'time'].includes(k)) };
+    }
+    const known = n0 => {
+      try {
+        const cands = [n0, n0.replace(/es\b/i, ''), n0.replace(/s\b/i, '')];
+        for (const n of cands) if (Moves.isKnown(n)) return Moves.get(n).name;
+        const n = n0.toLowerCase(); const first = n.split(' ')[0].replace(/s$/, '');
+        const r = Moves.search(n0, 6).filter(x => x.toLowerCase().includes(first));
+        if (!r.length) return null;
+        const words = n.replace(/s\b/g, '').split(' ');
+        const score = x => { const xl = x.toLowerCase().replace(/s\b/g, ''); const hit = words.filter(w => xl.includes(w)).length; return hit * 10 - (xl.split(/[\s-]+/).length - words.length) * 3 - (/ - /.test(x) ? 5 : 0) + (xl.startsWith(words[0]) ? 4 : 0); };
+        const best = r.slice().sort((a, b) => score(b) - score(a))[0];
+        return words.every(w => best.toLowerCase().includes(w)) ? best : null;
+      } catch (e) { return null; }
+    };
+    function parse(lines) {
+      const out = []; let cur = null;
+      const start = (title, day) => { cur = { name: title, day, items: [] }; out.push(cur); };
+      lines.forEach(l0 => {
+        const l = String(l0 || '').trim(); if (!l || l.length > 90) return;
+        const dm = l.match(DAY_RX);
+        if (dm && !/\d+\s*[x×]\s*\d+/.test(l)) {
+          const wd = DAYS.findIndex(d => d.startsWith(dm[0].toLowerCase().slice(0, 3)));
+          const rest = l.slice(dm[0].length).replace(/^[\s:\-–—]+/, '').trim();
+          start(rest ? `${dm[0].replace(/\b\w/g, c => c.toUpperCase())} · ${rest}` : dm[0].replace(/\b\w/g, c => c.toUpperCase()), wd >= 0 && /[a-z]{3}/i.test(dm[0]) && !/^day/i.test(dm[0]) ? wd : null);
+          if (/\b(rest|off)\b/i.test(rest)) cur.rest = true;
+          return;
+        }
+        const p = parseLine(l);
+        if (!p.name || p.name.replace(/[^a-z]/gi, '').length < 3) return;
+        const k = known(p.name);
+        if (!p.hasNums && !k) {
+          // A short heading without numbers starts a new workout ("Push day", "Chest & triceps").
+          if (/^(?:[A-Z][\w&/ ]{2,30})$/.test(l) && /(day|workout|session|routine|push|pull|legs?|upper|lower|chest|back|shoulders?|arms?|core|cardio|full body)\b/i.test(l)) start(l.replace(/\s+/g, ' '), null);
+          return;
+        }
+        if (!cur) start('Scanned workout', null);
+        cur.items.push({ name: k || p.name.replace(/\b\w/g, c => c.toUpperCase()), custom: !k, sets: p.sets, reps: p.reps, time: p.time, rest: p.rest, w: p.w });
+      });
+      return out.filter(w => w.items.length || w.rest);
+    }
+    function loadPdfJs() {
+      if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+      return new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'vendor/pdfjs/pdf.min.js'; sc.onload = () => { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'vendor/pdfjs/pdf.worker.min.js'; res(window.pdfjsLib); } catch (e) { rej(e); } }; sc.onerror = () => rej(new Error('PDF reader missing')); document.head.appendChild(sc); });
+    }
+    async function ocrDataUrl(dataUrl) {
+      if (!P.Ocr) throw new Error('Reading photos works in the installed app. You can paste the text instead.');
+      const r = await P.Ocr.recognize({ data: dataUrl });
+      return rowsFrom((r.lines || []).map(x => ({ t: x.t, x: x.x || 0, y: x.y || 0, h: x.h || 12 })));
+    }
+    async function readPdf(file, status) {
+      const lib = await loadPdfJs();
+      const doc = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+      const lines = [];
+      for (let i = 1; i <= Math.min(doc.numPages, 12); i++) {
+        status(`Reading page ${i} of ${doc.numPages}…`);
+        const page = await doc.getPage(i); const tc = await page.getTextContent();
+        const items = tc.items.filter(x => x.str && x.str.trim());
+        if (items.reduce((a, x) => a + x.str.length, 0) > 20) {
+          lines.push(...rowsFrom(items.map(x => ({ t: x.str, x: x.transform[4], y: -x.transform[5], h: Math.abs(x.transform[3]) || 10 }))));
+        } else {
+          // Scanned PDF: draw the page and read it like a photo.
+          const vp = page.getViewport({ scale: 2 }); const cv = document.createElement('canvas'); cv.width = vp.width; cv.height = vp.height;
+          await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+          lines.push(...await ocrDataUrl(cv.toDataURL('image/jpeg', 0.9)));
+        }
+      }
+      return lines;
+    }
+    const fileToDataUrl = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+    function open() {
+      const s = sheet(`<h2>Scan a workout plan</h2><p class="sub">Pick a photo, screenshot or PDF of a plan from your trainer, a website or a book. Vyora reads each exercise with its sets, reps, time, weight and rest. Nothing leaves your phone.</p>
+        <div class="btns two"><button class="btn primary" data-a="img">${ic('camera')}Photo or screenshot</button><button class="btn" data-a="pdf">${ic('file')}PDF</button></div>
+        <button class="btn ghost" data-a="txt" style="width:100%;margin-top:8px">Paste the plan as text</button>
+        <p class="hint" id="psst" aria-live="polite"></p>
+        <input type="file" id="psimg" accept="image/*" hidden><input type="file" id="pspdf" accept="application/pdf" hidden>`);
+      const st = t => { const e = $('#psst', s.el); if (e) e.textContent = t; };
+      const run = async getLines => {
+        try { st('Reading…'); const lines = await getLines(); const ws = parse(lines); if (!ws.length) { st('No exercises found. Try a clearer photo, or paste the text.'); return; } s.close(); review(ws); }
+        catch (e) { st(String(e.message || e)); }
+      };
+      $('#psimg', s.el).addEventListener('change', e => { const f = e.target.files[0]; if (f) run(async () => ocrDataUrl(await fileToDataUrl(f))); });
+      $('#pspdf', s.el).addEventListener('change', e => { const f = e.target.files[0]; if (f) run(() => readPdf(f, st)); });
+      s.el.addEventListener('click', e => {
+        const b = e.target.closest('[data-a]'); if (!b) return;
+        if (b.dataset.a === 'img') $('#psimg', s.el).click();
+        if (b.dataset.a === 'pdf') $('#pspdf', s.el).click();
+        if (b.dataset.a === 'txt') { s.close(); setTimeout(() => textSheet(), 150); }
+      });
+    }
+    function textSheet() {
+      const s = sheet(`<h2>Paste a plan</h2><p class="sub">Copy it from WhatsApp, a website or notes. Lines like "Bench press 4x10 @ 40 kg" or "Day 1 – Push".</p>
+        <textarea class="field body" id="pst" rows="9" placeholder="Day 1 – Push&#10;Bench press 4x10&#10;Shoulder press 3 sets of 12&#10;Plank 3 x 45 sec&#10;&#10;Day 2 – Legs&#10;Squat 5x5 @ 60kg, rest 90s"></textarea>
+        <div class="btns"><button class="btn primary" data-a="ok">Read plan</button></div>`);
+      s.el.addEventListener('click', e => {
+        if (!e.target.closest('[data-a="ok"]')) return;
+        const ws = parse($('#pst', s.el).value.split(/\n/)); if (!ws.length) { toast('No exercises found. Put one exercise per line.'); return; }
+        s.close(); review(ws);
+      });
+    }
+    const amt = it => [it.sets ? `${it.sets} ×` : '', it.time ? `${it.time >= 60 && it.time % 60 === 0 ? it.time / 60 + ' min' : it.time + ' s'}` : it.reps ? `${it.reps}` : '', it.w ? `· ${it.w} kg` : '', it.rest ? `· rest ${it.rest}s` : ''].filter(Boolean).join(' ') || 'default sets';
+    function review(ws) {
+      const scr = el(`<section class="screen"><header class="topbar"><div class="tb-left"><button class="round-btn" data-a="close" aria-label="Close">${ic('close')}</button></div><h1>Check your plan</h1><div class="tb-right"></div></header>
+        <div class="scroll"><div class="page" id="psr"></div></div></section>`);
+      const pg = $('#psr', scr);
+      // "Day 1 / Day 2 …" plans have no weekdays: spread them over the week (3 days → Mon, Wed, Fri) and let the user change each one.
+      const PAT = { 1: [0], 2: [0, 3], 3: [0, 2, 4], 4: [0, 1, 3, 4], 5: [0, 1, 2, 3, 4], 6: [0, 1, 2, 3, 4, 5], 7: [0, 1, 2, 3, 4, 5, 6] };
+      const train = ws.filter(w => w.items.length);
+      const DN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const toIdx = k => (k + 1) % 7; // patterns are Monday-first; the week plan is keyed like Date.getDay() (0 = Sunday)
+      if (train.length && train.length <= 7 && ws.every(w => w.day == null)) {
+        train.forEach((w, i) => { w.day = toIdx(PAT[train.length][i]); w.auto = true; });
+      }
+      const dayPick = (w, wi) => w.auto ? `<div class="psdays" role="group" aria-label="Day for ${esc(w.name)}">${DN.map((d, k) => `<button class="${w.day === toIdx(k) ? 'on' : ''}" data-pd="${wi}:${toIdx(k)}">${d}</button>`).join('')}</div>` : '';
+      const paint = () => {
+        const days = ws.filter(w => w.day != null).length;
+        pg.innerHTML = `<p class="sub" style="margin:0 2px 12px">Found ${ws.length} workout${ws.length > 1 ? 's' : ''} and ${ws.reduce((a, w) => a + w.items.length, 0)} exercises. Tap ✕ to drop a wrong line. You can change anything later in the workout.</p>
+          ${train.length > 1 && train.some(w => w.auto) ? `<p class="hint" style="margin:0 2px 10px">This is a ${train.length}-day program. Pick the weekday for each workout below.</p>` : ''}
+          ${ws.map((w, wi) => `<div class="sect"><input class="field psname" data-wn="${wi}" value="${esc(w.name)}" aria-label="Workout name"></div>${dayPick(w, wi)}
+            <div class="block">${w.rest ? '<p class="hint" style="padding:12px">Rest day</p>' : w.items.map((it, ii) => `<div class="psrow"><span class="wkt"><b>${esc(it.name)}${it.custom ? ' <small class="pill">new</small>' : ''}</b><span>${esc(amt(it))}</span></span><button class="round-btn" data-x="${wi}:${ii}" aria-label="Remove ${esc(it.name)}">${ic('close')}</button></div>`).join('')}</div>`).join('')}
+          ${days ? `<label class="psweek"><input type="checkbox" id="psday" checked> Also put these on my Week plan (${days} day${days > 1 ? 's' : ''})</label>` : ''}
+          <div class="btns" style="margin-top:14px"><button class="btn primary" data-a="save">${ic('check')}Save ${ws.filter(w => w.items.length).length} workout${ws.filter(w => w.items.length).length > 1 ? 's' : ''}</button></div>`;
+      };
+      paint(); layer.appendChild(scr);
+      const close = () => { unback(); scr.remove(); if (currentTab === 'timers') rerenderKeepScroll(); };
+      const unback = pushBack(close);
+      scr.addEventListener('input', e => { const n = e.target.closest('[data-wn]'); if (n) ws[+n.dataset.wn].name = n.value; });
+      scr.addEventListener('click', e => {
+        if (e.target.closest('[data-a="close"]')) return close();
+        const pd = e.target.closest('[data-pd]'); if (pd) { const [a, d] = pd.dataset.pd.split(':').map(Number); const other = ws.find((w, i) => i !== a && w.day === d); if (other) other.day = ws[a].day; ws[a].day = d; paint(); return; }
+        const x = e.target.closest('[data-x]'); if (x) { const [a, b] = x.dataset.x.split(':').map(Number); ws[a].items.splice(b, 1); if (!ws[a].items.length && !ws[a].rest) ws.splice(a, 1); if (!ws.length) return close(); paint(); return; }
+        if (e.target.closest('[data-a="save"]')) {
+          const toWeek = !!($('#psday', scr) || {}).checked; const made = [];
+          ws.forEach(w => {
+            if (w.items.length) {
+              const nw = { id: uid(), name: (w.name || 'Scanned workout').slice(0, 40), blocks: w.items.map(it => { const b = single(it.name, { sets: it.sets, reps: it.time ? null : it.reps, time: it.time, rest: it.rest, w: it.w }); if (it.w) b.items[0].w = it.w; return b; }) };
+              mine.unshift(nw); made.push(nw);
+            }
+            if (toWeek && w.day != null) {
+              if (!plan) plan = emptyPlan();
+              const d = plan[w.day]; if (d) { if (w.rest) { d.rest = true; d.items = []; } else { d.rest = false; d.items = [{ type: 'gym', name: (w.name || 'Workout').replace(/^\w+day\s*·\s*/i, '').slice(0, 40) || 'Workout' }]; } }
+            }
+          });
+          saveMine(); if (toWeek) savePlan();
+          close(); toast(`${made.length} workout${made.length > 1 ? 's' : ''} saved${toWeek ? ' and added to your week' : ''}`);
+          if (made.length === 1) setTimeout(() => openDetail(made[0]), 150);
+        }
+      });
+    }
+    return { open, parse, parseLine, textSheet };
+  })();
 
   /* ---------- exercise history ---------- */
   const hasHistory = name => exerciseStats(Moves.get(name).name).sessions.length > 0;
@@ -645,6 +833,7 @@ const Coach = (() => {
   }
 
   return {
+    scanPlan: () => PlanScan.open(), _parsePlan: l => PlanScan.parse(l),
     byId: findW, listHtml, handleList, openDetail, openBuilder, play, importSheet, templates: tpls, decode, encode, get mine() { return mine; },
     set mine(v) { mine = Array.isArray(v) ? v : []; saveMine(); }, buildSteps, _suggest: suggest, history, hasHistory, pendingSession, offerResume,
   };
