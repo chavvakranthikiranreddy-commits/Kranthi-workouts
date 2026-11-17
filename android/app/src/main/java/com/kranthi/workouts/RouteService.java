@@ -75,12 +75,14 @@ public class RouteService extends Service implements LocationListener {
 
     @Override
     public void onLocationChanged(Location l) {
-        if (l == null || (l.hasAccuracy() && l.getAccuracy() > 35f)) return;
+        if (l == null || (l.hasAccuracy() && l.getAccuracy() > 30f)) return;
         if (last != null) {
             float d = last.distanceTo(l);
             float secs = Math.max(1f, (l.getTime() - last.getTime()) / 1000f);
             if (d / secs > 12f) return; // faster than a sprint: a GPS jump, skip it
-            if (d < 3f) return;
+            // Standing still, GPS wobbles by a few metres; only count a move bigger than that wobble.
+            float wobble = Math.max(4f, (l.hasAccuracy() ? l.getAccuracy() : 10f) * 0.5f);
+            if (d < wobble) return;
             dist += d;
         }
         last = l;

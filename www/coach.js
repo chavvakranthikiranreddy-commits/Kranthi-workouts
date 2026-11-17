@@ -631,16 +631,16 @@ const Coach = (() => {
       <div class="cbody" id="cbody"></div>
       <div class="cctl"><button class="round-btn big" data-a="prev" aria-label="Back">${ic('chevL')}</button><button class="cplay" data-a="pp" id="cpp" aria-label="Pause">${ic('pause')}</button><button class="round-btn big" data-a="next" aria-label="Skip set or next step">${ic('chevR')}</button></div></section>`);
     layer.appendChild(scr);
-    const st = PL = { i: resume ? Math.min(resume.i, steps.length - 1) : 0, t0: performance.now(), paused: 0, pausedAt: resume ? performance.now() : 0, lastRep: 0, lastSec: -1, fig: null, start: resume ? resume.start : Date.now(), extra: 0 };
+    const st = PL = { i: resume ? Math.min(resume.i, steps.length - 1) : 0, t0: Date.now(), paused: 0, pausedAt: resume ? Date.now() : 0, lastRep: 0, lastSec: -1, fig: null, start: resume ? resume.start : Date.now(), extra: 0 };
     // Save progress so a workout survives the phone killing the app.
     const persist = () => { try { DB.set('coachsession', { w, i: st.i, done, pain: [...pain], skip: [...skipped], lastRef, start: st.start, at: Date.now() }); } catch (e) { /* storage full */ } };
     const forget = () => DB.del('coachsession');
     persist();
-    // Leaving the app during a set pauses it, so nothing is counted while you're away. Rest timers keep running.
-    const onVis = () => { const s = cur(); if (document.hidden) { persist(); if (s && (s.k === 'reps' || s.k === 'time') && !st.pausedAt) togglePause(); } };
+    // Screen off or app minimised: the workout keeps running. Only Pause, Back, Next or End change it.
+    const onVis = () => { if (document.hidden) persist(); else update(false); };
     document.addEventListener('visibilitychange', onVis);
     const el2 = id => $('#' + id, scr);
-    const elapsed = () => (st.pausedAt ? st.pausedAt : performance.now()) - st.t0 - st.paused;
+    const elapsed = () => (st.pausedAt ? st.pausedAt : Date.now()) - st.t0 - st.paused;
     const cur = () => steps[st.i];
     const totalMs = steps.reduce((a, s) => a + s.dur, 0);
     function render() {
@@ -669,7 +669,7 @@ const Coach = (() => {
       const ph = $('.cstage .exph', scr);
       if (ph) { ph.style.setProperty('--exd', (s.k === 'reps' ? s.rep * (Moves.get(s.name).per || 1) : 2400) + 'ms'); ph.classList.toggle('paused', !!st.pausedAt); }
       const svg = $('svg[data-mv]', scr);
-      if (svg) st.fig = Moves.animate(svg, s.k === 'reps' ? { dur: s.rep * (Moves.get(s.name).per || 1), clock: () => elapsed() } : { clock: () => (st.pausedAt ? null : performance.now()) });
+      if (svg) st.fig = Moves.animate(svg, s.k === 'reps' ? { dur: s.rep * (Moves.get(s.name).per || 1), clock: () => elapsed() } : { clock: () => (st.pausedAt ? null : Date.now()) });
       if (prevLog) wireSteppers(scr.querySelector('.clog'), (id, v) => v);
       update(true);
     }
@@ -690,7 +690,7 @@ const Coach = (() => {
         const n = Math.min(s.reps, Math.floor(e / s.rep));
         if (big) big.innerHTML = `${n}<small>/${s.reps}</small>`;
         if (sub) sub.textContent = n >= s.reps ? 'Done!' : 'Move with the voice';
-        if (n > st.lastRep && !first) { st.lastRep = n; if (n < s.reps) speak(n === s.reps - 1 ? `${n}. Last one` : String(n)); else speak(String(n)); Snd.tick(); }
+        if (n > st.lastRep && !first) { const late = e - n * s.rep > 1500; st.lastRep = n; if (late) { /* caught up after screen-off: stay quiet */ } else if (n < s.reps) speak(n === s.reps - 1 ? `${n}. Last one` : String(n)); else speak(String(n)); Snd.tick(); }
       } else {
         const sec = Math.ceil(left / 1000);
         if (big) big.textContent = fmt(sec);
@@ -700,9 +700,8 @@ const Coach = (() => {
       const doneMs = steps.slice(0, st.i).reduce((a, x) => a + x.dur, 0) + Math.min(e, s.dur);
       el2('cbar').style.width = (doneMs / totalMs * 100).toFixed(1) + '%';
       if (e >= s.dur && !st.pausedAt) {
-        // Coming back after a long time away: move on one step and wait, instead of racing through the workout.
-        if (e - s.dur > 4000) { advance(); if (PL === st && !st.pausedAt) { togglePause(); toast('Paused while you were away. Tap play to continue.'); } return; }
-        advance();
+        // Time that ran past this step (screen was off) carries into the next one, so the workout stays on time.
+        advance(false, undefined, e - s.dur);
       }
     }
     function saveLogFrom() {
@@ -716,7 +715,7 @@ const Coach = (() => {
       if (eb) cur0.e = +eb.dataset.eff;
     }
     // how: 'done' (completed), 'skip' (skipped set) or nothing (timer ran out = completed as planned).
-    function advance(manual, how) {
+    function advance(manual, how, carry = 0) {
       const s = cur();
       saveLogFrom();
       if (s && s.ref && (s.k === 'reps' || s.k === 'time')) {
@@ -724,15 +723,15 @@ const Coach = (() => {
         else if (s.k === 'reps') logSet(s.ref, s.it.w || 0, s.reps);
         else logSet(s.ref, s.it.w || 0, 0, undefined, { t: Math.round(how === 'done' ? Math.min(elapsed(), s.dur) / 1000 : s.dur / 1000) });
       }
-      st.i++; st.t0 = performance.now(); st.paused = 0; st.lastRep = 0; st.lastSec = -1;
+      st.i++; st.t0 = Date.now() - Math.max(0, carry); st.paused = 0; st.lastRep = 0; st.lastSec = -1;
       if (st.i >= steps.length) return finish();
       persist();
-      render(); cue(cur());
+      render(); if (carry < 1500) cue(cur());
     }
-    function back() { if (st.i === 0) { st.t0 = performance.now(); st.paused = 0; return render(); } st.i = Math.max(0, st.i - 1); st.t0 = performance.now(); st.paused = 0; st.lastRep = 0; render(); cue(cur()); }
+    function back() { if (st.i === 0) { st.t0 = Date.now(); st.paused = 0; return render(); } st.i = Math.max(0, st.i - 1); st.t0 = Date.now(); st.paused = 0; st.lastRep = 0; render(); cue(cur()); }
     function togglePause() {
-      if (st.pausedAt) { st.paused += performance.now() - st.pausedAt; st.pausedAt = 0; el2('cpp').innerHTML = ic('pause'); Awake.on(); }
-      else { st.pausedAt = performance.now(); el2('cpp').innerHTML = ic('play'); persist(); }
+      if (st.pausedAt) { st.paused += Date.now() - st.pausedAt; st.pausedAt = 0; el2('cpp').innerHTML = ic('pause'); Awake.on(); }
+      else { st.pausedAt = Date.now(); el2('cpp').innerHTML = ic('play'); persist(); }
       { const ph = $('.cstage .exph', scr); if (ph) ph.classList.toggle('paused', !!st.pausedAt); const cs = $('.cstage', scr); if (cs) { cs.classList.toggle('paused', !!st.pausedAt); const cp = $('.cpaused', cs); if (cp) cp.textContent = st.pausedAt ? 'Paused' : ''; } }
     }
     const timer = setInterval(() => update(false), 100);

@@ -5,6 +5,7 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.os.Build;
+import android.os.PowerManager;
 
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -19,6 +20,26 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public class AudioDuckPlugin extends Plugin {
 
     private AudioFocusRequest focusRequest;
+    private PowerManager.WakeLock cpu;
+
+    /** Keeps the CPU awake during a workout so timers and voice keep going with the screen off. */
+    @PluginMethod
+    public void keepCpu(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        try {
+            if (on) {
+                if (cpu == null) {
+                    PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+                    cpu = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "vyora:workout");
+                    cpu.setReferenceCounted(false);
+                }
+                if (!cpu.isHeld()) cpu.acquire(3 * 60 * 60 * 1000L);
+            } else if (cpu != null && cpu.isHeld()) {
+                cpu.release();
+            }
+        } catch (Exception ignored) { }
+        call.resolve();
+    }
 
     private AudioManager audio() {
         return (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);

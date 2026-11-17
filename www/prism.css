@@ -462,3 +462,5 @@ figure.art2.small .arthint { color: var(--muted); }
 .psdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin: 0 0 8px; }
 .psdays button { min-height: 36px; border-radius: 10px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--muted); }
 .psdays button.on { background: var(--accent); color: #fff; }
+.routescr.live .rcurp { margin: -4px 0 0; color: #9aa0ad; font-size: 13px; }
+.routescr.live .rcurp b { color: #fff; font-variant-numeric: tabular-nums; }

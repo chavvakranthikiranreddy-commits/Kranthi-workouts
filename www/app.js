@@ -373,14 +373,32 @@ function buzz(ms = 300) {
 /* Keep screen on */
 const Awake = {
   lock: null, want: false,
+  keep: null,
+  // A workout keeps running when the screen turns off or the app is minimised:
+  // a CPU wake lock stops the phone from sleeping, and a near-silent sound keeps the app's timers at full speed.
+  bgOn() {
+    if (P.AudioDuck && P.AudioDuck.keepCpu) P.AudioDuck.keepCpu({ on: true }).catch(() => {});
+    try {
+      Snd.unlock(); const c = Snd.ctx; if (!c || this.keep) return;
+      const o = c.createOscillator(), g = c.createGain(); o.frequency.value = 40; g.gain.value = 0.0015;
+      o.connect(g); g.connect(c.destination); o.start(); this.keep = o;
+    } catch (e) { /* ignore */ }
+  },
+  bgOff() {
+    if (P.AudioDuck && P.AudioDuck.keepCpu) P.AudioDuck.keepCpu({ on: false }).catch(() => {});
+    try { if (this.keep) this.keep.stop(); } catch (e) { /* ignore */ }
+    this.keep = null;
+  },
   async on() {
     this.want = true;
+    this.bgOn();
     if (!S.keepAwake) return;
     if (P.KeepAwake) { P.KeepAwake.keepAwake().catch(() => {}); return; }
     try { if ('wakeLock' in navigator && !document.hidden) this.lock = await navigator.wakeLock.request('screen'); } catch (e) { /* ignore */ }
   },
   off() {
     this.want = false;
+    this.bgOff();
     if (P.KeepAwake) { P.KeepAwake.allowSleep().catch(() => {}); }
     try { this.lock && this.lock.release(); } catch (e) { /* ignore */ }
     this.lock = null;
@@ -1211,7 +1229,19 @@ function viewHome() {
 const Route = (() => {
   let timer = null, scr = null;
   const km = m => (m / 1000).toFixed(2);
-  const pace = (m, secs) => m > 30 ? (() => { const p = secs / (m / 1000); return `${Math.floor(p / 60)}:${pad(Math.round(p % 60))} /km`; })() : '–';
+  // Pace = minutes per km. Shown from 100 m on, rounded to whole seconds (never "5:60"), capped at 60 min/km.
+  const pace = (m, secs) => { if (!(m >= 100) || !(secs > 0)) return '–'; const p = Math.round(secs / (m / 1000)); if (p > 3600) return '–'; return `${Math.floor(p / 60)}:${pad(p % 60)} /km`; };
+  // Moving time: only the parts where you were actually moving (0.4–8 m/s between GPS points), so waiting for GPS or standing at a signal doesn't spoil the pace.
+  function moveStats(pts) {
+    let mv = 0, recentD = 0, recentT = 0; const n = (pts || []).length; const tEnd = n ? pts[n - 1][2] : 0;
+    for (let i = 1; i < n; i++) {
+      const dt = (pts[i][2] - pts[i - 1][2]) / 1000; if (!(dt > 0) || dt > 60) continue;
+      const d = dist2(pts[i - 1], pts[i]); const v = d / dt;
+      if (v >= 0.4 && v <= 8) { mv += dt; if (tEnd - pts[i][2] <= 60000) { recentD += d; recentT += dt; } }
+    }
+    const cp = recentD >= 50 && recentT > 0 ? Math.round(recentT / (recentD / 1000)) : 0;
+    return { moving: Math.round(mv), cur: cp && cp <= 3600 ? `${Math.floor(cp / 60)}:${pad(cp % 60)}` : '–' };
+  }
   function pathSvg(pts, w = 320, h = 200) {
     if (!pts || pts.length < 2) return `<div class="empty" style="padding:24px">Waiting for GPS… stand in the open for a moment.</div>`;
     const lat = pts.map(p => p[0]), lng = pts.map(p => p[1]);
@@ -1255,7 +1285,8 @@ const Route = (() => {
     scr = el(`<section class="screen routescr live"><div class="rmapbox" id="rmapbox"><div class="rfallback" id="rmap">${pathSvg([])}</div></div>
       <div class="rtop"><button class="round-btn" data-a="min" aria-label="Minimise">${ic('chevL')}</button><b>${kind === 'run' ? 'Outdoor run' : 'Outdoor walk'}</b><button class="round-btn" data-a="centre" aria-label="Centre on me">${ic('locate')}</button></div>
       <div class="rpanel"><p class="rmsg" id="rmsg">Finding your location. Head outdoors for a clearer signal.</p>
-        <div class="rbig"><div><b id="rkm">0.00</b><span>KILOMETRES</span></div><div><small>TIME</small><b id="rtime">0:00</b></div><div><small>AVG PACE</small><b id="rpace">–</b></div></div>
+        <div class="rbig"><div><b id="rkm">0.00</b><span>KILOMETRES</span></div><div><small>TIME</small><b id="rtime">0:00</b></div><div><small>AVG PACE /KM</small><b id="rpace">–</b></div></div>
+        <p class="rcurp">Current pace <b id="rcur">–</b> /km · pace counts only moving time</p>
         <div class="btns two"><button class="btn ghost" data-a="discard">Discard</button><button class="btn primary" data-a="stop">${ic('check')}Finish</button></div></div></section>`);
     layer.appendChild(scr);
     let map = null, line = null, dot = null, follow = true;
@@ -1279,8 +1310,9 @@ const Route = (() => {
         const r = await P.Place.routeStatus(); const x = JSON.parse(r.route || '{}'); if (!scr) return;
         $('#rkm', scr).textContent = km(x.dist || 0);
         const secs = Math.round((Date.now() - (x.start || Date.now())) / 1000);
-        $('#rtime', scr).textContent = fmt(secs); $('#rpace', scr).textContent = pace(x.dist || 0, secs).replace(' /km', '');
-        const pts = x.pts || [];
+        const pts = x.pts || []; const ms = moveStats(pts);
+        $('#rtime', scr).textContent = fmt(secs); $('#rpace', scr).textContent = pace(x.dist || 0, ms.moving || secs).replace(' /km', '');
+        const cpe = $('#rcur', scr); if (cpe) cpe.textContent = ms.cur;
         $('#rmsg', scr).textContent = pts.length ? (pts.length < 3 ? 'GPS found. Start moving.' : 'Tracking keeps going with the screen off.') : 'Finding your location. Head outdoors for a clearer signal.';
         if (map && pts.length) {
           const ll = pts.map(p => [p[0], p[1]]); line.setLatLngs(ll); dot.setLatLng(ll[ll.length - 1]).addTo(map);
@@ -1300,7 +1332,8 @@ const Route = (() => {
         if (!(x.dist > 20)) { toast('Too short to save. Walk at least 20 m with GPS on.'); return; }
         const all = x.pts || [];
         const pts = all.filter((p, i, a) => i === a.length - 1 || i % Math.max(1, Math.ceil(a.length / 400)) === 0);
-        const entry = { id: uid(), date: dkey(new Date(x.start)), at: x.start, title: `${x.kind === 'run' ? 'Run' : 'Walk'} · ${km(x.dist)} km`, kind: 'route', rkind: x.kind, dur: secs, dist: x.dist, route: pts, splits: splits(all), notes: pace(x.dist, secs) };
+        const mv = moveStats(all).moving || secs;
+        const entry = { id: uid(), date: dkey(new Date(x.start)), at: x.start, title: `${x.kind === 'run' ? 'Run' : 'Walk'} · ${km(x.dist)} km`, kind: 'route', rkind: x.kind, dur: secs, moving: mv, dist: x.dist, route: pts, splits: splits(all), notes: pace(x.dist, mv) };
         log.push(entry); saveLog(); rerenderKeepScroll(); view(entry.id);
       }
     });
@@ -1313,7 +1346,7 @@ const Route = (() => {
     const r = el(`<section class="screen routescr recap"><div class="topbar"><button class="round-btn" data-a="close" aria-label="Back">${ic('chevL')}</button><h1>${x.rkind === 'run' || /^Run/.test(x.title) ? 'Run recap' : 'Walk recap'}</h1></div>
       <div class="page"><p class="sub" style="margin:0 0 10px">${esc(new Date(x.at).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }))}</p>
       <div class="rcmap" id="rcmap"><div class="rfallback">${pathSvg(x.route)}</div></div>
-      <div class="rstats"><div><b>${km(x.dist || 0)}</b><span>km</span></div><div><b>${fmt(x.dur)}</b><span>time</span></div><div><b>${esc((x.notes || '–').replace(' /km', ''))}</b><span>avg pace /km</span></div></div>
+      <div class="rstats"><div><b>${km(x.dist || 0)}</b><span>km</span></div><div><b>${fmt(x.dur)}</b><span>time${x.moving && x.moving < x.dur - 30 ? ` · ${fmt(x.moving)} moving` : ''}</span></div><div><b>${esc((x.notes || '–').replace(' /km', ''))}</b><span>avg pace /km</span></div></div>
       ${sp.length ? `<div class="sect">Splits</div><div class="block splits">${sp.map((t, i) => `<div class="split"><span>Km ${i + 1}</span><i style="width:${Math.max(18, Math.round(best / t * 100))}%"></i><b>${Math.floor(t / 60)}:${pad(t % 60)}</b></div>`).join('')}</div>` : '<p class="hint">Splits appear for routes longer than 1 km.</p>'}
       </div></section>`);
     layer.appendChild(r);
