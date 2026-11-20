@@ -662,8 +662,13 @@ const Money = (() => {
     if (!items.length) return;
     const ok = await openMoney();
     if (!ok) return;
+    const texts = items.filter(r => r.text).map(r => r.text);
+    if (texts.length) {
+      const l = parsePasted(texts.join('\n\n'));
+      if (l.length) smsSheet(l); else toast('No payment found in that message. Share the full bank or UPI SMS.');
+    }
     items.filter(r => r.pdf).forEach(r => importPdf(b64bytes(r.pdf)));
-    items.filter(r => !r.pdf).forEach(r => (r.error ? enqueue({ image: r.image, src: 'screenshot', error: r.error }) : handleOcr(r, r.image)));
+    items.filter(r => !r.pdf && !r.text).forEach(r => (r.error ? enqueue({ image: r.image, src: 'screenshot', error: r.error }) : handleOcr(r, r.image)));
   }
 
   /* ---------- lock ---------- */
@@ -845,7 +850,8 @@ const Money = (() => {
         </div>` : `<div class="mhero-row"><div class="safe"><span>Spent</span><b>${inr(st.total)}</b><small>${st.income ? `Income ${inr(st.income)}` : 'No income recorded'}</small></div></div>`}
         ${st.current && st.reserve > 0 ? `<p class="hint" style="margin:8px 0 0">Keeps ${inr(st.reserve)} aside for ${[st.billNW ? 'upcoming bills' : '', st.savingsLeft ? 'your savings goal' : ''].filter(Boolean).join(' and ')}.</p>` : ''}
       </div>
-      <div class="mactions one"><button class="btn" data-a="scan">${ic('scan')}Scan a payment screenshot or import a PDF</button></div>
+      <div class="mactions"><button class="btn primary" data-a="upipay">${ic('scan')}Scan & pay</button><button class="btn" data-a="smspaste">${ic('note')}Add from SMS</button></div>
+      <div class="mactions one"><button class="btn" data-a="scan">${ic('file')}Payment screenshot or statement PDF</button></div>
       ${st.current ? reportCardHtml() : `<button class="nudge" data-a="report">${ic('pie')}<span><b>${esc(periodName(st.s))} report.</b> Plan vs actual and top categories.</span></button>`}
       ${st.current ? alertsHtml(st) : ''}
       ${st.current && bills.length ? `<div class="sect"><span>Upcoming bills</span><button class="linkbtn" data-go="budget">All</button></div><div class="block" style="padding:0">${bills.map(({ b, nd }) => billRow(b, nd)).join('')}</div>` : ''}
@@ -1855,6 +1861,8 @@ const Money = (() => {
     switch (b.dataset.a) {
       case 'add': return M.setup ? entrySheet({}) : setupView();
       case 'scan': return M.setup ? pickScreenshots() : setupView();
+      case 'upipay': return scanPay();
+      case 'smspaste': return smsSheet();
       case 'pdf': return M.setup ? pickScreenshots(true) : setupView();
       case 'txclear': txFilter = 'all'; txQuery = ''; return refresh();
       case 'salary': return salarySheet(mOff);
@@ -1944,6 +1952,7 @@ const Money = (() => {
     } catch (e) { return []; }
   }
   const smsNudge = () => (smsFound && smsFound.length ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>${smsFound.length} bank payment${smsFound.length > 1 ? 's' : ''} found in your messages.</b> Review and add them in one tap.</span></button>` : (P.Sms && !M.smsAsked ? `<button class="nudge" data-a="smsimport">${ic('scan')}<span><b>Add expenses from bank SMS.</b> Copy a bank or UPI message and paste it here. Vyora fills in the amount and payee.</span></button>` : ''));
+  function hashStr(t) { let h = 5381; const x = String(t || '').replace(/\s+/g, ' ').trim(); for (let i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
   function parsePasted(txt) {
     const parts = String(txt || '').split(/\n\s*\n|(?=\b(?:Dear Customer|Your A\/c|A\/c\s|Acct\s|INR\s|Rs\.?\s?\d|Sent Rs)[^\n]*(?:debited|credited|sent|paid))/i).map(x => x.trim()).filter(x => x.length > 12);
     const now = Date.now();
@@ -1951,22 +1960,27 @@ const Money = (() => {
       const dm = body.match(/\b(\d{1,2})[-\/ ](\d{1,2}|[A-Za-z]{3})[-\/ ](\d{4}|\d{2})\b/);
       let at = now;
       if (dm) { const MO = 'janfebmaraprmayjunjulaugsepoctnovdec'; const mo = /\d/.test(dm[2]) ? +dm[2] - 1 : MO.indexOf(dm[2].toLowerCase()) / 3; const y = +dm[3] < 100 ? 2000 + +dm[3] : +dm[3]; const t = new Date(y, mo, +dm[1], 12).getTime(); if (mo >= 0 && mo < 12 && t && Math.abs(t - now) < 400 * 864e5) at = t; }
-      return parseSms({ id: 'p' + now + i + body.length, body, from: '', at });
+      return parseSms({ id: 'p' + hashStr(body), body, from: '', at });
     }).filter(Boolean);
   }
-  async function smsSheet() {
+  async function smsSheet(ready) {
     M.smsAsked = true; save();
+    if (Array.isArray(ready) && ready.length) return smsPick(ready);
     const s0 = sheet(`<h2>Add from bank SMS</h2><p class="sub">In your Messages app, long-press a bank or UPI message, tap Copy, then paste it here. You can paste several at once. Nothing leaves your phone.</p>
       <label class="fld"><span>Bank messages</span><textarea id="smsPaste" rows="6" placeholder="Rs.450.00 debited from A/c XX1234 to SWIGGY on 08-11-26…"></textarea></label>
       <div class="btns two"><button class="btn" data-a="clip">Paste from clipboard</button><button class="btn primary" data-a="read">Find payments</button></div>`);
     const ta = s0.el.querySelector('#smsPaste');
     const list = await new Promise(res => s0.el.addEventListener('click', async e => {
       const b = e.target.closest('[data-a]'); if (!b) return;
-      if (b.dataset.a === 'clip') { try { ta.value = (ta.value ? ta.value + '\n\n' : '') + await navigator.clipboard.readText(); } catch (_) { toast('Long-press the box and tap Paste'); } return; }
+      if (b.dataset.a === 'clip') { try { const c = P.Ocr && P.Ocr.readClipboard ? ((await P.Ocr.readClipboard()) || {}).text : await navigator.clipboard.readText(); if (!c) throw new Error('empty'); ta.value = (ta.value ? ta.value + '\n\n' : '') + c; } catch (_) { toast('Long-press the box and tap Paste'); } return; }
       const l = parsePasted(ta.value); if (!l.length) { toast('No payment found. Paste the full bank message.'); return; }
       s0.close(); res(l);
     }));
-    const pick = new Set(list.filter(x => !x.income).map(x => x.id));
+    return smsPick(list);
+  }
+  function smsPick(list) {
+    const seen = new Set(M.smsSeen || []);
+    const pick = new Set(list.filter(x => !seen.has(x.id)).map(x => x.id));
     const s = sheet(`<h2>From your bank messages</h2><p class="sub">Tick the ones to add. Categories are guessed from the payee; you can change them later.</p>
       <div class="block" style="padding:0">${list.map(x => `<label class="smsrow"><input type="checkbox" data-sid="${x.id}" ${pick.has(x.id) ? 'checked' : ''}><span><b>${esc(x.payee)}</b><small>${esc(short(parseKey(x.date)))} · ${esc(x.bank || 'Bank')}${x.income ? ' · received' : ''}</small></span><em class="${x.income ? 'pos' : ''}">${x.income ? '+' : ''}${inr(x.amount)}</em></label>`).join('')}</div>
       <div class="btns two"><button class="btn" data-a="skip">Skip all</button><button class="btn primary" data-a="add">Add selected</button></div>`);
@@ -1982,6 +1996,97 @@ const Money = (() => {
       });
       list.forEach(x => M.smsSeen.push(x.id)); M.smsSeen = M.smsSeen.slice(-600); M.smsSince = Date.now() - 3 * 864e5;
       smsFound = []; save(); s.close(); refresh(); if (n) toast(`${n} entr${n === 1 ? 'y' : 'ies'} added from bank SMS`);
+    });
+  }
+
+  /* ---- Copied a bank SMS? Offer it when Vyora opens ---- */
+  let clipBusy = false;
+  async function clipCheck() {
+    if (clipBusy || !M.setup || !P.Ocr || !P.Ocr.readClipboard || document.hidden) return;
+    clipBusy = true;
+    try {
+      const t = ((await P.Ocr.readClipboard()) || {}).text || '';
+      if (t.length < 20 || !/(rs\.?|inr|₹)\s?[\d,]/i.test(t) || !/(debit|credit|sent|paid|received|spent|withdrawn|transferred)/i.test(t)) return;
+      const h = hashStr(t); M.clipSeen = M.clipSeen || []; if (M.clipSeen.includes(h)) return;
+      M.clipSeen.push(h); M.clipSeen = M.clipSeen.slice(-100); save();
+      const l = parsePasted(t).filter(x => !(M.smsSeen || []).includes(x.id)); if (!l.length) return;
+      const x = l[0];
+      const v = await confirmBox('Add the payment you copied?', `${x.income ? 'Received' : 'Paid'} ${inr(x.amount)} ${x.income ? 'from' : 'to'} ${x.payee}${l.length > 1 ? ` and ${l.length - 1} more` : ''}`, [{ label: 'Review and add', cls: 'primary', value: 1 }, { label: 'Not now', cls: 'ghost', value: 0 }]);
+      if (v && await openMoney()) smsSheet(l);
+    } catch (e) { /* nothing copied */ } finally { clipBusy = false; }
+  }
+
+  /* ---- Scan & pay: scan a UPI QR, pay in GPay / PhonePe / Paytm, and the expense is saved ---- */
+  const loadQR = () => window.jsQR ? Promise.resolve(window.jsQR) : new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'vendor/jsqr/jsQR.js'; sc.onload = () => res(window.jsQR); sc.onerror = rej; document.head.appendChild(sc); });
+  async function readQR(file) {
+    const jsQR = await loadQR();
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      for (const max of [1400, 900, 2200, 600]) {
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+        const d = g.getImageData(0, 0, c.width, c.height);
+        const r = jsQR(d.data, c.width, c.height, { inversionAttempts: 'attemptBoth' });
+        if (r && r.data) return r.data;
+      }
+      return null;
+    } finally { URL.revokeObjectURL(url); }
+  }
+  function parseUpi(t) {
+    if (!/^upi:\/\/pay\?/i.test(t || '')) return null;
+    const q = new URLSearchParams(t.slice(t.indexOf('?') + 1));
+    const pa = q.get('pa'); if (!pa) return null;
+    return { pa, pn: q.get('pn') || pa.split('@')[0], am: +q.get('am') || 0, tn: q.get('tn') || '', mc: q.get('mc') || '', raw: q };
+  }
+  async function scanPay() {
+    if (!M.setup) return setupView();
+    if (!(await openMoney())) return;
+    const s0 = sheet(`<h2>Scan & pay</h2><p class="sub">Scan the shop's UPI QR. You pay in your usual UPI app, and Vyora saves the expense when you come back.</p>
+      <div class="btns two"><button class="btn primary" data-a="cam">${ic('camera')}Take photo of QR</button><button class="btn" data-a="pic">${ic('upload')}Choose screenshot</button></div>
+      <input type="file" accept="image/*" capture="environment" id="qrcam" hidden><input type="file" accept="image/*" id="qrpic" hidden>`);
+    const file = await new Promise(res => {
+      s0.el.addEventListener('click', e => { const b = e.target.closest('[data-a]'); if (!b) return; s0.el.querySelector(b.dataset.a === 'cam' ? '#qrcam' : '#qrpic').click(); });
+      s0.el.querySelectorAll('input[type=file]').forEach(i => i.addEventListener('change', () => res(i.files && i.files[0])));
+    });
+    if (!file) return;
+    toast('Reading QR…');
+    let data = null; try { data = await readQR(file); } catch (e) { data = null; }
+    s0.close();
+    const u = parseUpi(data);
+    if (!u) { toast(data ? 'That QR is not a UPI payment code' : 'No QR found. Hold the phone steady, fill the frame with the QR and try again.'); return; }
+    paySheet(u);
+  }
+  function paySheet(u) {
+    const catId = guessCat(u.pn, u.pa, 'expense');
+    const s = sheet(`<h2>Pay ${esc(u.pn)}</h2><p class="sub">${esc(u.pa)}</p>
+      <label class="fld"><span>Amount (₹)</span><input class="field" id="upam" inputmode="decimal" value="${u.am || ''}" ${u.am ? 'readonly' : ''} placeholder="0"></label>
+      <label class="fld"><span>Note (optional)</span><input class="field" id="upnote" value="${esc(u.tn)}" maxlength="60"></label>
+      <p class="hint">Saved as <b>${esc(cat(catId).name)}</b>. You can change it later.</p>
+      <button class="btn primary" data-a="go">${ic('wallet')}Pay with UPI app</button>`);
+    setTimeout(() => { const a = s.el.querySelector('#upam'); if (a && !u.am) a.focus(); }, 200);
+    s.el.addEventListener('click', async e => {
+      if (!e.target.closest('[data-a="go"]')) return;
+      const am = Math.round(parseFloat(String(s.el.querySelector('#upam').value).replace(/,/g, '')) * 100) / 100;
+      if (!(am > 0)) { toast('Enter the amount'); return; }
+      const note = s.el.querySelector('#upnote').value.trim();
+      const q = new URLSearchParams(u.raw); q.set('am', am.toFixed(2)); q.set('cu', 'INR'); if (note) q.set('tn', note);
+      const url = 'upi://pay?' + [...q.entries()].map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/%40/g, '@')}`).join('&');
+      s.close();
+      let res = null;
+      try { res = P.Ocr && P.Ocr.upiPay ? await P.Ocr.upiPay({ url }) : (window.open(url, '_system'), null); } catch (err) { toast(String(err.message || err)); return; }
+      const r = String((res && res.response) || '');
+      const status = (r.match(/status=([a-z]+)/i) || [])[1] || '';
+      const ref = (r.match(/(?:txnRef|txnId|ApprovalRefNo)=([^&\s]+)/i) || [])[1] || '';
+      let paid = /success/i.test(status);
+      if (/fail/i.test(status)) { toast('Payment failed. Nothing was saved.'); return; }
+      if (!paid) paid = !!(await confirmBox('Did the payment go through?', `${inr(am)} to ${u.pn}`, [{ label: 'Yes, save expense', cls: 'primary', value: 1 }, { label: 'No, it failed', cls: 'ghost', value: 0 }]));
+      if (!paid) return;
+      const t = { id: uid(), type: 'expense', amount: am, catId, payee: u.pn, upi: u.pa, note: note || 'Paid by UPI scan', date: dkey(new Date()), at: Date.now(), src: 'upi', acc: pickAcc({}), ref };
+      M.txns.push(t); save(); refresh();
+      try { tagPlace(t.id); } catch (e2) { /* optional */ }
+      toast(`${inr(am)} to ${u.pn} saved`);
     });
   }
 
@@ -2224,7 +2329,7 @@ const Money = (() => {
     async ensureOpen() { if (!M.lockOn && !sealed) return true; return unlock(); },
     isSealed: () => sealed,
     rescheduleBills: () => scheduleBillReminders(),
-    checkSms, smsSheet, affordSheet, findSubscriptions, debts: () => M.debts, loans: () => M.loans.map(l => Object.assign({ name: l.name }, loanState(l))),
+    checkSms, smsSheet, scanPay, clipCheck, checkShared, affordSheet, findSubscriptions, debts: () => M.debts, loans: () => M.loans.map(l => Object.assign({ name: l.name }, loanState(l))),
     afterUnlock: () => { scheduleSalaryReminder(); scheduleDebtReminders(); checkSms().then(f => { if (f && f.length && mTab === 'txns') refresh(); }); },
     renderTab, handleClick, openMoney, onHide, onShow, todayChip, boot, refresh, parseReceipt, parseHistory, stats, inr, widgetData, own, dayOnPace, weekSpend,
     isLocked: () => M.lockOn && !unlocked, lockOn: () => M.lockOn,

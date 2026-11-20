@@ -1,6 +1,12 @@
 package com.kranthi.workouts;
 
+import android.app.Activity;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
+import androidx.activity.result.ActivityResult;
+import com.getcapacitor.annotation.ActivityCallback;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Rect;
@@ -55,6 +61,19 @@ public class OcrPlugin extends Plugin {
         String type = intent.getType();
         String action = intent.getAction();
         if (type == null) return;
+        // Text shared from Messages / UPI apps ("Share -> Vyora"): a bank or UPI message to add as an expense.
+        if (type.startsWith("text/") && Intent.ACTION_SEND.equals(action)) {
+            String txt = intent.getStringExtra(Intent.EXTRA_TEXT);
+            intent.setAction(null);
+            if (txt == null || txt.trim().isEmpty()) return;
+            JSObject r = new JSObject();
+            r.put("text", txt.length() > 4000 ? txt.substring(0, 4000) : txt);
+            synchronized (pending) { pending.add(r); }
+            JSObject ev = new JSObject();
+            ev.put("count", 1);
+            notifyListeners("shared", ev, true);
+            return;
+        }
         if (type.equals("application/pdf") && Intent.ACTION_SEND.equals(action)) {
             final Uri pdf = intent.getParcelableExtra(Intent.EXTRA_STREAM);
             if (pdf == null) return;
@@ -110,6 +129,55 @@ public class OcrPlugin extends Plugin {
                 notifyListeners("shared", ev, true);
             }
         });
+    }
+
+    /** What the user last copied (only readable while Vyora is open on screen). */
+    @PluginMethod
+    public void readClipboard(final PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            JSObject r = new JSObject();
+            try {
+                ClipboardManager cm = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                ClipData cd = cm != null ? cm.getPrimaryClip() : null;
+                if (cd != null && cd.getItemCount() > 0) {
+                    CharSequence t = cd.getItemAt(0).coerceToText(getContext());
+                    if (t != null) r.put("text", t.length() > 4000 ? t.subSequence(0, 4000).toString() : t.toString());
+                }
+            } catch (Exception ignored) { /* nothing copied */ }
+            call.resolve(r);
+        });
+    }
+
+    /** Opens a UPI app (Google Pay, PhonePe, Paytm...) to pay a scanned QR, and reports back what the app said. */
+    @PluginMethod
+    public void upiPay(PluginCall call) {
+        String url = call.getString("url", "");
+        if (!url.startsWith("upi://pay")) { call.reject("Not a UPI payment link"); return; }
+        try {
+            Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            Intent chooser = Intent.createChooser(i, "Pay with");
+            startActivityForResult(call, chooser, "upiDone");
+        } catch (Exception e) {
+            call.reject("No UPI app found on this phone");
+        }
+    }
+
+    @ActivityCallback
+    private void upiDone(PluginCall call, ActivityResult result) {
+        if (call == null) return;
+        JSObject r = new JSObject();
+        String resp = "";
+        try {
+            Intent d = result.getData();
+            if (d != null) {
+                resp = d.getStringExtra("response");
+                if (resp == null) resp = d.getStringExtra("Status");
+                if (resp == null && d.getExtras() != null) resp = d.getExtras().toString();
+            }
+        } catch (Exception ignored) { /* no details from the UPI app */ }
+        r.put("ok", result.getResultCode() == Activity.RESULT_OK);
+        r.put("response", resp == null ? "" : resp);
+        call.resolve(r);
     }
 
     /** Screenshots that were shared into the app and not yet shown. */

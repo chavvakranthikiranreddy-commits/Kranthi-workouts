@@ -513,6 +513,7 @@ function onForeground() {
   stepsRefresh();
   AppGate.resume();
   Money.onShow();
+  setTimeout(() => { if (!$('#applock')) Money.clipCheck(); }, 700);
   Life.onResume();
   if (lifeMode() && !$('#layer > .screen')) Life.refresh();
   if (!Run.cur && !$('#layer > .screen') && currentTab === 'today') render();
@@ -3527,7 +3528,7 @@ function foldSettings() {
 
 /* ---------- 7.4: one + button adds anything ---------- */
 const PLUS = [
-  ['workout', 'dumbbell', 'Workout'], ['run', 'run', 'Walk or run'], ['expense', 'wallet', 'Expense'],
+  ['workout', 'dumbbell', 'Workout'], ['upipay', 'scan', 'Scan & pay'], ['expense', 'wallet', 'Expense'],
   ['note', 'note', 'Note'], ['task', 'check', 'Task'], ['reminder', 'bell', 'Reminder'],
   ['water', 'drop', 'Water'], ['voice', 'mic', 'Speak'], ['alarm', 'clock', 'Alarm'],
   ['journal', 'book', 'Journal'], ['list', 'list', 'Checklist'], ['event', 'calendar', 'Event'],
@@ -3539,6 +3540,7 @@ function plusSheet() {
     setTimeout(() => {
       if (k === 'workout') return openStartSheet();
       if (k === 'run') return Route.start('walk');
+      if (k === 'upipay') return Money.scanPay();
       if (k === 'water') { try { Health.addWater(250); } catch (e2) { /* ignore */ } toast('+250 ml water'); if (currentTab === 'home') rerenderKeepScroll(); return; }
       if (k === 'expense') return Money.quickAdd();
       return Life.openAdd(k);
@@ -3595,6 +3597,7 @@ window.addEventListener('DOMContentLoaded', () => {
   Money.boot();
   Life.boot();
   AppGate.show();
+  setTimeout(() => { if (!$('#applock')) Money.clipCheck(); }, 1800);
   Health.scheduleScorecard();
   setTimeout(maybeOnboard, 300);
   setTimeout(() => { if (S.onboarded && !$('#layer > .screen')) Coach.offerResume(); }, 900);

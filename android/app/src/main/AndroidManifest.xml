@@ -37,6 +37,11 @@
             </intent-filter>
 
             <!-- PhonePe statement PDF -> Share -> Muscle & Money -->
+            <intent-filter android:label="Add to Vyora">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
             <intent-filter android:label="Import statement">
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
