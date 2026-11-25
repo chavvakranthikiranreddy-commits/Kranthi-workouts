@@ -141,8 +141,13 @@ const Yoga = (() => {
     hipcircle: [[60, 14], [[60, 21, 60, 52], [60, 52, 54, 87], [60, 52, 66, 87], [60, 26, 50, 40], [50, 40, 58, 50], [60, 26, 70, 40], [70, 40, 62, 50]], FLOOR + '<ellipse class="arr" cx="60" cy="52" rx="20" ry="6"/>'],
     legswing: [[56, 14], [[56, 21, 56, 52], [56, 52, 56, 87], [56, 52, 82, 70], [56, 26, 40, 38], [40, 38, 34, 30]], FLOOR + '<path class="arr" d="M86 58a30 30 0 0 1 4 28"/><line class="bn" x1="30" y1="10" x2="30" y2="89"/>'],
   };
-  function figure(poseId) {
-    if (typeof Moves !== 'undefined') return Moves.svgFor('Y:' + (P[poseId] ? poseId : 'mountain'), { cls: 'fig yfig' });
+  // Poses that exist in the free photo library play as 2-photo animations; the rest keep the animated figure.
+  const PHOTO = { child: 'Childs_Pose', catcow: 'Cat_Stretch', plank: 'Plank', butterfly: 'Butterfly', bridge: 'Butt_Lift_Bridge', hamstring: 'Hamstring_Stretch', quad: 'Quad_Stretch', calf: 'Calf_Stretch_Hands_Against_Wall', chest: 'Chest_And_Front_Of_Shoulder_Stretch', neck: 'Side_Neck_Stretch', lunge: 'Intermediate_Hip_Flexor_and_Quad_Stretch', seatfold: 'Seated_Floor_Hamstring_Stretch', fold: 'Standing_Toe_Touches', arms: 'Arm_Circles', hips: 'Standing_Hip_Circles', lungetwist: 'Worlds_Greatest_Stretch', fig4: 'Lying_Glute', twist: 'Knee_Across_The_Body' };
+  function figure(poseId, big) {
+    if (typeof Moves !== 'undefined') {
+      const fig = Moves.svgFor('Y:' + (P[poseId] ? poseId : 'mountain'), { cls: 'fig yfig' });
+      return PHOTO[poseId] && Moves.photoDemo ? `<span class="exthumb anim yph ${big ? 'big' : ''}" style="--exd:3200ms">${Moves.photoDemo(PHOTO[poseId], { cls: 'raw', label: P[poseId][0], fallback: fig }).replace(/^<div class="exph raw"[^>]*>|<\/div>$/g, '')}</span>` : fig;
+    }
     const p = P[poseId]; const f = F[p ? p[1] : 'mountain'] || F.mountain;
     return `<svg class="fig yfig" viewBox="0 0 120 96" aria-hidden="true"><g class="props">${f[2] || ''}</g><g class="body">${L(f[1])}<circle cx="${f[0][0]}" cy="${f[0][1]}" r="6.5"/></g></svg>`;
   }

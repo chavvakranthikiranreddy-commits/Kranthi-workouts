@@ -200,3 +200,11 @@ Tested: all regression suites; every tab at 375 px and 1280 px in light and dark
 - Settings fold into groups; 4 action colours; calm quote cards.
 - Life: extras folded under More, mood-this-week strip. Money: 14-day spending chart, details folded.
 - 7.3: live run map, run recap with splits, two weather reports, area names.
+
+## 7.6
+- 2-photo animations (start ↔ end pose) on every exercise thumbnail, workout card, program, template and 18 yoga/mobility poses; animated figures stay for moves with no photo.
+- Muscle map (MuscleMap, MIT): This week / Recovering / Untrained.
+- Drop sets, backup move ("Machine busy?") in guided workouts.
+- Rest timer in the notification shade, rest-over alert with the screen off, optional screen flash.
+- Progression rules: Steady, Double, Triple, plus automatic deload after 3 stalled sessions.
+- Modules: switch Fitness, Money or Life off in Settings.

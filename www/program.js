@@ -397,7 +397,7 @@ const Program = (() => {
   };
   const POSE_FOR = { squat: 'squat', hinge: 'hinge', lunge: 'lunge', hpush: 'hpush', chest: 'hpush', vpush: 'vpush', hpull: 'hpull', rdelt: 'hpull', vpull: 'vpull', bi: 'curl', tri: 'tri', sdelt: 'raise', core: 'core', glute: 'bridge', power_l: 'jump', power_u: 'hpush', carry: 'carry', calf: 'calf', quad: 'legiso', ham: 'legiso' };
   function figure(pattern, name) {
-    if (typeof Moves !== 'undefined' && name) return Moves.svgFor(name, { cls: 'fig' });
+    if (typeof Moves !== 'undefined' && name) return Moves.hasBoth(name) ? Moves.thumb(name, 'fig') : Moves.svgFor(name, { cls: 'fig' });
     let key = POSE_FOR[pattern] || 'squat';
     if (name && /Hip Thrust|Glute Bridge/.test(name)) key = 'bridge';
     if (name && /Push-up/.test(name)) key = 'core';

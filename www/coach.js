@@ -105,6 +105,22 @@ const Coach = (() => {
     const step = m.eq === 'B' ? 2.5 : 2;
     // Only go heavier when every set hit the target, the last set wasn't an all-out effort, and the move doesn't hurt.
     const maxed = sets.some(s => s.e === 0), hurt = Moves.isPainful(name) || (st.lastPain);
+    // Stalled: same top weight for 3 sessions without beating the reps → suggest a lighter week.
+    const last3 = st.sessions.slice(-3);
+    const topOf = ss => ss.sets.reduce((m, x) => Math.max(m, x.w || 0), 0), repsAt = (ss, w) => ss.sets.filter(x => (x.w || 0) === w).reduce((a, x) => a + x.r, 0);
+    const stalled = last3.length === 3 && last3.every(x => topOf(x) === top) && repsAt(last3[2], top) <= repsAt(last3[0], top) && !hitAt(sets, top);
+    if (stalled && !hurt) { const dl = Math.round(top * 0.9 * 2) / 2; return { text: `Last: ${wOut(top)} ${wUnit()} × ${sets.filter(s => (s.w || 0) === top).map(s => s.r).join(', ')}`, tip: `Deload to ${wOut(dl)} ${wUnit()} this time: 3 sessions with no progress`, w: dl, up: false }; }
+    const rule = S.progRule || 'steady';
+    if ((rule === 'double' || rule === 'triple') && reps && !hurt) {
+      const hi = reps + 4; const atTop = sets.filter(x => (x.w || 0) === top); const minR = Math.min(...atTop.map(x => x.r));
+      const last = `Last: ${wOut(top)} ${wUnit()} × ${atTop.map(x => x.r).join(', ')}`;
+      if (minR >= hi && !maxed) {
+        if (rule === 'triple' && atTop.length < 5) return { text: last, tip: `Add a set: ${atTop.length + 1} × ${reps} at ${wOut(top)} ${wUnit()} (every set reached ${hi})`, w: top, up: true };
+        const nx = Math.round((top + step) * 2) / 2;
+        return { text: last, tip: `Go to ${wOut(nx)} ${wUnit()} and start again at ${reps} reps: every set reached ${hi}`, w: nx, up: true };
+      }
+      return { text: last, tip: `Stay at ${wOut(top)} ${wUnit()}, aim for ${Math.min(hi, Math.max(reps, minR + 1))} reps a set (range ${reps}–${hi})`, w: top, up: false };
+    }
     const up = hitAll && !maxed && !hurt;
     const next = up ? Math.round((top + step) * 2) / 2 : top;
     const tip = hurt ? `Stay light at ${wOut(top)} ${wUnit()} or lighter. It hurt before` : up ? `Try ${wOut(next)} ${wUnit()}: you hit every set twice` : hitOnce ? `Hit all reps once more at ${wOut(top)} ${wUnit()}, then go up` : maxed && hitAll ? `Stay at ${wOut(top)} ${wUnit()}. Last set was all-out` : `Stay at ${wOut(top)} ${wUnit()}`;
@@ -290,15 +306,18 @@ const Coach = (() => {
         <div id="tm" ${mode === 'reps' ? 'hidden' : ''}>${stepper('xt', 'Seconds', it.time || 30, ' s', 5, 5, 300)}</div>
         ${stepper('xw', `Weight (${wUnit()})`, S.unit === 'lb' ? Math.round(wkg * KG_LB) : wkg, '', S.unit === 'lb' ? 5 : (Moves.get(it.name).eq === 'B' ? 2.5 : 1), 0, 500)}
         ${single1 ? stepper('xrest', 'Rest after each set', b.rest, ' s', 15, 0, 600) : ''}
+        ${single1 ? `<div id="dp" ${mode === 'time' ? 'hidden' : ''}>${stepper('xdrop', 'Drop sets after the last set', it.drops || 0, '', 1, 0, 3)}</div>` : ''}
       </div>
+      <button class="srow bkrow" data-a="backup"><span class="wkt"><b>Backup move</b><span id="bkn">${it.backup ? esc(it.backup) + ' · used when the machine is busy' : 'None. Pick one for when the machine is busy'}</span></span>${ic('swap')}</button>
       ${sg ? `<p class="hint">${esc(sg.text)}${sg.tip ? ' · <b>' + esc(sg.tip) + '</b>' : ''}</p>` : '<p class="hint">Leave weight at 0 for bodyweight moves.</p>'}
       <div class="btns two"><button class="btn" data-a="how">Show how-to</button><button class="btn primary" data-a="ok">Done</button></div>`);
     Moves.mount(s.el); wireSteppers(s.el, (id, v) => v + (id === 'xt' || id === 'xrest' ? ' s' : ''));
     s.el.addEventListener('click', e => {
-      const md = e.target.closest('[data-md]'); if (md) { mode = md.dataset.md; $$('[data-md]', s.el).forEach(x => x.classList.toggle('on', x === md)); $('#rp', s.el).hidden = mode !== 'reps'; $('#tm', s.el).hidden = mode !== 'time'; return; }
+      const md = e.target.closest('[data-md]'); if (md) { mode = md.dataset.md; $$('[data-md]', s.el).forEach(x => x.classList.toggle('on', x === md)); $('#rp', s.el).hidden = mode !== 'reps'; $('#tm', s.el).hidden = mode !== 'time'; const dp = $('#dp', s.el); if (dp) dp.hidden = mode !== 'reps'; return; }
       const a = e.target.closest('[data-a]'); if (!a) return;
       if (a.dataset.a === 'how') return Moves.howTo(it.name);
-      if (single1) { b.rounds = val(s.el, 'xs'); b.rest = val(s.el, 'xrest'); }
+      if (a.dataset.a === 'backup') return swapSheet(it.name, n => { it.backup = n; const bk = $('#bkn', s.el); if (bk) bk.textContent = n + ' · used when the machine is busy'; });
+      if (single1) { b.rounds = val(s.el, 'xs'); b.rest = val(s.el, 'xrest'); if ($('#xdrop', s.el)) it.drops = val(s.el, 'xdrop'); }
       if (mode === 'reps') { it.reps = val(s.el, 'xr'); it.time = null; } else { it.time = val(s.el, 'xt'); it.reps = null; }
       const wv = val(s.el, 'xw'); it.w = wv > 0 ? (S.unit === 'lb' ? Math.round(wv / KG_LB * 10) / 10 : wv) : null;
       s.close(); after();
@@ -598,11 +617,40 @@ const Coach = (() => {
           else if (!lastRound) push({ k: 'rest', dur: b.rest * 1000, next: b.items[0].name, nextIt: b.items[0], label: 'Rest', setLabel: `${b.kind === 'single' ? 'Set' : 'Round'} ${r + 2} of ${b.rounds}`, logRef: it.reps && b.kind === 'single' ? ref : null });
         });
       }
+      // Drop sets: straight after the last set, lighter weight (about 20% less each time), short pause to change weights.
+      if (b.kind === 'single') b.items.forEach((it, ii) => {
+        const n = Math.min(3, it.drops || 0); if (!n || !it.reps) return;
+        for (let d = 1; d <= n; d++) {
+          const it2 = Object.assign({}, it, { w: it.w ? Math.round(it.w * Math.pow(0.8, d) * 2) / 2 : null });
+          push({ k: 'rest', dur: 10000, next: it.name, nextIt: it2, quick: true, label: `Drop set ${d}`, setLabel: it2.w ? `Lower to ${wOut(it2.w)} ${wUnit()}` : 'Use a lighter weight' });
+          const rm = repMs(it.name);
+          push({ k: 'reps', dur: it.reps * rm, rep: rm, reps: it.reps, name: it.name, it: it2, set: b.rounds + d, sets: b.rounds, ref: { bi, ii, r: b.rounds + d - 1 }, kind: 'drop', drop: d });
+        }
+      });
     });
     if (w.cool) { push({ k: 'rest', dur: 10000, next: coolList(w)[0], label: 'Cool-down next' }); coolList(w).forEach((n, i, a) => { push({ k: 'time', dur: 30000, name: n, phase: 'Cool-down', idx: `${i + 1}/${a.length}` }); if (i < a.length - 1) push({ k: 'rest', dur: 5000, next: a[i + 1], quick: true, label: 'Next' }); }); }
     return steps;
   }
   let PL = null;
+  // Rest timer in the notification shade: a "Resting" notice now, and an alert the moment rest ends (also with the screen off).
+  async function restAlarm(ms, next) {
+    if (!P.LocalNotifications) return;
+    try { await P.LocalNotifications.cancel({ notifications: [{ id: 93010 }, { id: 93011 }] }); } catch (e) { /* ignore */ }
+    if (ms == null || S.restNotify === false || ms < 8000) return;
+    const end = new Date(Date.now() + ms);
+    try {
+      await P.LocalNotifications.schedule({ notifications: [
+        { id: 93010, title: `Resting · ${Math.round(ms / 1000)} s`, body: `Ends at ${end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })}. Next: ${next || ''}`, channelId: 'kw_status', ongoing: true, autoCancel: true, smallIcon: 'ic_stat_kw', iconColor: S.accent },
+        { id: 93011, title: 'Rest over', body: `Next: ${next || 'your next set'}`, channelId: 'kw_phase', schedule: { at: end, allowWhileIdle: true }, smallIcon: 'ic_stat_kw', iconColor: S.accent },
+      ] });
+    } catch (e) { /* notifications off */ }
+  }
+  // Loud gym: flash the whole screen when rest ends.
+  function restFlash() {
+    if (typeof reduceMotion === 'function' && reduceMotion()) return;
+    const f = document.createElement('div'); f.className = 'restflash'; f.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(f); setTimeout(() => f.remove(), 1300);
+  }
   // Back-friendly swaps happen before the workout starts, so you see exactly what changed.
   async function play(w0, resume) {
     if (PL) return;
@@ -652,14 +700,15 @@ const Coach = (() => {
       // The last completed set stays editable on the next screens until another set is logged.
       const prevLog = lastRef && !(isWork && s.ref && s.ref === lastRef) ? (done[lastRef.bi + ':' + lastRef.ii] || [])[lastRef.r] : null;
       const logIt = prevLog ? steps.find(x => x.ref && x.ref.bi === lastRef.bi && x.ref.ii === lastRef.ii && x.ref.r === lastRef.r) : null;
-      el2('cphase').textContent = s.phase || (s.k === 'rest' ? s.label : s.k === 'ready' ? s.label : s.kind && s.kind !== 'single' ? (s.kind === 'superset' ? 'Superset' : 'Circuit') : w.name);
+      el2('cphase').textContent = s.phase || (s.k === 'rest' ? s.label : s.k === 'ready' ? s.label : s.kind === 'drop' ? `Drop set ${s.drop}` : s.kind && s.kind !== 'single' ? (s.kind === 'superset' ? 'Superset' : 'Circuit') : w.name);
       el2('cbody').innerHTML = `
         <div class="cstage ${isWork ? 'work' : 'rest'} ${st.pausedAt ? 'paused' : ''}"><span class="cpaused" aria-live="polite">${st.pausedAt ? 'Paused' : ''}</span>${Moves.demo(showName, { cls: 'big' })}${Moves.hasBoth(showName) ? `<button class="demosw" data-a="demo">${ic(S.demo === 'anim' ? 'camera' : 'play')}${S.demo === 'anim' ? 'Photos' : 'Animated'}</button>` : ''}</div>
         <div class="cinfo">
-          ${!isWork ? `<div class="clabel">${esc(s.k === 'ready' ? 'Get ready' : s.label)}${s.setLabel ? ` · ${esc(s.setLabel)}` : ''}</div><div class="cname sm">${s.k === 'rest' ? 'Next: ' : ''}${esc(showName || '')}</div>` : `<div class="cname">${esc(s.name)}</div><div class="clabel">${s.idx ? esc(s.idx) : s.sets ? `${s.kind === 'single' ? 'Set' : 'Round'} ${s.set} of ${s.sets}` : ''}${it && it.w ? ` · ${wOut(it.w)} ${wUnit()}` : ''}</div>`}
+          ${!isWork ? `<div class="clabel">${esc(s.k === 'ready' ? 'Get ready' : s.label)}${s.setLabel ? ` · ${esc(s.setLabel)}` : ''}</div><div class="cname sm">${s.k === 'rest' ? 'Next: ' : ''}${esc(showName || '')}</div>` : `<div class="cname">${esc(s.name)}</div><div class="clabel">${s.idx ? esc(s.idx) : s.kind === 'drop' ? `Drop set ${s.drop} · as many good reps as you can` : s.sets ? `${s.kind === 'single' ? 'Set' : 'Round'} ${s.set} of ${s.sets}` : ''}${it && it.w ? ` · ${wOut(it.w)} ${wUnit()}` : ''}</div>`}
           <div class="cbig" id="cbig"></div>
           <div class="csub" id="csub"></div>
           ${sg ? `<div class="csug">${esc(sg.text)}${sg.tip ? ` · <b>${esc(sg.tip)}</b>` : ''}</div>` : ''}
+          ${showName && (s.k !== 'rest' || !s.quick) && (it && it.backup || ['M', 'C', 'B'].includes(Moves.get(showName).eq)) ? `<button class="linkbtn cbusy" data-a="busy">${ic('swap')}${it && it.backup ? `Machine busy? Use ${esc(it.backup)}` : 'Machine busy? Swap it'}</button>` : ''}
           ${isWork && s.ref ? `<button class="painbtn ${pain.has(s.name) ? 'on' : ''}" data-a="hurt">⚠️ ${pain.has(s.name) ? 'Marked as painful' : 'This hurts'}</button>` : ''}
           ${s.k === 'rest' && !s.quick ? `<div class="cbtns"><button class="btn sm" data-a="plus">+15 s</button><button class="btn sm" data-a="skip">Skip rest</button></div>` : ''}
           ${isWork && s.ref ? `<button class="btn primary big csetdone" data-a="done">${ic('check')}Complete set</button><button class="linkbtn cskip" data-a="skipset">Skip this set</button>` : ''}
@@ -723,10 +772,15 @@ const Coach = (() => {
         else if (s.k === 'reps') logSet(s.ref, s.it.w || 0, s.reps);
         else logSet(s.ref, s.it.w || 0, 0, undefined, { t: Math.round(how === 'done' ? Math.min(elapsed(), s.dur) / 1000 : s.dur / 1000) });
       }
+      const was = steps[st.i];
       st.i++; st.t0 = Date.now() - Math.max(0, carry); st.paused = 0; st.lastRep = 0; st.lastSec = -1;
+      restAlarm(null);
       if (st.i >= steps.length) return finish();
       persist();
       render(); if (carry < 1500) cue(cur());
+      const nw = cur();
+      if (nw.k === 'rest' && !nw.quick) restAlarm(nw.dur - Math.max(0, carry), nw.next);
+      if (was && was.k === 'rest' && !was.quick && (nw.k === 'reps' || nw.k === 'time') && S.restFlash && carry < 1500) restFlash();
     }
     function back() { if (st.i === 0) { st.t0 = Date.now(); st.paused = 0; return render(); } st.i = Math.max(0, st.i - 1); st.t0 = Date.now(); st.paused = 0; st.lastRep = 0; render(); cue(cur()); }
     function togglePause() {
@@ -744,10 +798,11 @@ const Coach = (() => {
       const v = await confirmBox('End workout?', anyLogged ? 'Save what you did so far to your calendar? If you discard, the sets you logged are deleted.' : '', anyLogged ? [{ label: 'Save & finish', cls: 'primary', value: 'save' }, { label: 'Discard', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }] : [{ label: 'End', cls: 'danger', value: 'drop' }, { label: 'Keep going', cls: 'ghost', value: null }]);
       if (!v) return togglePause();
       if (v === 'save') return finish(true);
+      restAlarm(null);
       close();
     }
     function finish(early) {
-      clearInterval(timer); document.removeEventListener('visibilitychange', onVis);
+      clearInterval(timer); document.removeEventListener('visibilitychange', onVis); restAlarm(null);
       Snd.finish(); speak(early ? 'Workout saved' : 'Workout complete. Great job!');
       saveLogFrom();
       const exercises = [];
@@ -803,15 +858,24 @@ const Coach = (() => {
       switch (b.dataset.a) {
         case 'x': return stop();
         case 'close': close(); if (currentTab === 'today' || currentTab === 'calendar') rerenderKeepScroll(); return;
-        case 'pp': return togglePause();
+        case 'pp': { togglePause(); const c = cur(); if (st.pausedAt) restAlarm(null); else if (c && c.k === 'rest' && !c.quick) restAlarm(c.dur - elapsed(), c.next); return; }
         case 'next': { const s = cur(); return advance(true, s && s.ref && (s.k === 'reps' || s.k === 'time') ? 'skip' : undefined); }
         case 'skip': return advance(true);
         case 'skipset': return advance(true, 'skip');
         case 'done': return advance(true, 'done');
         case 'prev': return back();
-        case 'plus': { const s = cur(); s.dur += 15000; return update(true); }
+        case 'plus': { const s = cur(); s.dur += 15000; if (!s.quick) restAlarm(s.dur - elapsed(), s.next); return update(true); }
         case 'demo': { S.demo = S.demo === 'anim' ? 'photo' : 'anim'; saveSettings(); return render(); }
         case 'hurt': return hurt();
+        case 'busy': {
+          const s = cur(); const isWork = s.k === 'reps' || s.k === 'time'; const from = isWork || s.k === 'ready' ? s.name : s.next; const it = isWork ? s.it : s.nextIt;
+          const swapTo = to => {
+            for (let j = st.i; j < steps.length; j++) { const x = steps[j]; if (x.name === from) x.name = to; if (x.next === from) x.next = to; if (x.it && x.it.name === from) x.it = Object.assign({}, x.it, { name: to }); if (x.nextIt && x.nextIt.name === from) x.nextIt = Object.assign({}, x.nextIt, { name: to }); }
+            toast(`Switched to ${to} for the rest of this workout`); persist(); render();
+          };
+          if (it && it.backup) return swapTo(it.backup);
+          return swapSheet(from, swapTo);
+        }
         case 'pace': { const order = ['slow', 'normal', 'fast']; S.repSpeed = order[(order.indexOf(S.repSpeed || 'normal') + 1) % 3]; saveSettings(); toast(`Rep speed: ${S.repSpeed}`); return; }
       }
     });

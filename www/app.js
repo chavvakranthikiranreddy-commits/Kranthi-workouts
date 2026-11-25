@@ -133,7 +133,7 @@ const DB = {
 };
 const DEFAULTS = {
   beeps: true, voice: true, countdown: true, voiceCount: false, halfway: true, vibrate: true, flash: true, keepAwake: true,
-  background: true, suggest: true, artPhotos: true, streakFreeze: true, restTips: true, nightReview: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
+  background: true, suggest: true, artPhotos: true, streakFreeze: true, restTips: true, restNotify: true, restFlash: false, progRule: 'steady', nightReview: true, weekStart: 1, notifAsked: false, stepGoal: 8000, height: null, sound: 'classic', duck: true, theme: 'light', accent: '#0891B2', unit: 'kg', lastBackup: 0,
 };
 const S = Object.assign({}, DEFAULTS, DB.get('settings', {}));
 const saveSettings = () => DB.set('settings', S);
@@ -157,7 +157,7 @@ if (!S.v55) { S.v55 = 1; S.theme = 'light'; if (String(S.accent).toUpperCase() =
 // 7.0 Prism Flow: one cobalt colour for actions everywhere (sections are told apart by the dock and headings).
 const PRISM = '#3F51D9';
 // One source for the version: the installed APK reports its own (e.g. 7.0.23); the web preview uses this.
-const APP_VERSION = '7.4';
+const APP_VERSION = '7.6';
 let appBuild = null;
 const SECTION_COLORS = {}, SECTION_INK = {}, SECTION_TEXT = {};
 const curAccent = () => S.accent || PRISM;
@@ -1041,6 +1041,8 @@ const DESTS = [
   { id: 'money', label: 'Money', icon: 'wallet', root: 'm-home' },
   { id: 'life', label: 'Life', icon: 'leaf', root: 'l-home' },
 ];
+// Modules: switch whole sections off in Settings. Nothing is deleted; they come back when switched on.
+const modOn = x => { const id = typeof x === 'string' ? x : x.id; return id === 'home' || S['mod_' + id] !== false; };
 const CTX = {
   muscle: [['today', 'Overview'], ['timers', 'Train'], ['calendar', 'Week'], ['progress', 'Progress']],
   money: [['m-home', 'Overview'], ['m-txns', 'Spends'], ['m-budget', 'Budget'], ['m-insights', 'Insights']],
@@ -1051,7 +1053,8 @@ const isSettingsTab = t => t === 'settings' || t === 'm-settings';
 const scrollMem = {};
 function renderTabs() {
   const d = isSettingsTab(currentTab) ? '' : destOf(currentTab);
-  $('#tabs').innerHTML = `<div class="dock" role="tablist" aria-label="Main sections">${DESTS.map((x, i) => `${i === 2 ? `<button class="dkplus" data-plus aria-label="Add something">${ic('plus')}</button>` : ''}<button class="dk ${x.id === d ? 'on' : ''}" data-dest="${x.id}" role="tab" aria-selected="${x.id === d}"><span class="dki">${ic(x.icon)}</span><span class="dkl">${x.label}</span></button>`).join('')}<span class="dkpill" aria-hidden="true"></span></div>`;
+  const DD = DESTS.filter(modOn); const half = Math.ceil(DD.length / 2);
+  $('#tabs').innerHTML = `<div class="dock n${DD.length}" role="tablist" aria-label="Main sections">${DD.map((x, i) => `${i === half ? `<button class="dkplus" data-plus aria-label="Add something">${ic('plus')}</button>` : ''}<button class="dk ${x.id === d ? 'on' : ''}" data-dest="${x.id}" role="tab" aria-selected="${x.id === d}"><span class="dki">${ic(x.icon)}</span><span class="dkl">${x.label}</span></button>`).join('')}<span class="dkpill" aria-hidden="true"></span></div>`;
   const ctx = $('#ctx'), list = !isSettingsTab(currentTab) && CTX[destOf(currentTab)];
   if (ctx) {
     ctx.hidden = !list;
@@ -1138,6 +1141,7 @@ function updateSecure() { try { const on = (S.mode === 'money' && Money.lockOn()
 function paintModebar() { applyTheme(); updateSecure(); }
 function placeModePill() { placeDockPill(); }
 async function setMode(mode, quiet) {
+  if (!modOn(mode)) mode = 'home';
   const lt = S.lastTabs || {};
   if (mode === 'money') {
     const ok = await Money.openMoney(lt.money ? lt.money.slice(2) : undefined);
@@ -1178,7 +1182,7 @@ function viewHome() {
       <span class="fart" aria-hidden="true">${Moves.svgFor(pickMove(nu.done ? 'done' : 'train'), { cls: 'artmv' })}</span>
     </section>
     <div class="sumcard" role="group" aria-label="Today in numbers">
-      ${(() => { const wd = M_SETUP() ? Money.widgetData() : null; const ring = (a, k, v, sub, f) => { const RR = 20, CC = 2 * Math.PI * RR; return `<button class="sumr" data-a="${a}"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="${RR}"/><circle class="bar" cx="24" cy="24" r="${RR}" stroke-dasharray="${CC.toFixed(1)}" stroke-dashoffset="${(CC * (1 - Math.max(0, Math.min(1, f)))).toFixed(1)}"/></svg><b>${v}</b><small>${sub}</small></button>`; };
+      ${(() => { const wd = modOn('money') && M_SETUP() ? Money.widgetData() : null; const ring = (a, k, v, sub, f) => { const RR = 20, CC = 2 * Math.PI * RR; return `<button class="sumr" data-a="${a}"><svg viewBox="0 0 48 48" aria-hidden="true"><circle class="trk" cx="24" cy="24" r="${RR}"/><circle class="bar" cx="24" cy="24" r="${RR}" stroke-dasharray="${CC.toFixed(1)}" stroke-dashoffset="${(CC * (1 - Math.max(0, Math.min(1, f)))).toFixed(1)}"/></svg><b>${v}</b><small>${sub}</small></button>`; };
         return ring('steps', 'steps', STP.enabled || steps ? fmtN(steps) : 'Off', STP.enabled || steps ? `of ${fmtN(S.stepGoal)} steps` : 'steps · tap', pct)
           + ring('water', 'water', `${String(Math.round(hh.w / 100) / 10).replace(/\.0$/, '')} L`, `of ${String(hh.tw / 1000).replace(/\.0+$/, '')} L water`, hh.tw ? hh.w / hh.tw : 0)
           + ring('protein', 'protein', `${Math.round(hh.p || 0)} g`, `of ${Math.round(hh.tp || 0)} g protein`, hh.tp ? (hh.p || 0) / hh.tp : 0)
@@ -2391,7 +2395,7 @@ function paintRun(e, idx, rem) {
     const stepMs = st.dur * 1000 - rem;
     yogaClock = st.kind === 'flow' ? stepMs : 0;
     if (fig && fig.dataset.p !== (st.pose || '') + st.kind) {
-      fig.dataset.p = (st.pose || '') + st.kind; fig.innerHTML = st.pose ? Yoga.figure(st.pose) : '';
+      fig.dataset.p = (st.pose || '') + st.kind; fig.innerHTML = st.pose ? Yoga.figure(st.pose, true) : '';
       const svg = fig.querySelector('svg[data-mv]'); if (svg && typeof Moves !== 'undefined') Moves.animate(svg, { dur: 8000, clock: () => (st.kind === 'flow' ? yogaClock : null) });
       R.breathHalf = -1;
     }
@@ -2908,6 +2912,46 @@ function lineChart(pts, { fmtY = v => trim1(v), h = 150 } = {}) {
 
 const latestBody = () => body.slice().sort((a, b) => a.at - b.at).filter(x => x.kg != null).pop();
 
+/* ---------- 7.6: muscle map (volume, recovering, untrained) ---------- */
+let bmMode = 'vol';
+function muscleData() {
+  const now = Date.now(); const last = {}; const vol = {};
+  log.forEach(x => (x.exercises || []).forEach(ex => {
+    const sets = (ex.sets || []).filter(st => st.r > 0 && !st.skipped).length; if (!sets) return;
+    const mus = (Moves.get(ex.name).muscles || []).filter(m => Moves.MNAME[m] && m !== 'full' && m !== 'cardio');
+    mus.forEach((m, i) => {
+      const at = x.at || parseKey(x.date).getTime(); if (!last[m] || at > last[m]) last[m] = at;
+      if (now - at <= 7 * 864e5) vol[m] = (vol[m] || 0) + sets * (i === 0 ? 1 : 0.5);
+    });
+  }));
+  return { last, vol, now };
+}
+function muscleMapHtml() {
+  if (typeof BodyMap === 'undefined') return '';
+  const { last, vol, now } = muscleData(); const ALL = ['chest', 'back', 'shoulders', 'biceps', 'triceps', 'forearms', 'core', 'lowback', 'glutes', 'quads', 'hams', 'calves'];
+  const vals = {}; let tone = 'acc'; let list = '';
+  if (bmMode === 'vol') {
+    ALL.forEach(m => { vals[m] = Math.min(1, (vol[m] || 0) / 12); });
+    const top = ALL.filter(m => vol[m]).sort((a, b) => vol[b] - vol[a]);
+    list = top.length ? top.slice(0, 6).map(m => `<span class="bmchip">${Moves.MNAME[m]} <b>${Math.round(vol[m])}</b> sets</span>`).join('') : '<p class="hint">Log a gym workout to see where your sets went this week.</p>';
+  } else if (bmMode === 'rec') {
+    tone = 'warm';
+    const rec = ALL.filter(m => last[m] && now - last[m] < 48 * 36e5);
+    rec.forEach(m => { vals[m] = 1 - (now - last[m]) / (48 * 36e5); });
+    list = rec.length ? rec.map(m => `<span class="bmchip warm">${Moves.MNAME[m]} · ready in ${Math.max(1, Math.round(48 - (now - last[m]) / 36e5))} h</span>`).join('') : '<p class="hint">Nothing is recovering. Every muscle is ready to train.</p>';
+  } else {
+    tone = 'cool';
+    const un = ALL.filter(m => !last[m] || now - last[m] >= 7 * 864e5);
+    un.forEach(m => { vals[m] = last[m] ? Math.min(1, (now - last[m]) / (21 * 864e5)) : 1; });
+    list = un.length ? un.map(m => `<span class="bmchip cool">${Moves.MNAME[m]} · ${last[m] ? Math.round((now - last[m]) / 864e5) + ' days' : 'never'}</span>`).join('') : '<p class="hint">You trained every muscle group in the last 7 days.</p>';
+  }
+  return `<div class="sect"><span>Muscle map</span></div>
+    <div class="block bmcard"><div class="seg bmseg" role="tablist">${[['vol', 'This week'], ['rec', 'Recovering'], ['un', 'Untrained']].map(([k, n]) => `<button data-bm="${k}" role="tab" aria-selected="${bmMode === k}" class="${bmMode === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+    ${BodyMap.svg(vals, { tone, label: bmMode === 'vol' ? 'Sets per muscle this week' : bmMode === 'rec' ? 'Muscles still recovering' : 'Muscles not trained for 7 days or more' })}
+    <div class="bmlist">${list}</div></div>`;
+}
+document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('[data-bm]'); if (!b) return; bmMode = b.dataset.bm; tap(); rerenderKeepScroll(); });
+
 function viewProgress() {
   const today = today0();
   // Year heatmap: 53 weeks ending this week.
@@ -2959,8 +3003,7 @@ function viewProgress() {
         ${STP.enabled ? '' : `<div style="margin-top:10px">${stepsCardHtml()}</div>`}
       </div>`;
     })()}
-    <div class="sect"><span>Muscles trained</span><span style="text-transform:none;letter-spacing:0">Last 7 days</span></div>
-    ${Health.muscleMapHtml()}
+    ${muscleMapHtml()}
     <button class="nudge" data-h="score" style="margin-top:12px">${ic('chart')}<span><b>Weekly scorecard.</b> Workouts, steps, protein, water, sleep and money, day by day.</span></button>
     ${(() => { const prs = prBoard().slice(0, prShowAll ? 60 : 6); return prs.length ? `<div class="sect"><span>Personal records</span>${prBoard().length > 6 ? `<button class="linkbtn" data-a="prall">${prShowAll ? 'Show less' : 'See all'}</button>` : ''}</div>
       <div class="block" style="padding:0">${prs.map(x => `<div class="mini-row"><span>🏆 ${esc(x.name)}<small>${esc(shortDate(parseKey(x.date).getTime()))}</small></span><b>${x.w ? `${wOut(x.w)} ${wUnit()} × ${x.r}` : `${x.r} reps`}</b></div>`).join('')}</div>` : ''; })()}
@@ -3361,10 +3404,19 @@ function viewSettings() {
       <div class="set-row" style="padding-bottom:10px"><span class="st"><div class="t">Open the app on</div><div class="s">Where Vyora starts each time</div></span></div>
       <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['last', 'Last used'], ['home', 'Today'], ['muscle', 'Fitness'], ['money', 'Money'], ['life', 'Life']].map(([k, n]) => `<button class="${(S.landing || 'last') === k ? 'on' : ''}" data-landing="${k}">${n}</button>`).join('')}</div></div>
     </div>
+    <div class="sect">Modules</div>
+    <div class="block">
+      <div class="set-row"><span class="st"><div class="t">Show only what you use</div><div class="s">Switch off a whole section. Nothing is deleted, and it comes back when you switch it on.</div></span></div>
+      ${[['mod_muscle', 'Fitness', 'Workouts, timers, steps, health'], ['mod_money', 'Money', 'Budget, expenses, bills, Scan & pay'], ['mod_life', 'Life', 'Notes, tasks, reminders, journal']].map(([k, t, sub]) => `<button class="set-row" data-mod="${k}"><span class="st"><div class="t">${t}</div><div class="s">${sub}</div></span><span class="toggle ${S[k] !== false ? 'on' : ''}"></span></button>`).join('')}
+    </div>
     <div class="sect">Training safety</div>
     <div class="block">
       ${row('suggest', 'Weight suggestions', 'Goes up by 2.5 kg (or 2 reps) after you hit every set twice in a row. Turn off to only see your last numbers.')}
       ${row('streakFreeze', 'Streak freeze', 'One missed day a week does not break your workout streak.')}
+      <div class="set-row" style="padding-bottom:8px"><span class="st"><div class="t">How weights go up</div><div class="s">${{ steady: 'Steady: +2.5 kg after you hit every set twice in a row.', double: 'Double progression: add reps up to the top of a range (e.g. 8–12), then add weight and start again.', triple: 'Triple progression: add reps, then add a set, then add weight.' }[S.progRule || 'steady']} Stalls for 3 sessions suggest a lighter week.</div></span></div>
+      <div style="padding:0 16px 12px"><div class="seg" style="background:var(--surface-2);margin:0">${[['steady', 'Steady'], ['double', 'Double'], ['triple', 'Triple']].map(([k, n]) => `<button data-prog="${k}" class="${(S.progRule || 'steady') === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+      ${row('restNotify', 'Rest timer in notifications', 'Shows the rest countdown in the notification shade and alerts you when rest ends, even with the screen off.')}
+      ${row('restFlash', 'Flash the screen when rest ends', 'For loud gyms where you might miss the sound.')}
       ${row('restTips', 'Easy-day suggestions', 'After short sleep or a very hard day, Today suggests a lighter session.')}
       ${row('nightReview', 'Night review', 'At 9:30 pm: mood, energy and one line about your day, saved to your private journal.')}
       ${row('backSafe', 'Back-friendly mode', 'Swaps heavy hinges (deadlifts, bent-over rows, swings) and twisting core work for options that load the lower back less')}
@@ -3484,11 +3536,11 @@ function getStartedItems() {
   let wx = false; try { wx = !!(Life.rawData && Life.rawData.weather); } catch (e) { /* ignore */ }
   return [
     ['name', 'Add your name', !!S.name],
-    ['money', 'Set up Money (salary day and budget)', M_SETUP()],
+    ...(modOn('money') ? [['money', 'Set up Money (salary day and budget)', M_SETUP()]] : []),
     ['steps', 'Turn on step counting', !!STP.enabled],
     ['weather', 'Add your area for weather', wx],
     ['plan', 'Plan your workout week', !!(plan && plan.some(d => d && d.items && d.items.length))],
-    ['habit', 'Add one daily habit', !!(Life.habitsInfo && Life.habitsInfo().total)],
+    ...(modOn('life') ? [['habit', 'Add one daily habit', !!(Life.habitsInfo && Life.habitsInfo().total)]] : []),
   ];
 }
 function getStartedHtml() {
@@ -3508,6 +3560,14 @@ async function getStartedDo(k) {
   if (k === 'habit') return Life.openTasks ? Life.openTasks('habits') : go('l-tasks');
 }
 
+document.addEventListener('click', e => {
+  const pr = e.target.closest && e.target.closest('[data-prog]');
+  if (pr) { S.progRule = pr.dataset.prog; saveSettings(); tap(); return rerenderKeepScroll(); }
+  const md = e.target.closest && e.target.closest('[data-mod]'); if (!md) return;
+  const k = md.dataset.mod; const on = S[k] === false;
+  if (!on && ['mod_muscle', 'mod_money', 'mod_life'].filter(x => S[x] !== false).length <= 1) { toast('Keep at least one section on'); return; }
+  S[k] = on; saveSettings(); tap(); toast(on ? 'Section switched on' : 'Section hidden. Your data is kept.'); renderTabs(); rerenderKeepScroll();
+});
 /* ---------- 7.4: Settings fold into groups ---------- */
 const setOpen = new Set(['Appearance']);
 function foldSettings() {
@@ -3534,7 +3594,8 @@ const PLUS = [
   ['journal', 'book', 'Journal'], ['list', 'list', 'Checklist'], ['event', 'calendar', 'Event'],
 ];
 function plusSheet() {
-  const s = sheet(`<h2>Add</h2><div class="plusgrid">${PLUS.map(([k, icn, n]) => `<button data-p="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}</div>`);
+  const MOD = { workout: 'muscle', run: 'muscle', water: 'muscle', upipay: 'money', expense: 'money', note: 'life', task: 'life', reminder: 'life', voice: 'life', alarm: 'life', journal: 'life', list: 'life', event: 'life' };
+  const s = sheet(`<h2>Add</h2><div class="plusgrid">${PLUS.filter(([k]) => modOn(MOD[k] || 'home')).map(([k, icn, n]) => `<button data-p="${k}"><span>${ic(icn)}</span><b>${n}</b></button>`).join('')}</div>`);
   s.el.addEventListener('click', e => {
     const b = e.target.closest('[data-p]'); if (!b) return; const k = b.dataset.p; s.close();
     setTimeout(() => {

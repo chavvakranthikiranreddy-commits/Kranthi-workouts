@@ -464,3 +464,43 @@ figure.art2.small .arthint { color: var(--muted); }
 .psdays button.on { background: var(--accent); color: #fff; }
 .routescr.live .rcurp { margin: -4px 0 0; color: #9aa0ad; font-size: 13px; }
 .routescr.live .rcurp b { color: #fff; font-variant-numeric: tabular-nums; }
+
+/* 7.6: 2-photo animation on thumbnails, programs and yoga poses */
+.exthumb.anim { position: relative; overflow: hidden; border-radius: inherit; background: #fff; }
+.exthumb.anim img { position: absolute; inset: 0; }
+.exthumb.anim img.b { animation: exflip var(--exd, 2400ms) ease-in-out infinite; }
+.exthumb.fig { width: 56px; height: 45px; border-radius: 10px; flex: none; }
+.yr-figs .exthumb.anim { width: 54px; height: 43px; border-radius: 8px; display: inline-block; }
+.exthumb.yph { display: inline-block; width: 100%; aspect-ratio: 5 / 4; border-radius: 12px; }
+@media (prefers-reduced-motion: reduce) { .exthumb.anim img.b { animation: none !important; opacity: 0; } }
+:root.rm .exthumb.anim img.b, :root.rm .exph img.b { animation: none !important; opacity: 0; }
+.run-fig .exthumb.yph { width: 100%; height: 100%; aspect-ratio: auto; }
+
+/* Muscle map */
+.bmcard { padding: 12px 12px 14px; }
+.bmseg { margin-bottom: 10px; background: var(--surface-2); }
+.bodymap { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 360px; margin: 0 auto; }
+.bodymap.mini { grid-template-columns: 1fr; width: 36px; margin: 0; }
+.bm-side { width: 100%; height: auto; display: block; }
+.bm-side path { stroke: var(--bg, #fff); stroke-width: 2; }
+.bm-skin { fill: color-mix(in srgb, var(--muted) 22%, transparent); }
+.bm-off { fill: color-mix(in srgb, var(--muted) 38%, transparent); }
+.bm-on.bm-acc { fill: color-mix(in srgb, var(--accent) calc(var(--bmv) * 100%), color-mix(in srgb, var(--muted) 38%, transparent)); }
+.bm-on.bm-warm { fill: color-mix(in srgb, #E8590C calc(var(--bmv) * 100%), color-mix(in srgb, var(--muted) 38%, transparent)); }
+.bm-on.bm-cool { fill: color-mix(in srgb, #0B7285 calc(var(--bmv) * 100%), color-mix(in srgb, var(--muted) 38%, transparent)); }
+.bmlist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; justify-content: center; }
+.bmchip { font-size: 13px; padding: 6px 10px; border-radius: 12px; background: var(--surface-2); color: var(--text); }
+.bmchip.warm { background: color-mix(in srgb, #E8590C 14%, transparent); }
+.bmchip.cool { background: color-mix(in srgb, #0B7285 14%, transparent); }
+.dock.n3 { grid-template-columns: 1fr 1fr 64px 1fr; }
+.dock.n2 { grid-template-columns: 1fr 64px 1fr; }
+/* Rest over: full-screen flash for loud gyms */
+.restflash { position: fixed; inset: 0; z-index: 10000; pointer-events: none; background: var(--accent); animation: restflash 1.2s ease-out forwards; }
+@keyframes restflash { 0%, 30%, 60% { opacity: .85; } 15%, 45% { opacity: .15; } 100% { opacity: 0; } }
+.cbusy { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; min-height: 44px; }
+.cbusy svg { width: 18px; height: 18px; }
+.bkrow { width: 100%; margin-top: 10px; border-radius: 14px; background: var(--surface-2); padding: 12px 14px; display: flex; align-items: center; gap: 10px; text-align: left; }
+.bkrow .wkt { flex: 1; }
+.bkrow svg { width: 20px; height: 20px; color: var(--accent-text, var(--accent)); }
+.exrow .exthumb.yph, .yr-figs .exthumb.yph { width: 56px; height: 45px; aspect-ratio: auto; flex: none; border-radius: 10px; }
+.exthumb.yph.big { width: 100%; height: 100%; aspect-ratio: auto; }

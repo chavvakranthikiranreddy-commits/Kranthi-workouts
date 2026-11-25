@@ -588,7 +588,13 @@ const Moves = (() => {
     return `<div class="exph ${cls}" style="--exd:${dur}ms" role="img" aria-label="${esc(get(name).name)} photo demo">${imgTag(id, 0, 'a', name)}${imgTag(id, 1, 'b', name)}</div>`;
   }
   // Small square thumbnail: first photo, or the figure.
-  function thumb(name, cls = 'th') { const id = photoId(name); return id && wantsPhoto() ? `<span class="exthumb">${imgTag(id, 0, '', name)}</span>` : svgFor(name, { cls }); }
+  // Thumbnails play the same 2-photo animation (start pose ↔ end pose) as the big demo.
+  function thumb(name, cls = 'th') { const id = photoId(name); return id && wantsPhoto() ? `<span class="exthumb anim" style="--exd:${Math.max(1600, Math.min(4200, (ARCH[get(name).arch] || {}).dur || 2400))}ms">${imgTag(id, 0, 'a', name)}${imgTag(id, 1, 'b', name)}</span>` : svgFor(name, { cls }); }
+  // A 2-photo demo straight from a library id (used by yoga and mobility poses that map onto a library photo).
+  function photoDemo(id, { cls = '', label = '', fallback = '' } = {}) {
+    if (!id || !wantsPhoto()) return fallback;
+    return `<div class="exph ${cls}" style="--exd:3200ms" role="img" aria-label="${esc(label)} photo demo">${imgTag(id, 0, 'a', fallback ? '' : label)}${imgTag(id, 1, 'b', fallback ? '' : label)}</div>`;
+  }
   const hasBoth = name => !!photoId(name);
 
   /* ---------- back-friendly mode & pain flags ---------- */
@@ -648,5 +654,5 @@ const Moves = (() => {
     });
   }
 
-  return { safeSwap, isPainful, setPainful, demo, thumb, photoId, hasBoth, get, all, search, alts, svgFor, animate, mount, howTo, tempo, isKnown, poseKey, MNAME, EQN, TYPE_DEF, _ARCH: ARCH, _prep: prep };
+  return { photoDemo, safeSwap, isPainful, setPainful, demo, thumb, photoId, hasBoth, get, all, search, alts, svgFor, animate, mount, howTo, tempo, isKnown, poseKey, MNAME, EQN, TYPE_DEF, _ARCH: ARCH, _prep: prep };
 })();
